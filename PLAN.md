@@ -34,9 +34,9 @@ All three Green's function implementations are verified and cross-validated. **1
 
 ---
 
-## Phase 2: Library Structure & Packaging
+## Phase 2: Library Structure & Packaging [COMPLETED]
 
-### 2.1 Package Layout
+### 2.1 Package Layout [DONE]
 
 Design principle: **flat is better than nested**. Students should be able to do useful work with 1-2 imports. Advanced features are available but never required.
 
@@ -62,7 +62,7 @@ geodef/
 └── examples/                  # Research-level worked examples
 ```
 
-### 2.2 Key Design Decisions
+### 2.2 Key Design Decisions [DONE]
 
 **Flat module structure**: No deeply nested subpackages. `geodef.okada`, `geodef.fault`, `geodef.invert` — each is one file, one concept. This avoids `from geodef.greens.rectangular.okada85 import displacement` in favor of `geodef.okada.displacement(...)`.
 
@@ -97,22 +97,24 @@ ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=1.0, slip_dip=0.5)
 2. **Modular** — Compose `geodef.okada`, `geodef.greens`, `geodef.invert` for custom workflows
 3. **Low-level** — Direct access to `geodef.okada.displacement(e, n, depth, ...)` for maximum control
 
-### 2.3 Set Up Packaging & Tooling
-- `pyproject.toml` with `uv`, `ruff`, `mypy`, `pytest`
+### 2.3 Set Up Packaging & Tooling [DONE]
+- `pyproject.toml` with hatchling build system, `uv`, `ruff`, `mypy`, `pytest`
 - Installable via `uv pip install -e .`
 - Minimal required dependencies: `numpy`, `scipy`, `matplotlib`
-- Optional: `meshpy` (for mesh generation), `emcee` (for MCMC)
+- Optional: `meshpy` (for mesh generation), `netCDF4` (for slab2.0), `emcee` (for MCMC)
 
-### 2.4 Migrate Existing Code
-- `geometry/okada/okada85.py` → `src/geodef/okada85.py` (keep separate)
-- `geometry/okada/okada92.py` → `src/geodef/okada92.py` (keep separate)
+### 2.4 Migrate Existing Code [DONE]
+- `geometry/okada/okada85.py` → `src/geodef/okada85.py`
+- `geometry/okada/okada92.py` → `src/geodef/okada92.py`
 - New `src/geodef/okada.py` — dispatcher that auto-selects 85 vs 92
 - `geometry/tdcalc/tdcalc.py` → `src/geodef/tri.py`
 - `geometry/okada/okada_greens.py` + `okada_utils.py` → `src/geodef/greens.py`
 - `related/shakeout_v2/fault_model.py` + `slip_model.py` → `src/geodef/fault.py`
 - `related/shakeout_v2/geod_transform.py` → `src/geodef/transforms.py`
 - `geometry/slabMesh/slabMesh.py` → `src/geodef/mesh.py`
-- `related/shakeout_v2/notebooks/` → `tutorials/` (rewritten to use `geodef` imports)
+- `related/shakeout_v2/test_geod_transform.py` → `tests/test_transforms.py`
+- `related/shakeout_v2/test_laplacian.py` → `tests/test_greens.py`
+- `related/shakeout_v2/notebooks/` → `tutorials/` (deferred to Phase 7)
 
 ---
 
@@ -427,11 +429,11 @@ Progressive series rewritten to use `geodef`:
 ## Execution Order
 
 ```
-Phase 1 (Tests & Green's functions)    ✓ COMPLETE
+Phase 1 (Tests & Green's functions)    COMPLETE
     │
-Phase 2 (Package scaffolding)         ← create geodef/, pyproject.toml, migrate code
+Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens)  ← core abstractions
+    ├── Phase 3 (Fault + Data + Greens)  ← NEXT: core abstractions
     │       │
     │       └── Phase 4 (Inversion)      ← depends on fault + data + greens
     │               │

@@ -2,4 +2,5 @@
 
 __version__ = "0.1.0"
 
-from geodef import okada, okada85, okada92, tri
+from geodef import greens, okada, okada85, okada92, transforms, tri
+from geodef.fault import FaultModel, SlipModel

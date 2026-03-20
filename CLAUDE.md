@@ -4,7 +4,7 @@
 
 **GeoDef** is being built as a flexible, student-friendly Python library for **forward and inverse modeling of fault slip** in elastic half-spaces. It targets both coseismic (earthquake) and interseismic (locked fault / coupling) applications.
 
-The project name is `geodef`. The future package will be installed as `geodef`.
+The project name is `geodef`. Install with `uv pip install -e .`.
 
 ## Current Repository Layout
 
@@ -13,52 +13,57 @@ geodef/
 ├── CLAUDE.md              # This file — agent onboarding
 ├── PLAN.md                # Development roadmap
 ├── PYTHON.md              # Mandatory coding standards
-├── docs/                  # Auto-generated code overviews
-│   ├── overview_greens_and_geometry.md
-│   ├── overview_examples_and_notebooks.md
-│   └── overview_stress_shadows.md
-├── tests/                 # Consolidated test suite (113 tests, run with `uv run pytest`)
+├── pyproject.toml         # Package config (hatchling, src layout)
+├── src/geodef/            # The installable package
+│   ├── __init__.py        # Top-level convenience API + version
+│   ├── okada.py           # Unified dispatcher: auto-selects okada85 or okada92
+│   ├── okada85.py         # Okada (1985) — surface displacements, tilts, strains
+│   ├── okada92.py         # Okada (1992) — internal deformation at depth
+│   ├── tri.py             # Triangular dislocation interface (Nikkhoo & Walter 2015)
+│   ├── greens.py          # Green's matrix assembly + Laplacian regularization
+│   ├── fault.py           # FaultModel + SlipModel classes
+│   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
+│   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
+├── tests/                 # Test suite (167 tests, run with `uv run pytest`)
 │   ├── test_okada85.py    # Okada85 reference cases + property tests
 │   ├── test_okada92.py    # Okada92/DC3D tests
 │   ├── test_tdcalc.py     # Triangular dislocation tests
 │   ├── test_cross_validation.py  # Cross-validation between all engines
+│   ├── test_package.py    # Package structure, imports, okada dispatcher
+│   ├── test_transforms.py # Coordinate transformation tests
+│   ├── test_greens.py     # Laplacian operator tests
 │   └── reference_data/    # Matlab-generated .npz reference files
-├── geometry/              # Core Green's functions & mesh tools (Python + Matlab/Fortran sources)
-│   ├── okada/             # Okada85/92 rectangular dislocations
-│   ├── tdcalc/            # Triangular dislocations (Nikkhoo & Walter 2015)
-│   └── slabMesh/          # Triangular mesh generation from slab2.0 grids
+├── docs/                  # Auto-generated code overviews
+├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
+│   ├── okada/             # Okada85/92 rectangular dislocations (originals)
+│   ├── tdcalc/            # Triangular dislocations (originals)
+│   └── slabMesh/          # Mesh generation (original)
 └── related/               # Reference code and teaching materials
     ├── shakeout_v2/       # Python fault modeling classes, plotting, inversions, tutorials
-    │   ├── notebooks/     # Numbered tutorial series (00–08) on geodetic inversion
-    │   └── *.py           # FaultModel, SlipModel, geod_transform, euler_calc, etc.
+    │   ├── notebooks/     # Numbered tutorial series (00-08) on geodetic inversion
+    │   └── *.py           # Original FaultModel, SlipModel, geod_transform, etc.
     └── stress-shadows/    # Matlab inversion framework (Lindsey et al., 2021)
-        ├── objects/       # OOP inversion: Jointinv, Sources, Datasets
-        ├── functions/     # Regularization, ABIC, plotting, coordinate transforms
-        ├── unicycle/      # Green's functions, geometry, ODE/earthquake-cycle modeling
-        └── *_models/      # 2D/3D synthetic examples + real applications (Nepal, Japan, Cascadia)
 ```
 
-See `docs/` for detailed file-level and function-level overviews of each area.
+See `docs/` for detailed file-level and function-level overviews of the reference code.
 
-## Green's Functions (Forward Models)
+## Package Modules (`src/geodef/`)
 
-| Module | Geometry | What it computes | Language | Status |
-|--------|----------|-----------------|----------|--------|
-| `geometry/okada/okada85.py` | Rectangular | Surface displacements, tilts, strains | Python (from Matlab) | Verified (27 ref + 17 property tests) |
-| `geometry/okada/okada92.py` | Rectangular | Internal deformation at depth (displacements, strains) | Python (from Fortran dc3d.f90) | Verified (10 tests + cross-validated vs okada85) |
-| `geometry/tdcalc/tdcalc.py` | Triangular | Full-/half-space displacements and strains | Python (from Matlab) | Verified (8 ref + 4 property + cross-validated) |
-| `geometry/okada/okada_greens.py` | Rectangular | Green's matrix assembly (G for displacement/strain) | Python | Working |
-| `geometry/okada/okada_utils.py` | Rectangular | Fault outlines, patch grids, Laplacian, component greens | Python | Working |
-| `geometry/slabMesh/slabMesh.py` | Triangular | Mesh generation from slab2.0 NetCDF grids | Python | Working |
+| Module | What it provides | Status |
+|--------|-----------------|--------|
+| `okada85` | Surface displacements, tilts, strains (Okada 1985) | Verified (44 tests) |
+| `okada92` | Internal deformation at depth (Okada 1992 / DC3D) | Verified (10 tests + cross-validated) |
+| `tri` | Triangular dislocation FS/HS displacements and strains | Verified (12 tests + cross-validated) |
+| `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) | Verified (7 tests) |
+| `greens` | Green's matrix assembly, patch grids, Laplacian operators | Migrated (13 tests) |
+| `fault` | `FaultModel` + `SlipModel` classes (geographic coordinates) | Migrated |
+| `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
+| `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
 
-## Key Python Modules in `related/shakeout_v2/`
+## Modules Not Yet Migrated (`related/shakeout_v2/`)
 
 | Module | Purpose |
 |--------|---------|
-| `fault_model.py` | `FaultModel` class — patch management, Green's function dispatch, geometry |
-| `slip_model.py` | `SlipModel` class — slip assignment, moment calculation, forward modeling |
-| `geod_transform.py` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
-| `okada_greens.py` | Green's matrix assembly (copy of `geometry/okada/okada_greens.py`) |
 | `euler_calc.py` | Euler pole fitting and velocity predictions |
 | `moment_tensor.py` | Moment tensor computation from strike/dip/rake |
 | `fault_plots.py` | `FaultPlot3D`/`FaultPlot2D` visualization classes |
@@ -95,9 +100,9 @@ The primary source for the inverse-modeling architecture being ported to Python:
 See `PLAN.md` for the detailed development plan.
 
 High-level priorities:
-1. ~~Finalize and test existing Green's function implementations (okada85, okada92, tdcalc)~~ **DONE** — 113 tests passing
-2. Design the `geodef` package structure for maximum student usability ← **NEXT**
-3. Implement core library: forward models, fault geometry, data containers
+1. ~~Finalize and test existing Green's function implementations (okada85, okada92, tdcalc)~~ **DONE**
+2. ~~Design the `geodef` package structure and migrate existing code~~ **DONE** — 167 tests passing
+3. Implement core library: Fault/Data/Greens abstractions (Phase 3) ← **NEXT**
 4. Implement inverse framework: G assembly, regularization, solvers, hyperparameters
 5. Port tutorial notebooks to use the new library
 6. Add uncertainty quantification
@@ -118,21 +123,19 @@ Run tests with:
 uv run pytest
 ```
 
-**113 tests passing** across 4 test files (949 lines):
+**167 tests passing** across 7 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
-| `tests/test_okada85.py` (254 lines) | 44 | 9 reference cases x 3 outputs (disp/tilt/strain), geometry (4 dips x 3 slip types), symmetry (3), far-field (1), vectorization (2) |
-| `tests/test_okada92.py` (125 lines) | 10 | Shape, dip variations (4), slip components (3), depth variation (2), linearity (2), input validation (1) |
-| `tests/test_tdcalc.py` (142 lines) | 12 | 4 Matlab reference configs x 2 (disp + strain), zero-slip, linearity, far-field decay, FS vs HS |
-| `tests/test_cross_validation.py` (428 lines) | 47 | Okada85 vs DC3D surface (12), Okada85 vs Okada92 wrapper (12), tdcalc vs Okada85 surface (9), tdcalc vs DC3D depth (13 disp + 1 strain) |
+| `tests/test_okada85.py` | 44 | 9 reference cases x 3 outputs (disp/tilt/strain), geometry, symmetry, far-field, vectorization |
+| `tests/test_okada92.py` | 10 | Shape, dip variations, slip components, depth variation, linearity, input validation |
+| `tests/test_tdcalc.py` | 12 | 4 Matlab reference configs x 2 (disp + strain), zero-slip, linearity, far-field, FS vs HS |
+| `tests/test_cross_validation.py` | 47 | Okada85 vs DC3D, Okada85 vs Okada92 wrapper, tdcalc vs Okada85, tdcalc vs DC3D at depth |
+| `tests/test_package.py` | 22 | Package imports, module accessibility, okada dispatcher, API smoke tests |
+| `tests/test_transforms.py` | 19 | Round-trip conversions, reference values, edge cases, vectorization, custom ellipsoids |
+| `tests/test_greens.py` | 13 | Laplacian matrix shape, nullspace, stencils (interior/corner/edge), simple Laplacian |
 
-Reference data: `tests/reference_data/` contains 4 `.npz` files (FS_simple, FS_complex, HS_simple, HS_complex) extracted from Matlab tdcalc.
-
-Additional test files (not run by default via `uv run pytest`):
-- `related/shakeout_v2/test_geod_transform.py` — Coordinate transformation tests
-- `related/shakeout_v2/test_laplacian.py` — Laplacian smoothing operator tests
-- `related/shakeout_v2/test_faultmodel.py` — FaultModel class tests
+Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 
 ## References
 
