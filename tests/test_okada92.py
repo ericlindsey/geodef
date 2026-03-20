@@ -10,7 +10,7 @@ depth (Z <= 0) in an elastic half-space. Key tests include:
 import numpy as np
 import pytest
 
-from okada92 import okada92
+from geodef.okada92 import okada92
 
 
 # Standard elastic parameters

@@ -8,7 +8,7 @@ ported to Python by Lindsey (2014). The 9 test cases cover various dip angles
 import numpy as np
 import pytest
 
-import okada85
+from geodef import okada85
 
 # -----------------------------------------------------------------------
 # Original 9 reference test cases from the Matlab implementation.

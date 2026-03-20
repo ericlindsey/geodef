@@ -1,15 +1,9 @@
 """Shared fixtures and path configuration for geodef tests."""
 
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-# Add source directories to sys.path so tests can import the modules
-_project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_project_root / "geometry" / "okada"))
-sys.path.insert(0, str(_project_root / "geometry" / "tdcalc"))
 
 REFERENCE_DATA_DIR = Path(__file__).parent / "reference_data"
 

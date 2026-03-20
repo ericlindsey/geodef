@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import tdcalc
+from geodef import tri as tdcalc
 
 # Use ~100-point subset for fast tests (every 10th point from 1000)
 _SUBSET_STRIDE = 10
