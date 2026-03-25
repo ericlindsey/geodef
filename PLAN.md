@@ -120,24 +120,43 @@ ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=1.0, slip_dip=0.5)
 
 ## Phase 3: Fault & Data Abstractions
 
-### 3.1 `geodef.Fault` — Fault Geometry
+### 3.1 `geodef.Fault` — Fault Geometry [DONE]
 
-A `Fault` class with factory classmethods for different creation patterns. The Green's function engine (okada for rectangular, tri for triangular) is determined at fault creation time based on geometry type, and stays with the fault object.
+Immutable `Fault` class with factory classmethods, engine abstraction, and vectorized forward modeling. **59 tests** in `tests/test_fault.py`.
+
+**Factory classmethods:**
+- `Fault.planar(lat, lon, depth, strike, dip, length, width, n_length, n_width)` — centroid-based
+- `Fault.planar_from_corner(...)` — top-left corner-based
+- `Fault.load(fname, format=..., ref_lat=..., ref_lon=...)` — center, topleft, or seg format
+- `Fault.from_slab2(...)` — triangular mesh from slab2.0 (deferred)
+
+**Properties:** `n_patches`, `centers`, `centers_local`, `areas`, `engine`, `grid_shape`, `laplacian`, `vertices_2d`, `vertices_3d`
+
+**Methods:** `displacement()`, `greens_matrix()`, `stress_kernel()`, `moment()`, `magnitude()`, `patch_index()`, `save()`
+
+**Module utilities:** `moment_to_magnitude()`, `magnitude_to_moment()`
+
+**Seg format support:** Ported unicycle `flt2flt.m` algorithm for geometric depth-variable patch sizing. Loads/saves `.seg` files with `ref_lat`/`ref_lon` for geographic placement.
+
+**Open issues:**
+- Coordinate transforms: `.seg` format uses `translate_flat` (flat-earth); stress-shadows uses polyconic projection. For large faults, a proper projection system should be added to `transforms.py`.
+- Patch ordering: `Fault.planar()` orders deepest-first; `flt2flt` orders shallowest-first.
 
 ```python
 # Simple planar fault (rectangular patches → uses okada engine)
 fault = geodef.Fault.planar(lat, lon, depth, strike, dip,
                             length, width, n_length=10, n_width=5)
 
-# Load from file (auto-detects format and geometry type)
-fault = geodef.Fault.load("mentawai.seg")
+# Load from unicycle seg file
+fault = geodef.Fault.load("mentawai.seg", format="seg",
+                          ref_lat=-2.0, ref_lon=100.0)
 
 # Triangular mesh from slab2.0 (triangular patches → uses tri engine)
 fault = geodef.Fault.from_slab2("cas_slab2_dep_02.24.18.grd", bounds=[...])
 
 # Properties available on all faults
-fault.centers        # (N, 3) patch centroids in local coords
-fault.areas          # (N,) patch areas
+fault.centers        # (N, 3) patch centroids [lat, lon, depth]
+fault.areas          # (N,) patch areas in m²
 fault.n_patches      # number of patches
 fault.engine         # 'okada' or 'tri' (set at creation, not changeable)
 fault.laplacian      # (N, N) smoothing operator
@@ -433,7 +452,7 @@ Phase 1 (Tests & Green's functions)    COMPLETE
     │
 Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens)  ← NEXT: core abstractions
+    ├── Phase 3 (Fault + Data + Greens)  ← IN PROGRESS (3.1 Fault done)
     │       │
     │       └── Phase 4 (Inversion)      ← depends on fault + data + greens
     │               │

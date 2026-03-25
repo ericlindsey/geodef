@@ -153,6 +153,9 @@ def enu2ecef(e: ArrayLike, n: ArrayLike, u: ArrayLike, lat0: ArrayLike, lon0: Ar
     Given an origin (lat0,lon0,alt0) convert local ENU coordinates back to ECEF (X,Y,Z).
     """
     x0, y0, z0 = geod2ecef(lat0, lon0, alt0, ellps=ellps)
+    e, n, u = np.broadcast_arrays(np.asarray(e, dtype=float),
+                                   np.asarray(n, dtype=float),
+                                   np.asarray(u, dtype=float))
     enu=np.array([e,n,u])
     Rmat=__Rmat_for_enu2ecef(lat0,lon0)
     

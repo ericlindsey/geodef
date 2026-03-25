@@ -56,7 +56,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `tri` | Triangular dislocation FS/HS displacements and strains | Verified (12 tests + cross-validated) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) | Verified (7 tests) |
 | `greens` | Green's matrix assembly, patch grids, Laplacian operators | Migrated (13 tests) |
-| `fault` | `FaultModel` + `SlipModel` classes (geographic coordinates) | Migrated |
+| `fault` | `Fault` class: planar/file/seg creation, forward modeling, moment, I/O | Redesigned (59 tests) |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
 
@@ -101,8 +101,9 @@ See `PLAN.md` for the detailed development plan.
 
 High-level priorities:
 1. ~~Finalize and test existing Green's function implementations (okada85, okada92, tdcalc)~~ **DONE**
-2. ~~Design the `geodef` package structure and migrate existing code~~ **DONE** — 167 tests passing
-3. Implement core library: Fault/Data/Greens abstractions (Phase 3) ← **NEXT**
+2. ~~Design the `geodef` package structure and migrate existing code~~ **DONE**
+3. Implement core library: Fault/Data/Greens abstractions (Phase 3) — **IN PROGRESS** (3.1 Fault done, 226 tests passing)
+   - ~~3.1 `Fault` class~~ **DONE** — factory classmethods, forward modeling, moment, seg format I/O
 4. Implement inverse framework: G assembly, regularization, solvers, hyperparameters
 5. Port tutorial notebooks to use the new library
 6. Add uncertainty quantification
@@ -123,7 +124,7 @@ Run tests with:
 uv run pytest
 ```
 
-**167 tests passing** across 7 test files:
+**226 tests passing** across 8 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -134,6 +135,7 @@ uv run pytest
 | `tests/test_package.py` | 22 | Package imports, module accessibility, okada dispatcher, API smoke tests |
 | `tests/test_transforms.py` | 19 | Round-trip conversions, reference values, edge cases, vectorization, custom ellipsoids |
 | `tests/test_greens.py` | 13 | Laplacian matrix shape, nullspace, stencils (interior/corner/edge), simple Laplacian |
+| `tests/test_fault.py` | 59 | Fault construction, planar factory, properties, forward modeling, moment/magnitude, laplacian, file I/O (center + seg), vertices, stress kernel, cross-validation |
 
 Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 
