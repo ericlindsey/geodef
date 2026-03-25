@@ -549,22 +549,37 @@ class Fault:
         Raises:
             ValueError: If kind is unknown or engine doesn't support it.
         """
-        if self._engine != "okada":
-            raise NotImplementedError("greens_matrix is only implemented for the okada engine")
+        if self._engine == "okada":
+            if kind == "displacement":
+                return _greens.displacement_greens(
+                    obs_lat, obs_lon,
+                    self._lat, self._lon, self._depth,
+                    self._strike, self._dip, self._length, self._width,
+                )
+            elif kind == "strain":
+                return _greens.strain_greens(
+                    obs_lat, obs_lon,
+                    self._lat, self._lon, self._depth,
+                    self._strike, self._dip, self._length, self._width,
+                )
+            raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
-        if kind == "displacement":
-            return _greens.displacement_greens(
-                obs_lat, obs_lon,
-                self._lat, self._lon, self._depth,
-                self._strike, self._dip, self._length, self._width,
-            )
-        elif kind == "strain":
-            return _greens.strain_greens(
-                obs_lat, obs_lon,
-                self._lat, self._lon, self._depth,
-                self._strike, self._dip, self._length, self._width,
-            )
-        raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
+        if self._engine == "tri":
+            if kind == "displacement":
+                return _greens.tri_displacement_greens(
+                    obs_lat, obs_lon,
+                    self._lat, self._lon, self._depth,
+                    self._vertices,
+                )
+            elif kind == "strain":
+                return _greens.tri_strain_greens(
+                    obs_lat, obs_lon,
+                    self._lat, self._lon, self._depth,
+                    self._vertices,
+                )
+            raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
+
+        raise ValueError(f"Unknown engine: {self._engine!r}")
 
     def displacement(
         self,
@@ -835,6 +850,16 @@ class Fault:
         """
         v3d = self.vertices_3d
         return v3d[:, :, :2]
+
+    @property
+    def patch_outlines(self) -> np.ndarray:
+        """Closed patch outlines for plotting, shape (N, 5, 2) as [lon, lat].
+
+        Each outline is a closed polygon (first vertex repeated at end),
+        suitable for use with ``matplotlib.collections.PolyCollection``.
+        """
+        v2d = self.vertices_2d  # (N, 4, 2)
+        return np.concatenate([v2d, v2d[:, :1, :]], axis=1)
 
     @property
     def vertices_3d(self) -> np.ndarray:

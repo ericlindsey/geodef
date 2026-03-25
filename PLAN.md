@@ -118,7 +118,7 @@ ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=1.0, slip_dip=0.5)
 
 ---
 
-## Phase 3: Fault & Data Abstractions
+## Phase 3: Fault & Data Abstractions [3.1–3.3 DONE]
 
 ### 3.1 `geodef.Fault` — Fault Geometry [DONE]
 
@@ -226,36 +226,28 @@ class Strainmeter(DataSet):
 
 Adding a new data type = write a new class with `greens_type` and `project()`. Nothing else in the library changes.
 
-### 3.3 `geodef.greens` — Green's Matrix Assembly
+### 3.3 `geodef.greens` — Green's Matrix Assembly [DONE]
 
-The `greens()` function is fully polymorphic over both fault type and data type. It uses `data.greens_type` to look up the right engine method, then calls `data.project()` on the result:
+Polymorphic Green's matrix assembly using `DataSet.greens_type` dispatch and `DataSet.project()`. **32 tests** in `tests/test_greens_integration.py`.
 
-```python
-def greens(fault, datasets):
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-    blocks = []
-    for d in datasets:
-        # Engine has methods: .displacement(...), .strain(...), etc.
-        # data.greens_type selects which one to call.
-        engine_method = getattr(fault.engine, d.greens_type)
-        raw_components = engine_method(fault, d.lat, d.lon)
-        blocks.append(d.project(*raw_components))
-    return np.vstack(blocks)
-```
-
-This means:
-- The engine (okada or tri) implements named methods: `displacement()`, `strain()`, etc.
-- Each `DataSet` subclass declares which method it needs via `greens_type`
-- `greens()` itself has no `if/elif` branches for data types or engine types — all dispatch is polymorphic
+**Core function:** `greens(fault, datasets)` — assembles the full Green's matrix for any combination of fault engine and data type. Slip columns are interleaved `[ss_0, ds_0, ss_1, ds_1, ...]`.
 
 ```python
-G = geodef.greens(fault, gnss)                    # single dataset
-G = geodef.greens(fault, [gnss, insar])           # joint: auto-stacks
-G = geodef.greens(fault, [gnss, strainmeter])     # mixed: displacement + strain, just works
+G = geodef.greens.greens(fault, gnss)              # single dataset
+G = geodef.greens.greens(fault, [gnss, insar])     # joint: auto-stacks vertically
 ```
 
-Handles coordinate transforms, LOS projection, and component interleaving internally. The engine determines whether okada85/92 or tri is called (set at fault creation). No engine override at the `greens()` call.
+**Engine dispatch:** Four internal Green's functions handle all engine/data combinations:
+- `displacement_greens()` — Okada engine, displacement data types
+- `strain_greens()` — Okada engine, strain data types
+- `tri_displacement_greens()` — Triangular engine, displacement data types
+- `tri_strain_greens()` — Triangular engine, strain data types
+
+**Stacking helpers:** `stack_obs()` and `stack_weights()` concatenate observation vectors and weight matrices across multiple datasets, matching the row layout of the joint G matrix.
+
+**Also in `greens.py`:** `resolution()` matrix, `build_laplacian_2d()` / `build_laplacian_2d_simple()` regularization operators.
+
+**Changes from plan:** `build_patch_grid()` and `rect_fault_outline()` were moved from `greens.py` to `fault.py` as `Fault` methods/properties (`Fault.vertices_2d`, `Fault.vertices_3d`, `Fault.patch_outlines`), since they are fundamentally fault geometry operations.
 
 ### 3.4 Computation Caching (`geodef.cache`)
 
@@ -452,9 +444,9 @@ Phase 1 (Tests & Green's functions)    COMPLETE
     │
 Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens)  ← IN PROGRESS (3.1 Fault done, 3.2 DataSet done)
+    ├── Phase 3 (Fault + Data + Greens)  ← 3.1–3.3 DONE (309 tests), 3.4 Cache deferred
     │       │
-    │       └── Phase 4 (Inversion)      ← depends on fault + data + greens
+    │       └── Phase 4 (Inversion)      ← NEXT
     │               │
     │               └── Phase 5 (Uncertainty)
     │

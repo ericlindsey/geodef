@@ -90,13 +90,14 @@ class DataSet(ABC):
         ...
 
     @abstractmethod
-    def project(self, ue: np.ndarray, un: np.ndarray, uz: np.ndarray) -> np.ndarray:
-        """Map displacement components to this data type's observation space.
+    def project(self, *components: np.ndarray) -> np.ndarray:
+        """Map Green's function components to this data type's observation space.
+
+        For displacement data types, receives three arrays (ue, un, uz).
+        For strain data types, receives six arrays (exx, eyy, ezz, exy, exz, eyz).
 
         Args:
-            ue: East displacements at observation points, shape (n_stations,).
-            un: North displacements at observation points, shape (n_stations,).
-            uz: Up displacements at observation points, shape (n_stations,).
+            *components: Component arrays, each shape (n_stations,).
 
         Returns:
             Projected observations, shape (n_obs,).
@@ -248,17 +249,16 @@ class GNSS(DataSet):
             np.column_stack([self._se, self._sn]).ravel()
         )
 
-    def project(self, ue: np.ndarray, un: np.ndarray, uz: np.ndarray) -> np.ndarray:
+    def project(self, *components: np.ndarray) -> np.ndarray:
         """Project displacement components into GNSS observation space.
 
         Args:
-            ue: East displacements, shape (n_stations,).
-            un: North displacements, shape (n_stations,).
-            uz: Up displacements, shape (n_stations,).
+            *components: (ue, un, uz) displacement arrays, each (n_stations,).
 
         Returns:
             Interleaved components, shape (n_obs,).
         """
+        ue, un, uz = components
         if self._vu is not None:
             return np.column_stack([ue, un, uz]).ravel()
         return np.column_stack([ue, un]).ravel()
@@ -373,17 +373,16 @@ class InSAR(DataSet):
         """1-sigma uncertainties, shape (n_stations,)."""
         return self._sigma
 
-    def project(self, ue: np.ndarray, un: np.ndarray, uz: np.ndarray) -> np.ndarray:
+    def project(self, *components: np.ndarray) -> np.ndarray:
         """Project displacement components onto the line-of-sight direction.
 
         Args:
-            ue: East displacements, shape (n_stations,).
-            un: North displacements, shape (n_stations,).
-            uz: Up displacements, shape (n_stations,).
+            *components: (ue, un, uz) displacement arrays, each (n_stations,).
 
         Returns:
             LOS-projected displacements, shape (n_stations,).
         """
+        ue, un, uz = components
         return self._look_e * ue + self._look_n * un + self._look_u * uz
 
     @classmethod
@@ -478,17 +477,16 @@ class Vertical(DataSet):
         """1-sigma uncertainties, shape (n_stations,)."""
         return self._sigma
 
-    def project(self, ue: np.ndarray, un: np.ndarray, uz: np.ndarray) -> np.ndarray:
+    def project(self, *components: np.ndarray) -> np.ndarray:
         """Extract the vertical component.
 
         Args:
-            ue: East displacements, shape (n_stations,).
-            un: North displacements, shape (n_stations,).
-            uz: Up displacements, shape (n_stations,).
+            *components: (ue, un, uz) displacement arrays, each (n_stations,).
 
         Returns:
             Vertical displacements, shape (n_stations,).
         """
+        _ue, _un, uz = components
         return uz
 
     @classmethod

@@ -4,13 +4,12 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 
 ## Current Status
 
-**276 tests passing** across 9 test files.
+**309 tests passing** across 10 test files.
 
 - **Phase 1 (Green's functions)** -- complete
 - **Phase 2 (Package structure)** -- complete
-- **Phase 3.1 (Fault class)** -- complete
-- **Phase 3.2 (DataSet classes)** -- complete
-- **Phase 3.3+ (Green's assembly, inversion, uncertainty)** -- planned
+- **Phase 3 (Fault + Data + Greens)** -- complete
+- **Phase 4 (Inversion)** -- next
 
 See `PLAN.md` for the full development roadmap.
 
@@ -22,8 +21,8 @@ See `PLAN.md` for the full development roadmap.
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
-| `greens` | Green's matrix assembly, Laplacian regularization operators |
-| `fault` | `Fault` class: fault creation, forward modeling, moment, file I/O |
+| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `fault` | `Fault` class: fault creation, forward modeling, vertices, moment, file I/O |
 | `data` | `DataSet` base class + `GNSS`, `InSAR`, `Vertical` data types |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids (optional deps) |
@@ -220,9 +219,38 @@ Each data type provides:
 - `data.covariance` -- full covariance matrix (diagonal from sigma by default)
 - `data.project(ue, un, uz)` -- maps displacement components to observation space
 
+## Green's Matrix Assembly
+
+The `greens` module assembles the full Green's matrix for any combination of fault engine and data type:
+
+```python
+import geodef
+
+# Single dataset
+G = geodef.greens.greens(fault, gnss)
+
+# Joint inversion: vertically stacks projected G blocks
+G = geodef.greens.greens(fault, [gnss, insar])
+
+# Matching observation and weight vectors
+d = geodef.stack_obs([gnss, insar])
+W = geodef.stack_weights([gnss, insar])
+```
+
+Slip columns are interleaved as `[ss_0, ds_0, ss_1, ds_1, ...]`. Each `DataSet` subclass defines how raw displacement/strain components are projected into its observation space (e.g., LOS projection for InSAR, interleaved E/N/U for GNSS).
+
+## Examples
+
+See `examples/01_forward_model.ipynb` for a worked demo covering:
+- Creating a discretized fault
+- Defining synthetic GNSS stations
+- Building the Green's matrix
+- Predicting displacements from input slip
+- Joint Green's matrix for GNSS + InSAR
+- Visualizing slip distribution and predicted displacements
+
 ## Planned Features
 
-- **Green's matrix assembly** -- polymorphic over fault type and data type
 - **Inversion** -- regularized least-squares with automatic hyperparameter tuning (ABIC, cross-validation)
 - **Uncertainty** -- model covariance, resolution matrices, fit statistics
 - **Triangular faults** -- slab2.0 mesh generation, unstructured Laplacian
