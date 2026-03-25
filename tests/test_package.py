@@ -54,6 +54,30 @@ class TestTopLevelAPI:
         assert isinstance(geodef.__version__, str)
         assert geodef.__version__ == "0.1.0"
 
+    def test_dataset_classes_importable(self):
+        import geodef
+        assert hasattr(geodef, "DataSet")
+        assert hasattr(geodef, "GNSS")
+        assert hasattr(geodef, "InSAR")
+        assert hasattr(geodef, "Vertical")
+
+    def test_dataset_isinstance(self):
+        import geodef
+        import numpy as np
+        lat = np.array([0.0])
+        lon = np.array([100.0])
+        g = geodef.GNSS(lat, lon, np.array([1.0]), np.array([0.5]),
+                        np.array([-0.1]), np.array([0.1]),
+                        np.array([0.1]), np.array([0.5]))
+        assert isinstance(g, geodef.DataSet)
+
+    def test_import_data_module(self):
+        from geodef import data
+        assert hasattr(data, "GNSS")
+        assert hasattr(data, "InSAR")
+        assert hasattr(data, "Vertical")
+        assert hasattr(data, "DataSet")
+
 
 # ---------------------------------------------------------------------------
 # 3. Okada dispatcher tests

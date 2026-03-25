@@ -163,7 +163,7 @@ fault.laplacian      # (N, N) smoothing operator
 fault.moment(slip)   # scalar seismic moment
 ```
 
-### 3.2 `geodef.DataSet` — Geodetic Data
+### 3.2 `geodef.DataSet` — Geodetic Data [DONE]
 
 All data types inherit from a common `DataSet` base class, which defines the polymorphic interface used by `greens()` and `invert()`. Each subclass specifies two things:
 1. **`greens_type`** — what kind of raw Green's function it needs from the engine (`'displacement'` or `'strain'`)
@@ -452,7 +452,7 @@ Phase 1 (Tests & Green's functions)    COMPLETE
     │
 Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens)  ← IN PROGRESS (3.1 Fault done)
+    ├── Phase 3 (Fault + Data + Greens)  ← IN PROGRESS (3.1 Fault done, 3.2 DataSet done)
     │       │
     │       └── Phase 4 (Inversion)      ← depends on fault + data + greens
     │               │
