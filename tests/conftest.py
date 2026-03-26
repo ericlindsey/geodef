@@ -5,7 +5,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from geodef import cache
+
 REFERENCE_DATA_DIR = Path(__file__).parent / "reference_data"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache(tmp_path: Path) -> None:
+    """Redirect the geodef cache to a temp directory for every test."""
+    cache.set_dir(tmp_path / "geodef_cache")
+    cache.enable()
 
 
 @pytest.fixture

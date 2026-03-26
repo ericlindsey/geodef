@@ -534,6 +534,7 @@ class Fault:
         obs_lat: np.ndarray,
         obs_lon: np.ndarray,
         kind: str = "displacement",
+        obs_depth: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compute Green's function matrix at observation points.
 
@@ -541,10 +542,15 @@ class Fault:
             obs_lat: Observation latitudes, shape (M,).
             obs_lon: Observation longitudes, shape (M,).
             kind: ``"displacement"`` or ``"strain"``.
+            obs_depth: Observation depths (M,), positive down, in meters.
+                Only used for ``kind="strain"`` to compute internal
+                deformation via okada92/DC3D. If None, observations
+                are at the surface.
 
         Returns:
             Green's matrix G. For displacement: shape (3*M, 2*N).
-            For strain: shape (4*M, 2*N).
+            For strain (okada): shape (4*M, 2*N).
+            For strain (tri): shape (6*M, 2*N).
 
         Raises:
             ValueError: If kind is unknown or engine doesn't support it.
@@ -561,6 +567,7 @@ class Fault:
                     obs_lat, obs_lon,
                     self._lat, self._lon, self._depth,
                     self._strike, self._dip, self._length, self._width,
+                    obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
@@ -576,6 +583,7 @@ class Fault:
                     obs_lat, obs_lon,
                     self._lat, self._lon, self._depth,
                     self._vertices,
+                    obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
@@ -628,14 +636,25 @@ class Fault:
     def stress_kernel(self, mu: float = 30e9) -> np.ndarray:
         """Compute the stress interaction kernel for the fault.
 
+        Evaluates strain Green's functions at patch centroid depths using
+        okada92 (DC3D) for internal deformation.
+
         Args:
             mu: Shear modulus in Pa (default 30 GPa).
 
         Returns:
             Stress kernel matrix K, shape (4*N, 2*N).
         """
-        K = self.greens_matrix(self._lat, self._lon, kind="strain")
-        return mu * K
+        from geodef import cache as _cache
+
+        key = _build_stress_key(self, mu)
+        return _cache.cached_compute(
+            key,
+            lambda: mu * self.greens_matrix(
+                self._lat, self._lon, kind="strain",
+                obs_depth=self._depth,
+            ),
+        )
 
     # ==================================================================
     # Moment and magnitude
@@ -922,6 +941,26 @@ class Fault:
     def __repr__(self) -> str:
         grid_str = f", grid={self._grid_shape}" if self._grid_shape else ""
         return f"Fault(n_patches={self.n_patches}, engine={self._engine!r}{grid_str})"
+
+
+def _build_stress_key(fault: Fault, mu: float) -> dict:
+    """Build the cache key dict for a stress kernel computation."""
+    key: dict = {
+        "kind": "stress_kernel",
+        "mu": mu,
+        "fault_lat": fault._lat,
+        "fault_lon": fault._lon,
+        "fault_depth": fault._depth,
+        "fault_strike": fault._strike,
+        "fault_dip": fault._dip,
+        "engine": fault.engine,
+    }
+    if fault._length is not None:
+        key["fault_length"] = fault._length
+        key["fault_width"] = fault._width
+    if fault._vertices is not None:
+        key["fault_vertices"] = fault._vertices
+    return key
 
 
 # ======================================================================

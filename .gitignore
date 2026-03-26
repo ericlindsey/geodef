@@ -10,6 +10,7 @@ build/
 
 # Testing / tooling
 .pytest_cache/
+.geodef_cache/
 .mypy_cache/
 .ruff_cache/
 

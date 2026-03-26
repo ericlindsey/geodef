@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import scipy.linalg
 
+from geodef import cache as _cache
 from geodef import okada85, transforms, tri
 
 if TYPE_CHECKING:
@@ -107,6 +108,7 @@ def strain_greens(
     L: np.ndarray,
     W: np.ndarray,
     nu: float = 0.25,
+    obs_depth: np.ndarray | None = None,
 ) -> np.ndarray:
     """Build strain Green's matrix for rectangular fault patches.
 
@@ -118,12 +120,15 @@ def strain_greens(
         lon: Observation longitudes (nobs,).
         lat0: Patch center latitudes (npatch,).
         lon0: Patch center longitudes (npatch,).
-        depth: Patch centroid depths (npatch,).
+        depth: Patch centroid depths (npatch,), positive down.
         strike: Patch strike angles in degrees (npatch,).
         dip: Patch dip angles in degrees (npatch,).
         L: Along-strike patch lengths (npatch,).
         W: Down-dip patch widths (npatch,).
         nu: Poisson's ratio.
+        obs_depth: Observation depths (nobs,), positive down. If None,
+            observations are at the surface (uses okada85). If provided,
+            uses okada92 (DC3D) for internal deformation at depth.
 
     Returns:
         G matrix of shape (4*nobs, 2*npatch).
@@ -133,34 +138,67 @@ def strain_greens(
 
     G = np.zeros((4 * nobs, 2 * npatch))
 
-    for ipatch in range(npatch):
-        e, n, _ = transforms.geod2enu(
-            lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-        )
+    if obs_depth is None:
+        for ipatch in range(npatch):
+            e, n, _ = transforms.geod2enu(
+                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
+            )
 
-        str_nn, str_ne, str_en, str_ee = okada85.strain(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            0.0, 1.0, 0.0, nu,
-        )
-        dip_nn, dip_ne, dip_en, dip_ee = okada85.strain(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            90.0, 1.0, 0.0, nu,
-        )
+            str_nn, str_ne, str_en, str_ee = okada85.strain(
+                e, n, float(depth[ipatch]), float(strike[ipatch]),
+                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
+                0.0, 1.0, 0.0, nu,
+            )
+            dip_nn, dip_ne, dip_en, dip_ee = okada85.strain(
+                e, n, float(depth[ipatch]), float(strike[ipatch]),
+                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
+                90.0, 1.0, 0.0, nu,
+            )
 
-        gstr = np.zeros(4 * nobs)
-        gdip = np.zeros(4 * nobs)
-        gstr[::4] = str_nn
-        gstr[1::4] = str_ne
-        gstr[2::4] = str_en
-        gstr[3::4] = str_ee
-        gdip[::4] = dip_nn
-        gdip[1::4] = dip_ne
-        gdip[2::4] = dip_en
-        gdip[3::4] = dip_ee
-        G[:, 2 * ipatch] = gstr
-        G[:, 2 * ipatch + 1] = gdip
+            gstr = np.zeros(4 * nobs)
+            gdip = np.zeros(4 * nobs)
+            gstr[::4] = str_nn
+            gstr[1::4] = str_ne
+            gstr[2::4] = str_en
+            gstr[3::4] = str_ee
+            gdip[::4] = dip_nn
+            gdip[1::4] = dip_ne
+            gdip[2::4] = dip_en
+            gdip[3::4] = dip_ee
+            G[:, 2 * ipatch] = gstr
+            G[:, 2 * ipatch + 1] = gdip
+    else:
+        from geodef import okada92
+        obs_depth = np.asarray(obs_depth, dtype=float)
+        G_mu = 1.0  # unit shear modulus; actual scaling done by caller
+        for ipatch in range(npatch):
+            e, n, _ = transforms.geod2enu(
+                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
+            )
+            for iobs in range(nobs):
+                z_obs = -float(obs_depth[iobs])  # okada92 convention: Z <= 0
+                _, strain_ss = okada92.okada92(
+                    float(e[iobs]), float(n[iobs]), z_obs,
+                    float(depth[ipatch]), float(strike[ipatch]),
+                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
+                    1.0, 0.0, 0.0, G_mu, nu, allow_singular=True,
+                )
+                _, strain_ds = okada92.okada92(
+                    float(e[iobs]), float(n[iobs]), z_obs,
+                    float(depth[ipatch]), float(strike[ipatch]),
+                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
+                    0.0, 1.0, 0.0, G_mu, nu, allow_singular=True,
+                )
+                row = 4 * iobs
+                # NN, NE, EN, EE from the 3x3 gradient tensor
+                G[row, 2 * ipatch] = strain_ss[1, 1]      # NN
+                G[row + 1, 2 * ipatch] = strain_ss[1, 0]  # NE
+                G[row + 2, 2 * ipatch] = strain_ss[0, 1]  # EN
+                G[row + 3, 2 * ipatch] = strain_ss[0, 0]  # EE
+                G[row, 2 * ipatch + 1] = strain_ds[1, 1]
+                G[row + 1, 2 * ipatch + 1] = strain_ds[1, 0]
+                G[row + 2, 2 * ipatch + 1] = strain_ds[0, 1]
+                G[row + 3, 2 * ipatch + 1] = strain_ds[0, 0]
 
     return G
 
@@ -240,6 +278,7 @@ def tri_strain_greens(
     depth: np.ndarray,
     vertices: np.ndarray,
     nu: float = 0.25,
+    obs_depth: np.ndarray | None = None,
 ) -> np.ndarray:
     """Build strain Green's matrix for triangular fault patches.
 
@@ -254,6 +293,10 @@ def tri_strain_greens(
         depth: Patch centroid depths (npatch,), positive down.
         vertices: Triangle vertices in local ENU, shape (npatch, 3, 3).
         nu: Poisson's ratio.
+        obs_depth: Observation depths (nobs,), positive down. If None,
+            observations are at the surface. If provided, the z-coordinate
+            of observation points is set to ``-obs_depth`` (negative = below
+            surface in the ENU frame used by TDstrainHS).
 
     Returns:
         G matrix of shape (6*nobs, 2*npatch).
@@ -267,7 +310,11 @@ def tri_strain_greens(
     ref_lon = float(np.mean(lon0))
 
     obs_e, obs_n, _ = transforms.geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
-    obs = np.column_stack([obs_e, obs_n, np.zeros(nobs)])
+    if obs_depth is not None:
+        obs_z = -np.asarray(obs_depth, dtype=float)
+    else:
+        obs_z = np.zeros(nobs)
+    obs = np.column_stack([obs_e, obs_n, obs_z])
 
     G = np.zeros((6 * nobs, 2 * npatch))
 
@@ -292,6 +339,36 @@ def tri_strain_greens(
 # Polymorphic Green's matrix assembly (Fault + DataSet)
 # ======================================================================
 
+def _build_greens_key(fault: Fault, data: DataSet) -> dict:
+    """Build the cache key dict for a fault + dataset combination."""
+    from geodef.data import GNSS, InSAR
+
+    key: dict = {
+        "fault_lat": fault._lat,
+        "fault_lon": fault._lon,
+        "fault_depth": fault._depth,
+        "fault_strike": fault._strike,
+        "fault_dip": fault._dip,
+        "engine": fault.engine,
+        "obs_lat": data.lat,
+        "obs_lon": data.lon,
+        "data_class": type(data).__name__,
+        "greens_type": data.greens_type,
+    }
+    if fault._length is not None:
+        key["fault_length"] = fault._length
+        key["fault_width"] = fault._width
+    if fault._vertices is not None:
+        key["fault_vertices"] = fault._vertices
+    if isinstance(data, InSAR):
+        key["look_e"] = data._look_e
+        key["look_n"] = data._look_n
+        key["look_u"] = data._look_u
+    if isinstance(data, GNSS):
+        key["components"] = data.components
+    return key
+
+
 def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
     """Build a projected Green's matrix for one or more datasets.
 
@@ -315,8 +392,13 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
 
     blocks = []
     for data in datasets:
-        G_raw = fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
-        G_proj = _project_greens(data, G_raw)
+        key = _build_greens_key(fault, data)
+        G_proj = _cache.cached_compute(
+            key,
+            lambda d=data: _project_greens(
+                d, fault.greens_matrix(d.lat, d.lon, kind=d.greens_type)
+            ),
+        )
         blocks.append(G_proj)
 
     return np.vstack(blocks)

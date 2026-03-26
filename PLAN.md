@@ -118,7 +118,7 @@ ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=1.0, slip_dip=0.5)
 
 ---
 
-## Phase 3: Fault & Data Abstractions [3.1–3.3 DONE]
+## Phase 3: Fault & Data Abstractions [COMPLETED]
 
 ### 3.1 `geodef.Fault` — Fault Geometry [DONE]
 
@@ -249,32 +249,34 @@ G = geodef.greens.greens(fault, [gnss, insar])     # joint: auto-stacks vertical
 
 **Changes from plan:** `build_patch_grid()` and `rect_fault_outline()` were moved from `greens.py` to `fault.py` as `Fault` methods/properties (`Fault.vertices_2d`, `Fault.vertices_3d`, `Fault.patch_outlines`), since they are fundamentally fault geometry operations.
 
-### 3.4 Computation Caching (`geodef.cache`)
+### 3.4 Computation Caching (`geodef.cache`) [DONE]
 
-Green's matrices (G) can take minutes for large triangular faults, and stress kernels (L) can take tens of minutes. All expensive matrix computations are cached on disk using a hash-based system:
+Hash-based disk caching for expensive matrix computations, ported from the stress-shadows Matlab `DataHash` + HDF5 pattern. **29 tests** in `tests/test_cache.py`.
 
+**Module API:**
 ```python
-# Transparent caching: any call to geodef.greens() or geodef.stress_kernel()
-# automatically checks for a cached result before computing.
-G = geodef.greens(fault, data)   # first call: computes and saves to cache
-G = geodef.greens(fault, data)   # second call: loads from cache instantly
-
-# Cache key is a hash of all inputs to the function (fault geometry, data
-# locations, engine parameters). If any input changes, cache misses and
-# recomputes.
-
-# Cache location defaults to .geodef_cache/ in the working directory.
-# Can be configured:
-geodef.cache.set_dir("path/to/cache")
-geodef.cache.clear()             # remove all cached files
-geodef.cache.disable()           # turn off caching (e.g. for debugging)
+geodef.cache.set_dir("path/to/cache")  # default: .geodef_cache/
+geodef.cache.get_dir()
+geodef.cache.clear()
+geodef.cache.enable() / geodef.cache.disable()
+geodef.cache.is_enabled()
+geodef.cache.info()  # {"n_files": int, "total_bytes": int}
 ```
 
-Implementation approach (based on the stress-shadows hashing method):
-- Serialize all function inputs (fault geometry arrays, observation coords, engine name, etc.)
-- Compute a hash (e.g. SHA-256) of the serialized inputs
-- Save/load `.npz` files named by hash in the cache directory
-- This ensures reliable reuse: identical inputs always find the cache, changed inputs always recompute
+**Transparent caching** — `greens()` and `stress_kernel()` automatically check for cached results:
+```python
+G = geodef.greens.greens(fault, data)  # first call: computes and saves
+G = geodef.greens.greens(fault, data)  # second call: loads from cache
+```
+
+**Implementation:**
+- `compute_hash(key_data)` — SHA-256 of serialized numpy arrays + metadata (dtype, shape, bytes), strings, floats, None
+- `cached_compute(key_data, compute_fn)` — check cache, compute if missing, save compressed `.npz`
+- Storage: `.geodef_cache/<hash[:2]>/<hash>.npz` (2-char subdirectories)
+- Cache key includes: fault geometry arrays, engine, observation coordinates, data type, and type-specific fields (InSAR look vectors, GNSS component mode)
+- Per-dataset caching in `greens()`: each dataset block is cached independently, so changing one dataset in a joint inversion doesn't invalidate the others
+
+**Bug fix included:** `stress_kernel()` now correctly evaluates strain at patch centroid depths (using `okada92`/DC3D for internal deformation) instead of incorrectly computing surface strain. Added `obs_depth` parameter to `greens_matrix()`, `strain_greens()`, and `tri_strain_greens()`.
 
 ---
 
@@ -444,7 +446,7 @@ Phase 1 (Tests & Green's functions)    COMPLETE
     │
 Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens)  ← 3.1–3.3 DONE (309 tests), 3.4 Cache deferred
+    ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (337 tests)
     │       │
     │       └── Phase 4 (Inversion)      ← NEXT
     │               │
@@ -462,6 +464,6 @@ Phase 2 (Package scaffolding)          COMPLETE
 - **Coordinate conventions**: Public API uses East/North/Up and lat/lon consistently. Green's functions handle internal conventions (Okada x=strike) behind the interface.
 - **Performance**: For large inversions (thousands of patches, millions of InSAR pixels), the hash-based caching system (Phase 3.4) handles reuse of expensive G and L matrices. For truly massive problems, consider lazy G matrix evaluation or HDF5/memmap storage as a future extension.
 - **Backslip model**: Careful sign conventions needed. Matlab logic in `Backslip_Translation_Source.m`.
-- **Stress kernels**: These are strain Green's functions evaluated at fault patch centers — already computable via okada92 and tdcalc strain outputs. No additional Matlab porting needed; just need the right wrappers to assemble the kernel matrix from existing strain functions.
+- **Stress kernels**: Implemented in `fault.stress_kernel()`. Uses okada92/DC3D to evaluate strain at patch centroid depths (not the surface). Cached via `geodef.cache`.
 - **Mesh generation**: `slabMesh` depends on `meshpy`/`triangle`. Keep as optional dependency.
 - **Name**: The package is called `geodef` (geodetic deformation). Short, unique, pip-installable.
