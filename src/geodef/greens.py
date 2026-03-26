@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.linalg
+import scipy.sparse
 
 from geodef import cache as _cache
 from geodef import okada85, transforms, tri
@@ -532,6 +533,74 @@ def _check_lengths(
 # ======================================================================
 # Regularization operators
 # ======================================================================
+
+def build_laplacian_knn(
+    coords: np.ndarray,
+    k: int = 4,
+) -> scipy.sparse.csc_matrix:
+    """Build a distance-weighted graph Laplacian from K nearest neighbors.
+
+    For each point, finds the *k* nearest neighbors and assigns weights
+    inversely proportional to distance.  The resulting matrix is
+    symmetrized (union of neighbor graphs) so that ``L = L^T``, and
+    every row sums to zero.
+
+    This is suitable for unstructured meshes (triangular patches or
+    rectangular patches with non-uniform sizing) where no grid topology
+    is available.
+
+    Args:
+        coords: Patch centroid coordinates, shape ``(n, 3)``.
+            Typically ``[east, north, depth]`` in meters.
+        k: Number of nearest neighbors per point.
+
+    Returns:
+        Sparse Laplacian matrix of shape ``(n, n)``.
+
+    Raises:
+        ValueError: If *k* < 1 or *k* >= *n*.
+
+    References:
+        Inspired by the Huiskamp (1991) surface Laplacian used in the
+        unicycle ``compute_laplacian.m``, simplified to use inverse-distance
+        weighting without angular correction terms.
+    """
+    coords = np.asarray(coords, dtype=float)
+    n = coords.shape[0]
+
+    if k < 1 or k >= n:
+        raise ValueError(
+            f"k must satisfy 1 <= k < n_points ({n}), got k={k}"
+        )
+
+    # Pairwise squared distances via broadcasting: (n,1,3) - (1,n,3)
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+    dist = np.sqrt(np.sum(diff * diff, axis=2))  # (n, n)
+
+    # For each point, find k nearest neighbors (exclude self)
+    # argsort along axis=1; column 0 is self (distance=0)
+    idx_sorted = np.argsort(dist, axis=1)
+    knn_idx = idx_sorted[:, 1:k + 1]  # (n, k)
+    knn_dist = np.take_along_axis(dist, knn_idx, axis=1)  # (n, k)
+
+    # Inverse-distance weights: w_ij = 1 / d_ij
+    weights = 1.0 / knn_dist  # (n, k)
+
+    # Build sparse weight matrix W (asymmetric KNN graph)
+    rows = np.repeat(np.arange(n), k)
+    cols = knn_idx.ravel()
+    vals = weights.ravel()
+    W = scipy.sparse.coo_matrix((vals, (rows, cols)), shape=(n, n))
+
+    # Symmetrize: W_sym = (W + W^T) / 2
+    W_sym = (W + W.T) / 2.0
+    W_sym = W_sym.tocsc()
+
+    # Laplacian: L = W_sym - D, where D is the diagonal degree matrix
+    diag_sums = np.asarray(W_sym.sum(axis=1)).ravel()
+    D = scipy.sparse.diags(diag_sums, format="csc")
+    return W_sym - D
+
 
 def build_laplacian_2d(nL: int, nW: int) -> np.ndarray:
     """Build a 2-D finite-difference Laplacian for a rectangular fault grid.

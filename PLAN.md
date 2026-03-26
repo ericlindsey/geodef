@@ -245,7 +245,7 @@ G = geodef.greens.greens(fault, [gnss, insar])     # joint: auto-stacks vertical
 
 **Stacking helpers:** `stack_obs()` and `stack_weights()` concatenate observation vectors and weight matrices across multiple datasets, matching the row layout of the joint G matrix.
 
-**Also in `greens.py`:** `resolution()` matrix, `build_laplacian_2d()` / `build_laplacian_2d_simple()` regularization operators.
+**Also in `greens.py`:** `resolution()` matrix, `build_laplacian_2d()` / `build_laplacian_2d_simple()` regularization operators for structured grids, and `build_laplacian_knn()` for unstructured meshes (distance-weighted K-nearest-neighbors, sparse output).
 
 **Changes from plan:** `build_patch_grid()` and `rect_fault_outline()` were moved from `greens.py` to `fault.py` as `Fault` methods/properties (`Fault.vertices_2d`, `Fault.vertices_3d`, `Fault.patch_outlines`), since they are fundamentally fault geometry operations.
 
@@ -456,6 +456,12 @@ Phase 2 (Package scaffolding)          COMPLETE
     │
     └── Phase 7 (Tutorials + Docs)       ← after core library is stable
 ```
+
+---
+
+## Phase 8: Future Additions
+
+- **Angular-weighted KNN Laplacian**: The current `build_laplacian_knn` uses simple inverse-distance weighting. The Huiskamp (1991) formulation adds angular correction terms (`Theta_j / Theta_tot`) that account for uneven angular distribution of neighbors. This could be added as an option (e.g. `method='huiskamp'`) if cases arise where the simple version produces visibly different regularization behavior. See `related/stress-shadows/functions/compute_laplacian.m` for the Matlab reference implementation.
 
 ---
 

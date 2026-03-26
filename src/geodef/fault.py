@@ -510,19 +510,19 @@ class Fault:
         """Discrete Laplacian smoothing operator, shape (N, N).
 
         For structured rectangular grids, uses finite-difference stencils.
-        Computed lazily and cached.
+        For unstructured meshes (no ``grid_shape``), uses a distance-weighted
+        K-nearest-neighbors Laplacian with ``k=6`` (returned as a dense array
+        for API consistency).
 
-        Raises:
-            ValueError: If the grid is unstructured (no grid_shape).
+        Computed lazily and cached.
         """
         if self._laplacian is None:
-            if self._grid_shape is None:
-                raise ValueError(
-                    "Laplacian requires a structured grid (grid_shape). "
-                    "Unstructured mesh Laplacian is not yet implemented."
-                )
-            nL, nW = self._grid_shape
-            self._laplacian = _greens.build_laplacian_2d(nL, nW)
+            if self._grid_shape is not None:
+                nL, nW = self._grid_shape
+                self._laplacian = _greens.build_laplacian_2d(nL, nW)
+            else:
+                L_sparse = _greens.build_laplacian_knn(self.centers_local, k=6)
+                self._laplacian = L_sparse.toarray()
         return self._laplacian
 
     # ==================================================================

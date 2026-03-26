@@ -64,7 +64,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) | Verified (10 tests + cross-validated) |
 | `tri` | Triangular dislocation FS/HS displacements and strains | Verified (12 tests + cross-validated) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) | Verified (7 tests) |
-| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators | Redesigned (13 + 32 tests) |
+| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) | Redesigned (27 + 32 tests) |
 | `fault` | `Fault` class: planar/file/seg creation, forward modeling, vertices, moment, I/O | Redesigned (59 tests) |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
@@ -138,7 +138,7 @@ Run tests with:
 uv run pytest
 ```
 
-**337 tests passing** across 11 test files:
+**352 tests passing** across 11 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -148,8 +148,8 @@ uv run pytest
 | `tests/test_cross_validation.py` | 43 | Okada85 vs DC3D, Okada85 vs Okada92 wrapper, tdcalc vs Okada85, tdcalc vs DC3D at depth |
 | `tests/test_package.py` | 25 | Package imports, module accessibility, okada dispatcher, data class imports, API smoke tests |
 | `tests/test_transforms.py` | 20 | Round-trip conversions, reference values, edge cases, vectorization, custom ellipsoids |
-| `tests/test_greens.py` | 13 | Laplacian matrix shape, nullspace, stencils (interior/corner/edge), simple Laplacian |
-| `tests/test_fault.py` | 59 | Fault construction, planar factory, properties, forward modeling, moment/magnitude, laplacian, file I/O (center + seg), vertices, stress kernel, cross-validation |
+| `tests/test_greens.py` | 27 | Laplacian: structured (shape/nullspace/stencils/simple) + KNN unstructured (shape/nullspace/symmetry/sparsity/distance-weighting/irregular mesh/validation) |
+| `tests/test_fault.py` | 60 | Fault construction, planar factory, properties, forward modeling, moment/magnitude, laplacian (structured + KNN), file I/O (center + seg), vertices, stress kernel, cross-validation |
 | `tests/test_data.py` | 47 | DataSet base, GNSS (3-comp + horizontal), InSAR (LOS projection), Vertical, covariance, file I/O |
 | `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
 | `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |

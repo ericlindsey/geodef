@@ -4,7 +4,7 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 
 ## Current Status
 
-**309 tests passing** across 10 test files.
+**352 tests passing** across 11 test files.
 
 - **Phase 1 (Green's functions)** -- complete
 - **Phase 2 (Package structure)** -- complete
@@ -21,7 +21,7 @@ See `PLAN.md` for the full development roadmap.
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
-| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) |
 | `fault` | `Fault` class: fault creation, forward modeling, vertices, moment, file I/O |
 | `data` | `DataSet` base class + `GNSS`, `InSAR`, `Vertical` data types |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
@@ -145,10 +145,24 @@ K = fault.stress_kernel(mu=30e9)  # shape (4*N, 2*N)
 
 ### Laplacian (Smoothing Operator)
 
-For structured rectangular grids, a finite-difference Laplacian is available for regularized inversions:
+A discrete Laplacian is available for regularized inversions, and works for both structured and unstructured faults:
 
 ```python
 L = fault.laplacian  # shape (N, N), cached after first access
+```
+
+For structured rectangular grids (created via `Fault.planar()`), this uses finite-difference stencils. For unstructured meshes (loaded from `.seg` files with geometric sizing, or triangular meshes), it uses a distance-weighted K-nearest-neighbors graph Laplacian (`k=6`). The KNN Laplacian assigns inverse-distance weights to the nearest neighbors and symmetrizes the graph, ensuring constants are in the nullspace.
+
+The underlying functions are also available directly:
+
+```python
+from geodef.greens import build_laplacian_2d, build_laplacian_knn
+
+# Structured grid
+L = build_laplacian_2d(n_length=10, n_width=5)
+
+# Unstructured mesh (returns a sparse matrix)
+L = build_laplacian_knn(fault.centers_local, k=6)
 ```
 
 ### Grid Index Lookup
@@ -253,7 +267,7 @@ See `examples/01_forward_model.ipynb` for a worked demo covering:
 
 - **Inversion** -- regularized least-squares with automatic hyperparameter tuning (ABIC, cross-validation)
 - **Uncertainty** -- model covariance, resolution matrices, fit statistics
-- **Triangular faults** -- slab2.0 mesh generation, unstructured Laplacian
+- **Triangular faults** -- slab2.0 mesh generation
 - **Tutorial notebooks** -- progressive series from basic statistics to full geodetic inversion
 
 ## Testing

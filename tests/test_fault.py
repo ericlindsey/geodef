@@ -304,7 +304,26 @@ class TestLaplacian:
         L2 = simple_fault.laplacian
         assert L1 is L2
 
-    def test_laplacian_no_grid_raises(self):
+    def test_laplacian_unstructured_uses_knn(self):
+        """Unstructured fault (no grid_shape) should use KNN Laplacian."""
+        n = 20
+        lats = np.linspace(0, 1, n)
+        lons = np.full(n, 100.0)
+        fault = Fault(
+            lats, lons,
+            np.linspace(5e3, 30e3, n),
+            np.zeros(n),
+            np.full(n, 45.0),
+            np.full(n, 10e3),
+            np.full(n, 10e3),
+            grid_shape=None,
+        )
+        L = fault.laplacian
+        assert L.shape == (n, n)
+        np.testing.assert_allclose(L.sum(axis=1), 0.0, atol=1e-10)
+
+    def test_laplacian_unstructured_too_few_patches_raises(self):
+        """Unstructured fault with fewer patches than k should raise."""
         fault = Fault(
             np.array([0.0, 1.0]),
             np.array([100.0, 100.0]),
@@ -315,7 +334,7 @@ class TestLaplacian:
             np.array([10e3, 10e3]),
             grid_shape=None,
         )
-        with pytest.raises(ValueError, match="structured grid"):
+        with pytest.raises(ValueError, match="k"):
             _ = fault.laplacian
 
 
