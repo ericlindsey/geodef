@@ -280,17 +280,17 @@ G = geodef.greens.greens(fault, data)  # second call: loads from cache
 
 ---
 
-## Phase 4: Inverse Framework (`geodef.invert`)
+## Phase 4: Inverse Framework (`geodef.invert`) [IN PROGRESS]
 
-### 4.1 One-Call Inversion
+### 4.1 One-Call Inversion [DONE]
 
-The simple call uses sensible defaults. Regularization is controlled via two main kwargs: `smoothing` (what type of regularization matrix) and `smoothing_strength` (how much weight it gets):
+`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **43 tests** in `tests/test_invert.py`.
 
 ```python
 # Simplest call: unregularized weighted least-squares
 result = geodef.invert(fault, [gnss, insar])
 
-# Laplacian smoothing with fixed weight
+# Laplacian smoothing with fixed weight and non-negative bounds
 result = geodef.invert(fault, [gnss, insar],
                        smoothing='laplacian',
                        smoothing_strength=1e3,
@@ -298,65 +298,77 @@ result = geodef.invert(fault, [gnss, insar],
                        method='bounded_ls')
 
 result.slip          # (N, 2) strike-slip and dip-slip
-result.residuals     # per-dataset residuals
+result.slip_vector   # (2N,) blocked: [ss_0, ..., ss_N, ds_0, ..., ds_N]
+result.residuals     # (M,) observation minus prediction
+result.predicted     # (M,) forward-modeled observations
 result.chi2          # reduced chi-squared
+result.rms           # RMS misfit
 result.moment        # scalar seismic moment
 result.Mw            # moment magnitude
+result.smoothing_strength  # lambda used (None if unregularized)
 ```
 
-### 4.2 Regularization
+**Column layout:** Green's matrices and slip vectors use blocked format: columns `[:N]` are strike-slip, columns `[N:]` are dip-slip. This enables block-diagonal Laplacians and per-component bounds/regularization.
+
+### 4.2 Regularization [DONE]
 
 Regularization is split into two concerns: **what matrix** to penalize with (`smoothing`) and **how strongly** to weight it (`smoothing_strength`).
 
-**`smoothing`** — controls the regularization matrix L in the penalty term ||Lm||^2:
+**`smoothing`** — controls the regularization matrix L in the penalty term ||L(m - m_ref)||^2:
 
-| `smoothing` value | What it builds |
-|-------------------|---------------|
-| `'laplacian'` (default) | Graph Laplacian for triangular meshes, finite-difference for rectangular grids. Area-weighted. |
-| `'stresskernel'` | Stress interaction kernel (strain Green's functions evaluated at patch centers). For stress-shadow constraints (Lindsey et al., 2021). |
-| `'damping'` | Identity matrix (Tikhonov / L2 damping). |
-| `numpy.ndarray` | Custom (N, N) regularization matrix. Pass any matrix directly. |
+| `smoothing` value | What it builds | Status |
+|-------------------|---------------|--------|
+| `'laplacian'` | `block_diag(L, L)` — graph Laplacian for triangular meshes, finite-difference for rectangular grids | **Done** |
+| `'stresskernel'` | Stress interaction kernel from `fault.stress_kernel()` | **Done** |
+| `'damping'` | Identity matrix (Tikhonov / L2 damping) | **Done** |
+| `numpy.ndarray` | Custom regularization matrix, passed through directly | **Done** |
 
-Stress kernels are computed using the strain Green's functions from okada/tri, evaluated at fault patch centers — no additional Matlab porting needed beyond the existing strain implementations. These are also cached via `geodef.cache`.
+**`smoothing_target`** — optional reference model vector, shape (2N,). Regularizes toward this target instead of zero: minimizes ||L(m - m_ref)||^2. Useful for backslip/coupling inversions regularizing toward plate rate.
 
 **`smoothing_strength`** — controls the scalar weight on the regularization term:
 
-| `smoothing_strength` value | Behavior |
-|---------------------------|----------|
-| `float` (e.g. `1e3`) | Fixed weight (lambda). |
-| `'abic'` | Automatic via ABIC optimization. |
-| `'cv'` | Automatic via cross-validation (use `cv_folds` kwarg, default 5). |
-
-**Additional inversion kwargs:**
-
-| Kwarg | Type | What it does |
-|-------|------|-------------|
-| `bounds` | `tuple` or `None` | Per-component slip bounds, e.g. `(0, None)` for non-negative |
-| `cv_folds` | `int` | Number of folds when `smoothing_strength='cv'` (default 5) |
-| `smoothing_range` | `tuple` | Search range for ABIC/CV, e.g. `(1e-2, 1e6)` |
-| `method` | `str` | Solver choice (see 4.4) |
+| `smoothing_strength` value | Behavior | Status |
+|---------------------------|----------|--------|
+| `float` (e.g. `1e3`) | Fixed weight (lambda) | **Done** |
+| `'abic'` | Automatic via ABIC optimization | Not yet |
+| `'cv'` | Automatic via cross-validation | Not yet |
 
 **Examples showing the full range:**
 
 ```python
-# Laplacian smoothing, auto-tuned via ABIC
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='abic')
+# Laplacian smoothing with fixed weight
+result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength=1e3)
 
-# Stress-shadow constraints with fixed weight
+# Stress-kernel regularization, non-negative
 result = geodef.invert(fault, data, smoothing='stresskernel', smoothing_strength=1e4,
-                       bounds=(0, None), method='constrained')
+                       bounds=(0, None))
 
-# Simple damping
+# Damping
 result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1.0)
 
-# Custom regularization matrix
+# Custom matrix
 result = geodef.invert(fault, data, smoothing=my_matrix, smoothing_strength=1e3)
+
+# Regularize toward a reference model
+result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1e3,
+                       smoothing_target=m_ref)
 
 # No regularization (default)
 result = geodef.invert(fault, data)
 ```
 
-### 4.3 Hyperparameter Tuning
+### 4.3 Solvers [MOSTLY DONE]
+
+| `method` value | Description | When to use | Status |
+|----------------|-------------|------------|--------|
+| `'wls'` (default) | Weighted least-squares (`np.linalg.lstsq`) | Fast, no constraints | **Done** |
+| `'nnls'` | `scipy.optimize.nnls` | Non-negative slip only | **Done** |
+| `'bounded_ls'` | `scipy.optimize.lsq_linear` | Bounded slip components | **Done** |
+| `'constrained'` | Quadratic programming | Stress-shadow inequality constraints | Not yet |
+
+Auto-selection when `method=None`: `bounds=None` → WLS, `bounds=(0, None)` → NNLS, general bounds → bounded_ls.
+
+### 4.4 Hyperparameter Tuning [NOT STARTED]
 
 ```python
 # Automatic via ABIC (works with any smoothing type)
@@ -373,31 +385,30 @@ lc.plot()           # trade-off curve with optimal point marked
 lc.optimal          # recommended smoothing_strength value
 ```
 
-### 4.4 Solvers
-
-| `method` value | Description | When to use |
-|----------------|-------------|------------|
-| `'wls'` (default) | Weighted least-squares | Fast, no constraints |
-| `'nnls'` | `scipy.optimize.nnls` | Non-negative slip only |
-| `'bounded_ls'` | `scipy.optimize.lsq_linear` | Bounded slip components |
-| `'constrained'` | Quadratic programming | Stress-shadow inequality constraints |
+**Implementation plan:**
+- `smoothing_strength='abic'`: ABIC criterion (Fukuda & Johnson 2008). Requires eigenvalue decomposition of `L^T L` and `G^T W G`. Reference: `related/stress-shadows/functions/abic_alphabeta.m`.
+- `smoothing_strength='cv'`: K-fold cross-validation. Partitions data, solves K sub-problems, selects lambda minimizing prediction error. Reference: `related/stress-shadows/functions/kfold_cv_jointinv.m`.
+- `geodef.lcurve()`: Sweep over lambda values, compute misfit norm and model norm, return `LCurveResult` with `.plot()` and `.optimal`.
+- Additional kwargs: `cv_folds` (default 5), `smoothing_range` (default `(1e-2, 1e6)`).
 
 ---
 
 ## Phase 5: Uncertainty & Model Assessment
 
 ### 5.1 Model Covariance & Resolution
-- `result.covariance` — model covariance matrix Cm
-- `result.resolution` — resolution matrix R
+- `result.covariance` — model covariance matrix Cm = (G^T W G + lambda L^T L)^{-1} G^T W G (G^T W G + lambda L^T L)^{-1}
+- `result.resolution` — resolution matrix R = (G^T W G + lambda L^T L)^{-1} G^T W G
 - `result.uncertainty` — per-patch 1-sigma from diagonal of Cm
 
-### 5.2 Fit Statistics
-- `result.chi2`, `result.rms`, per-dataset residuals
+### 5.2 Fit Statistics [PARTIALLY DONE]
+- ~~`result.chi2`, `result.rms`~~ **Done** — computed in `invert()`
+- ~~`result.moment`, `result.Mw`~~ **Done** — computed in `invert()`
+- Per-dataset residuals — not yet (currently returns total residuals vector)
 - F-test for model comparison
 
-### 5.3 Moment & Magnitude
-- `result.moment`, `result.Mw` — computed automatically
-- `fault.moment(slip)` — standalone calculation
+### 5.3 Moment & Magnitude [DONE]
+- ~~`result.moment`, `result.Mw`~~ **Done** — computed automatically
+- ~~`fault.moment(slip)`~~ **Done** — standalone calculation
 
 ---
 
@@ -446,13 +457,15 @@ Phase 1 (Tests & Green's functions)    COMPLETE
     │
 Phase 2 (Package scaffolding)          COMPLETE
     │
-    ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (337 tests)
+    ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (352 tests)
     │       │
-    │       └── Phase 4 (Inversion)      ← NEXT
+    │       └── Phase 4 (Inversion)      IN PROGRESS (4.1-4.3 done, 395 tests)
+    │               │
+    │               ├── 4.4 Hyperparameter tuning  ← NEXT
     │               │
     │               └── Phase 5 (Uncertainty)
     │
-    ├── Phase 6 (Plotting + I/O)         ← can start during Phase 3
+    ├── Phase 6 (Plotting + I/O)         ← can start anytime
     │
     └── Phase 7 (Tutorials + Docs)       ← after core library is stable
 ```

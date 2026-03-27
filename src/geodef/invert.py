@@ -25,7 +25,7 @@ class InversionResult:
 
     Attributes:
         slip: Strike-slip and dip-slip per patch, shape (N, 2).
-        slip_vector: Interleaved solution [ss0, ds0, ss1, ds1, ...], shape (2N,).
+        slip_vector: Blocked solution [ss0, ..., ssN, ds0, ..., dsN], shape (2N,).
         residuals: Observation minus prediction, shape (M,).
         predicted: Forward-modeled observations, shape (M,).
         chi2: Reduced chi-squared misfit.
