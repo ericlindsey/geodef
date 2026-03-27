@@ -213,9 +213,10 @@ class TestConsistencyWithDisplacement:
         slip_d = rng.uniform(-1, 1, fault_4x3.n_patches)
 
         G = greens(fault_4x3, gnss)
-        m = np.empty(2 * fault_4x3.n_patches)
-        m[0::2] = slip_s
-        m[1::2] = slip_d
+        n = fault_4x3.n_patches
+        m = np.empty(2 * n)
+        m[:n] = slip_s
+        m[n:] = slip_d
         pred = G @ m
 
         ue, un, uz = fault_4x3.displacement(lat, lon, slip_strike=slip_s, slip_dip=slip_d)

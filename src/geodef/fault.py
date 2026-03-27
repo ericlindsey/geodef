@@ -617,10 +617,10 @@ class Fault:
 
         G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
 
-        # Build slip vector: interleaved [ss0, ds0, ss1, ds1, ...]
+        # Build slip vector: blocked [ss0, ..., ssN, ds0, ..., dsN]
         m = np.empty(2 * self.n_patches)
-        m[0::2] = slip_s
-        m[1::2] = slip_d
+        m[:self.n_patches] = slip_s
+        m[self.n_patches:] = slip_d
 
         d = G @ m
 

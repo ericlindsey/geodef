@@ -23,10 +23,11 @@ geodef/
 │   ├── greens.py          # Green's matrix assembly + Laplacian regularization
 │   ├── fault.py           # Fault class: factory methods, forward modeling, vertices, I/O
 │   ├── data.py            # DataSet base + GNSS, InSAR, Vertical data types
+│   ├── invert.py          # One-call inversion: WLS, NNLS, bounded LS, regularization
 │   ├── cache.py           # Hash-based disk caching for Green's matrices and stress kernels
 │   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
 │   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
-├── tests/                 # Test suite (337 tests, run with `uv run pytest`)
+├── tests/                 # Test suite (395 tests, run with `uv run pytest`)
 │   ├── test_okada85.py    # Okada85 reference cases + property tests
 │   ├── test_okada92.py    # Okada92/DC3D tests
 │   ├── test_tdcalc.py     # Triangular dislocation tests
@@ -38,6 +39,7 @@ geodef/
 │   ├── test_data.py       # DataSet base, GNSS, InSAR, Vertical, covariance
 │   ├── test_greens_integration.py  # Green's matrix assembly, projection, stacking
 │   ├── test_cache.py      # Cache module: hashing, config, cached_compute, greens/stress integration
+│   ├── test_invert.py     # Inversion: solvers, regularization, bounds, fit statistics
 │   └── reference_data/    # Matlab-generated .npz reference files
 ├── examples/              # Worked example notebooks
 │   ├── 01_forward_model.ipynb  # Forward modeling demo: fault, GNSS, G matrix, prediction
@@ -67,6 +69,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) | Redesigned (27 + 32 tests) |
 | `fault` | `Fault` class: planar/file/seg creation, forward modeling, vertices, moment, I/O | Redesigned (59 tests) |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
+| `invert` | One-call inversion: WLS, NNLS, bounded LS; Laplacian/damping/stress-kernel regularization | New (43 tests) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
@@ -113,12 +116,15 @@ See `PLAN.md` for the detailed development plan.
 High-level priorities:
 1. ~~Finalize and test existing Green's function implementations (okada85, okada92, tdcalc)~~ **DONE**
 2. ~~Design the `geodef` package structure and migrate existing code~~ **DONE**
-3. ~~Implement core library: Fault/Data/Greens/Cache abstractions (Phase 3)~~ **DONE** (3.1–3.4, 337 tests passing)
+3. ~~Implement core library: Fault/Data/Greens/Cache abstractions (Phase 3)~~ **DONE** (3.1–3.4, 352 tests passing)
    - ~~3.1 `Fault` class~~ **DONE** — factory classmethods, forward modeling, vertices, moment, seg format I/O
    - ~~3.2 `DataSet` classes~~ **DONE** — GNSS (3-comp or horizontal-only), InSAR (LOS), Vertical; file I/O, covariance
    - ~~3.3 `greens` assembly~~ **DONE** — polymorphic G matrix, okada+tri engines, projection, stacking helpers
    - ~~3.4 `cache` module~~ **DONE** — SHA-256 hash-based `.npz` caching for greens() and stress_kernel()
 4. Implement inverse framework: regularization, solvers, hyperparameters
+   - ~~4.1 `invert` module~~ **DONE** — WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel regularization, smoothing_target
+   - 4.2 Hyperparameter tuning (ABIC, cross-validation, L-curve)
+   - 4.3 Constrained solver (QP for inequality constraints)
 5. Port tutorial notebooks to use the new library
 6. Add uncertainty quantification
 
@@ -138,7 +144,7 @@ Run tests with:
 uv run pytest
 ```
 
-**352 tests passing** across 11 test files:
+**395 tests passing** across 12 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -153,6 +159,7 @@ uv run pytest
 | `tests/test_data.py` | 47 | DataSet base, GNSS (3-comp + horizontal), InSAR (LOS projection), Vertical, covariance, file I/O |
 | `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
 | `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |
+| `tests/test_invert.py` | 43 | WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, joint datasets, fit statistics, validation |
 
 Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 

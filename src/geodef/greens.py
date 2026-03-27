@@ -45,8 +45,8 @@ def displacement_greens(
     """Build displacement Green's matrix for rectangular fault patches.
 
     Each set of 3 rows corresponds to [E, N, U] displacements for one
-    observation point. Each set of 2 columns corresponds to unit
-    [strike-slip, dip-slip] on one fault patch.
+    observation point. Columns are blocked: the first ``npatch`` columns
+    are strike-slip, the next ``npatch`` are dip-slip.
 
     Args:
         lat: Observation latitudes (nobs,).
@@ -61,7 +61,8 @@ def displacement_greens(
         nu: Poisson's ratio.
 
     Returns:
-        G matrix of shape (3*nobs, 2*npatch).
+        G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
+        strike-slip, columns ``[npatch:]`` are dip-slip.
     """
     alt = np.zeros_like(np.asarray(lon, dtype=float))
     nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
@@ -92,8 +93,8 @@ def displacement_greens(
         gdip[::3] = dip_e
         gdip[1::3] = dip_n
         gdip[2::3] = dip_u
-        G[:, 2 * ipatch] = gstr
-        G[:, 2 * ipatch + 1] = gdip
+        G[:, ipatch] = gstr
+        G[:, npatch + ipatch] = gdip
 
     return G
 
@@ -114,7 +115,8 @@ def strain_greens(
     """Build strain Green's matrix for rectangular fault patches.
 
     Each set of 4 rows corresponds to [NN, NE, EN, EE] strain components
-    for one observation point.
+    for one observation point. Columns are blocked: the first ``npatch``
+    columns are strike-slip, the next ``npatch`` are dip-slip.
 
     Args:
         lat: Observation latitudes (nobs,).
@@ -132,7 +134,8 @@ def strain_greens(
             uses okada92 (DC3D) for internal deformation at depth.
 
     Returns:
-        G matrix of shape (4*nobs, 2*npatch).
+        G matrix of shape (4*nobs, 2*npatch). Columns ``[:npatch]`` are
+        strike-slip, columns ``[npatch:]`` are dip-slip.
     """
     alt = np.zeros_like(np.asarray(lon, dtype=float))
     nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
@@ -166,8 +169,8 @@ def strain_greens(
             gdip[1::4] = dip_ne
             gdip[2::4] = dip_en
             gdip[3::4] = dip_ee
-            G[:, 2 * ipatch] = gstr
-            G[:, 2 * ipatch + 1] = gdip
+            G[:, ipatch] = gstr
+            G[:, npatch + ipatch] = gdip
     else:
         from geodef import okada92
         obs_depth = np.asarray(obs_depth, dtype=float)
@@ -192,14 +195,14 @@ def strain_greens(
                 )
                 row = 4 * iobs
                 # NN, NE, EN, EE from the 3x3 gradient tensor
-                G[row, 2 * ipatch] = strain_ss[1, 1]      # NN
-                G[row + 1, 2 * ipatch] = strain_ss[1, 0]  # NE
-                G[row + 2, 2 * ipatch] = strain_ss[0, 1]  # EN
-                G[row + 3, 2 * ipatch] = strain_ss[0, 0]  # EE
-                G[row, 2 * ipatch + 1] = strain_ds[1, 1]
-                G[row + 1, 2 * ipatch + 1] = strain_ds[1, 0]
-                G[row + 2, 2 * ipatch + 1] = strain_ds[0, 1]
-                G[row + 3, 2 * ipatch + 1] = strain_ds[0, 0]
+                G[row, ipatch] = strain_ss[1, 1]
+                G[row + 1, ipatch] = strain_ss[1, 0]
+                G[row + 2, ipatch] = strain_ss[0, 1]
+                G[row + 3, ipatch] = strain_ss[0, 0]
+                G[row, npatch + ipatch] = strain_ds[1, 1]
+                G[row + 1, npatch + ipatch] = strain_ds[1, 0]
+                G[row + 2, npatch + ipatch] = strain_ds[0, 1]
+                G[row + 3, npatch + ipatch] = strain_ds[0, 0]
 
     return G
 
@@ -220,8 +223,8 @@ def tri_displacement_greens(
     """Build displacement Green's matrix for triangular fault patches.
 
     Each set of 3 rows corresponds to [E, N, U] displacements for one
-    observation point. Each set of 2 columns corresponds to unit
-    [strike-slip, dip-slip] on one fault patch.
+    observation point. Columns are blocked: the first ``npatch`` columns
+    are strike-slip, the next ``npatch`` are dip-slip.
 
     Args:
         lat: Observation latitudes (nobs,).
@@ -233,7 +236,8 @@ def tri_displacement_greens(
         nu: Poisson's ratio.
 
     Returns:
-        G matrix of shape (3*nobs, 2*npatch).
+        G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
+        strike-slip, columns ``[npatch:]`` are dip-slip.
     """
     lat = np.asarray(lat, dtype=float)
     lon = np.asarray(lon, dtype=float)
@@ -265,8 +269,8 @@ def tri_displacement_greens(
         gdip[::3] = disp_ds[:, 0]
         gdip[1::3] = disp_ds[:, 1]
         gdip[2::3] = disp_ds[:, 2]
-        G[:, 2 * ipatch] = gstr
-        G[:, 2 * ipatch + 1] = gdip
+        G[:, ipatch] = gstr
+        G[:, npatch + ipatch] = gdip
 
     return G
 
@@ -284,7 +288,8 @@ def tri_strain_greens(
     """Build strain Green's matrix for triangular fault patches.
 
     Each set of 6 rows corresponds to [xx, yy, zz, xy, xz, yz] strain
-    components for one observation point.
+    components for one observation point. Columns are blocked: the first
+    ``npatch`` columns are strike-slip, the next ``npatch`` are dip-slip.
 
     Args:
         lat: Observation latitudes (nobs,).
@@ -300,7 +305,8 @@ def tri_strain_greens(
             surface in the ENU frame used by TDstrainHS).
 
     Returns:
-        G matrix of shape (6*nobs, 2*npatch).
+        G matrix of shape (6*nobs, 2*npatch). Columns ``[:npatch]`` are
+        strike-slip, columns ``[npatch:]`` are dip-slip.
     """
     lat = np.asarray(lat, dtype=float)
     lon = np.asarray(lon, dtype=float)
@@ -330,8 +336,8 @@ def tri_strain_greens(
         for c in range(6):
             gstr[c::6] = strain_ss[:, c]
             gdip[c::6] = strain_ds[:, c]
-        G[:, 2 * ipatch] = gstr
-        G[:, 2 * ipatch + 1] = gdip
+        G[:, ipatch] = gstr
+        G[:, npatch + ipatch] = gdip
 
     return G
 
@@ -383,8 +389,9 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
 
     Returns:
         Projected Green's matrix. For a single dataset with M observations
-        and a fault with N patches: shape (M_obs, 2*N). For multiple
-        datasets: rows are vertically stacked.
+        and a fault with N patches: shape (M_obs, 2*N). Columns are blocked:
+        ``[:N]`` strike-slip, ``[N:]`` dip-slip. For multiple datasets:
+        rows are vertically stacked.
     """
     from geodef.data import DataSet
 

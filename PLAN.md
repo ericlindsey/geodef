@@ -199,7 +199,7 @@ class GNSS(DataSet):
     greens_type = 'displacement'
 
     def project(self, ue, un, uz):
-        # 3 components per station, interleaved: [e1,n1,u1, e2,n2,u2, ...]
+        # 3 components per station, interleaved by station: [e1,n1,u1, e2,n2,u2, ...]
         return np.column_stack([ue, un, uz]).ravel()
 
 class InSAR(DataSet):
@@ -230,7 +230,7 @@ Adding a new data type = write a new class with `greens_type` and `project()`. N
 
 Polymorphic Green's matrix assembly using `DataSet.greens_type` dispatch and `DataSet.project()`. **32 tests** in `tests/test_greens_integration.py`.
 
-**Core function:** `greens(fault, datasets)` — assembles the full Green's matrix for any combination of fault engine and data type. Slip columns are interleaved `[ss_0, ds_0, ss_1, ds_1, ...]`.
+**Core function:** `greens(fault, datasets)` — assembles the full Green's matrix for any combination of fault engine and data type. Slip columns are blocked: `[ss_0, ..., ss_N, ds_0, ..., ds_N]`.
 
 ```python
 G = geodef.greens.greens(fault, gnss)              # single dataset
