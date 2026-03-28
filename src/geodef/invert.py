@@ -90,18 +90,12 @@ def invert(
     if isinstance(datasets, DataSet):
         datasets = [datasets]
 
-    if components not in _VALID_COMPONENTS:
-        raise ValueError(
-            f"components must be one of {_VALID_COMPONENTS}, "
-            f"got {components!r}"
-        )
-
     n_patches = fault.n_patches
     n_components = 2 if components == "both" else 1
     n_params = n_components * n_patches
 
     _validate_args(
-        smoothing, smoothing_strength, bounds, method,
+        datasets, components, smoothing, smoothing_strength, bounds, method,
         smoothing_target, n_params,
     )
 
@@ -166,6 +160,8 @@ def invert(
 
 
 def _validate_args(
+    datasets: list[DataSet],
+    components: str,
     smoothing: str | np.ndarray | None,
     smoothing_strength: float,
     bounds: tuple[float | None, float | None] | None,
@@ -174,6 +170,18 @@ def _validate_args(
     n_params: int,
 ) -> None:
     """Validate invert() arguments."""
+    for ds in datasets:
+        if not isinstance(ds, DataSet):
+            raise TypeError(
+                f"datasets must contain DataSet instances, got {type(ds).__name__}"
+            )
+
+    if components not in _VALID_COMPONENTS:
+        raise ValueError(
+            f"components must be one of {_VALID_COMPONENTS}, "
+            f"got {components!r}"
+        )
+
     if method is not None and method not in _VALID_METHODS:
         raise ValueError(
             f"method must be one of {_VALID_METHODS}, got {method!r}"
