@@ -4,12 +4,13 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 
 ## Current Status
 
-**352 tests passing** across 11 test files.
+**478 tests passing** across 12 test files.
 
 - **Phase 1 (Green's functions)** -- complete
 - **Phase 2 (Package structure)** -- complete
-- **Phase 3 (Fault + Data + Greens)** -- complete
-- **Phase 4 (Inversion)** -- next
+- **Phase 3 (Fault + Data + Greens + Cache)** -- complete
+- **Phase 4 (Inversion)** -- complete
+- **Phase 5 (Uncertainty & model assessment)** -- in progress
 
 See `PLAN.md` for the full development roadmap.
 
@@ -24,6 +25,8 @@ See `PLAN.md` for the full development roadmap.
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) |
 | `fault` | `Fault` class: fault creation, forward modeling, vertices, moment, file I/O |
 | `data` | `DataSet` base class + `GNSS`, `InSAR`, `Vertical` data types |
+| `invert` | Inversion: solvers, regularization, hyperparameter tuning, model assessment |
+| `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids (optional deps) |
 
@@ -251,7 +254,160 @@ d = geodef.stack_obs([gnss, insar])
 W = geodef.stack_weights([gnss, insar])
 ```
 
-Slip columns are interleaved as `[ss_0, ds_0, ss_1, ds_1, ...]`. Each `DataSet` subclass defines how raw displacement/strain components are projected into its observation space (e.g., LOS projection for InSAR, interleaved E/N/U for GNSS).
+Slip columns are blocked: `[:N]` are strike-slip, `[N:]` are dip-slip. Each `DataSet` subclass defines how raw displacement/strain components are projected into its observation space (e.g., LOS projection for InSAR, interleaved E/N/U for GNSS).
+
+## Inversion
+
+`geodef.invert()` solves `d = Gm` for fault slip with one call:
+
+```python
+import geodef
+
+# Simplest call: unregularized weighted least-squares
+result = geodef.invert(fault, [gnss, insar])
+
+# Laplacian smoothing with non-negative bounds
+result = geodef.invert(fault, [gnss, insar],
+                       smoothing='laplacian',
+                       smoothing_strength=1e3,
+                       bounds=(0, None))
+
+result.slip          # (N, 2): [strike-slip, dip-slip] per patch
+result.slip_vector   # (2N,): blocked solution vector
+result.residuals     # (M,): observation minus prediction
+result.predicted     # (M,): forward-modeled observations
+result.chi2          # reduced chi-squared
+result.rms           # RMS misfit
+result.moment        # scalar seismic moment (N-m)
+result.Mw            # moment magnitude
+```
+
+### Solvers
+
+| `method` | Description | When to use |
+|----------|-------------|------------|
+| `'wls'` (default) | Weighted least-squares | Fast, no constraints |
+| `'nnls'` | Non-negative least-squares | Non-negative slip only |
+| `'bounded_ls'` | Bounded least-squares | Box constraints on slip |
+| `'constrained'` | Quadratic programming (SLSQP) | Inequality constraints |
+
+Auto-selection: `bounds=None` -> WLS, `bounds=(0, None)` -> NNLS, general bounds -> bounded_ls.
+
+The `'constrained'` solver also accepts linear inequality constraints via `constraints=(C, d_ineq)`, enforcing `C @ m <= d_ineq` (e.g., stress positivity constraints).
+
+### Regularization
+
+Regularization is controlled by two parameters: **what matrix** (`smoothing`) and **how strongly** (`smoothing_strength`):
+
+```python
+# Laplacian smoothing (finite-difference or KNN, depending on fault type)
+result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength=1e3)
+
+# Stress-kernel regularization, non-negative
+result = geodef.invert(fault, data, smoothing='stresskernel', smoothing_strength=1e4,
+                       bounds=(0, None))
+
+# Tikhonov / L2 damping
+result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1.0)
+
+# Custom regularization matrix
+result = geodef.invert(fault, data, smoothing=my_matrix, smoothing_strength=1e3)
+
+# Regularize toward a reference model (e.g., plate rate for coupling inversions)
+result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1e3,
+                       smoothing_target=m_ref)
+```
+
+### Component Selection
+
+Solve for both slip components, or just one:
+
+```python
+result = geodef.invert(fault, data, components='both')     # strike + dip (default)
+result = geodef.invert(fault, data, components='strike')   # strike-slip only
+result = geodef.invert(fault, data, components='dip')      # dip-slip only
+```
+
+### Automatic Hyperparameter Tuning
+
+The regularization weight can be selected automatically:
+
+```python
+# ABIC criterion (Fukuda & Johnson 2008)
+result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='abic')
+
+# K-fold cross-validation
+result = geodef.invert(fault, data, smoothing='laplacian',
+                       smoothing_strength='cv', cv_folds=5)
+```
+
+### Exploring the Smoothing Parameter
+
+Two exploration tools let you visualize how the smoothing parameter affects the inversion:
+
+**L-curve** -- trade-off between data misfit and model roughness:
+
+```python
+lc = geodef.lcurve(fault, data, smoothing='laplacian',
+                   smoothing_range=(1e-2, 1e6), n=50)
+lc.plot()               # log-log misfit vs model norm, optimal marked
+lc.optimal              # lambda at maximum curvature (the "corner")
+lc.smoothing_values     # (50,) lambda array
+lc.misfits              # (50,) data misfit norms
+lc.model_norms          # (50,) regularized model norms
+```
+
+**ABIC curve** -- information criterion as a function of lambda:
+
+```python
+ac = geodef.abic_curve(fault, data, smoothing='laplacian',
+                       smoothing_range=(1e-2, 1e8), n=50)
+ac.plot()               # semilog ABIC vs lambda, optimal marked
+ac.optimal              # lambda at minimum ABIC
+ac.abic_values          # (50,) ABIC at each lambda
+ac.misfits              # (50,) data misfit norms
+ac.model_norms          # (50,) regularized model norms
+```
+
+Both return result objects with a `.plot()` method (returns a matplotlib Figure) and an `.optimal` attribute for the recommended lambda.
+
+### Model Assessment
+
+These functions are computed on demand (not during `invert()`) since they require forming and inverting dense matrices.
+
+**Per-dataset diagnostics** -- when inverting multiple datasets jointly, it is useful to evaluate how well each dataset is fit individually. This requires the hat matrix `H`, which describes how much influence each observation has on the estimated model. The hat matrix is defined as `H = G_w (G_w^T G_w + lambda L^T L)^{-1} G_w^T`, where `G_w` is the data-weighted Green's matrix. The diagonal entries of `H` (called *leverage*) measure how many effective model parameters are "used" by each observation. Summing the leverage over a dataset's observations gives the effective number of parameters consumed by that dataset, which determines its effective degrees of freedom (`dof = n_obs - leverage`) and hence its reduced chi-squared.
+
+```python
+diags = geodef.dataset_diagnostics(result, fault, [gnss, insar])
+for i, d in enumerate(diags):
+    print(f"Dataset {i}: chi2={d.chi2:.1f}, reduced_chi2={d.reduced_chi2:.2f}, "
+          f"wrms={d.wrms:.4f}, n_obs={d.n_obs}, dof={d.dof:.1f}")
+```
+
+**Model covariance, resolution, and uncertainty:**
+
+```python
+# Model covariance: Cm = H_inv @ G^T W G @ H_inv  (regularized)
+Cm = geodef.model_covariance(result, fault, data)
+
+# Resolution matrix: R = (G^T W G + lambda L^T L)^{-1} G^T W G
+# R = I for perfect resolution; diag(R) < 1 where regularization dominates
+R = geodef.model_resolution(result, fault, data)
+
+# Per-parameter 1-sigma uncertainty: sqrt(diag(Cm))
+unc = geodef.model_uncertainty(result, fault, data)
+```
+
+## Caching
+
+Green's matrices and stress kernels are automatically cached to disk for fast reuse:
+
+```python
+geodef.cache.set_dir("my_cache/")   # default: .geodef_cache/
+geodef.cache.enable()                # on by default
+geodef.cache.info()                  # {"n_files": 3, "total_bytes": 12345}
+geodef.cache.clear()                 # remove all cached files
+```
 
 ## Examples
 
@@ -263,11 +419,12 @@ See `examples/01_forward_model.ipynb` for a worked demo covering:
 - Joint Green's matrix for GNSS + InSAR
 - Visualizing slip distribution and predicted displacements
 
+See `examples/02_caching.ipynb` for a caching demo.
+
 ## Planned Features
 
-- **Inversion** -- regularized least-squares with automatic hyperparameter tuning (ABIC, cross-validation)
-- **Uncertainty** -- model covariance, resolution matrices, fit statistics
 - **Triangular faults** -- slab2.0 mesh generation
+- **Visualization** -- built-in plotting for slip, fit, vectors, L-curves
 - **Tutorial notebooks** -- progressive series from basic statistics to full geodetic inversion
 
 ## Testing
@@ -281,4 +438,5 @@ uv run pytest
 - Okada, Y., 1985. Surface deformation due to shear and tensile faults in a half-space. *Bull. Seismol. Soc. Am.*, 75(4), 1135--1154.
 - Okada, Y., 1992. Internal deformation due to shear and tensile faults in a half-space. *Bull. Seismol. Soc. Am.*, 82(2), 1018--1040.
 - Nikkhoo, M. & Walter, T.R., 2015. Triangular dislocation: an analytical, artefact-free solution. *Geophys. J. Int.*, 201(2), 1119--1141.
+- Fukuda, J. & Johnson, K.M., 2008. A fully Bayesian inversion for spatial distribution of fault slip with objective smoothing. *Bull. Seismol. Soc. Am.*, 98(3), 1128--1146.
 - Lindsey, E.O. et al., 2021. Slip rate deficit and earthquake potential on shallow megathrusts. *Nature Geoscience*, 14, 801--807.

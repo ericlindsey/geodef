@@ -280,11 +280,11 @@ G = geodef.greens.greens(fault, data)  # second call: loads from cache
 
 ---
 
-## Phase 4: Inverse Framework (`geodef.invert`) [IN PROGRESS]
+## Phase 4: Inverse Framework (`geodef.invert`) [COMPLETED]
 
 ### 4.1 One-Call Inversion [DONE]
 
-`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **58 tests** in `tests/test_invert.py`.
+`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **95 tests** in `tests/test_invert.py`.
 
 ```python
 # Simplest call: unregularized weighted least-squares
@@ -338,8 +338,8 @@ Regularization is split into two concerns: **what matrix** to penalize with (`sm
 | `smoothing_strength` value | Behavior | Status |
 |---------------------------|----------|--------|
 | `float` (e.g. `1e3`) | Fixed weight (lambda) | **Done** |
-| `'abic'` | Automatic via ABIC optimization | Not yet |
-| `'cv'` | Automatic via cross-validation | Not yet |
+| `'abic'` | Automatic via ABIC optimization | **Done** |
+| `'cv'` | Automatic via cross-validation | **Done** |
 
 **Examples showing the full range:**
 
@@ -365,18 +365,20 @@ result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1e3,
 result = geodef.invert(fault, data)
 ```
 
-### 4.3 Solvers [MOSTLY DONE]
+### 4.3 Solvers [DONE]
 
 | `method` value | Description | When to use | Status |
 |----------------|-------------|------------|--------|
 | `'wls'` (default) | Weighted least-squares (`np.linalg.lstsq`) | Fast, no constraints | **Done** |
 | `'nnls'` | `scipy.optimize.nnls` | Non-negative slip only | **Done** |
 | `'bounded_ls'` | `scipy.optimize.lsq_linear` | Bounded slip components | **Done** |
-| `'constrained'` | Quadratic programming | Stress-shadow inequality constraints | Not yet |
+| `'constrained'` | QP via `scipy.optimize.minimize` (SLSQP) | Inequality constraints | **Done** |
 
 Auto-selection when `method=None`: `bounds=None` → WLS, `bounds=(0, None)` → NNLS, general bounds → bounded_ls.
 
-### 4.4 Hyperparameter Tuning [NOT STARTED]
+The `'constrained'` solver accepts inequality constraints via the `constraints=(C, d_ineq)` parameter, enforcing `C @ m <= d_ineq`. Supports simultaneous box bounds and inequality constraints using SLSQP.
+
+### 4.4 Hyperparameter Tuning [DONE]
 
 ```python
 # Automatic via ABIC (works with any smoothing type)
@@ -391,28 +393,42 @@ lc = geodef.lcurve(fault, data, smoothing='laplacian',
                    smoothing_range=(1e-2, 1e6), n=50)
 lc.plot()           # trade-off curve with optimal point marked
 lc.optimal          # recommended smoothing_strength value
+
+# Manual exploration: ABIC curve
+ac = geodef.abic_curve(fault, data, smoothing='laplacian',
+                       smoothing_range=(1e-2, 1e8), n=50)
+ac.plot()           # ABIC vs lambda with optimal point marked
+ac.optimal          # lambda at minimum ABIC
+ac.abic_values      # ABIC at each lambda
+ac.misfits          # data misfit norms (for context)
+ac.model_norms      # regularized model norms (for context)
 ```
 
-**Implementation plan:**
-- `smoothing_strength='abic'`: ABIC criterion (Fukuda & Johnson 2008). Requires eigenvalue decomposition of `L^T L` and `G^T W G`. Reference: `related/stress-shadows/functions/abic_alphabeta.m`.
-- `smoothing_strength='cv'`: K-fold cross-validation. Partitions data, solves K sub-problems, selects lambda minimizing prediction error. Reference: `related/stress-shadows/functions/kfold_cv_jointinv.m`.
-- `geodef.lcurve()`: Sweep over lambda values, compute misfit norm and model norm, return `LCurveResult` with `.plot()` and `.optimal`.
-- Additional kwargs: `cv_folds` (default 5), `smoothing_range` (default `(1e-2, 1e6)`).
+**Implementation details:**
+- `smoothing_strength='abic'`: ABIC criterion (Fukuda & Johnson 2008). Solves the regularized system for each candidate lambda, computes eigenvalue decomposition of `L^T L` and `G^T W G + lambda * L^T L`. Optimized via `scipy.optimize.minimize_scalar` in log10 space over [-6, 10]. Standalone function `geodef.compute_abic()` also exported for manual exploration.
+- `smoothing_strength='cv'`: K-fold cross-validation. Randomly partitions weighted data rows into K folds (default 5), trains on K-1 folds with regularization, evaluates prediction error on the held-out fold. Sweeps 50 lambda values in geomspace [1e-4, 1e8] and selects the minimizer.
+- `geodef.lcurve()`: Sweeps lambda over a log-spaced range, computes data misfit norm ||Gm - d|| and model norm ||Lm|| at each. Returns `LCurveResult` with `.plot()` (matplotlib figure) and `.optimal` (max-curvature corner via parametric curvature of the log-log L-curve).
+- `geodef.abic_curve()`: Sweeps lambda and computes ABIC at each value, along with misfit and model norms. Returns `ABICCurveResult` with `.plot()` (semilog ABIC vs lambda) and `.optimal` (lambda at minimum ABIC). Useful for visualizing the ABIC landscape and verifying the automatic selection.
 
 ---
 
-## Phase 5: Uncertainty & Model Assessment
+## Phase 5: Uncertainty & Model Assessment [IN PROGRESS]
 
-### 5.1 Model Covariance & Resolution
-- `result.covariance` — model covariance matrix Cm = (G^T W G + lambda L^T L)^{-1} G^T W G (G^T W G + lambda L^T L)^{-1}
-- `result.resolution` — resolution matrix R = (G^T W G + lambda L^T L)^{-1} G^T W G
-- `result.uncertainty` — per-patch 1-sigma from diagonal of Cm
+### 5.1 Model Covariance & Resolution [DONE]
 
-### 5.2 Fit Statistics [PARTIALLY DONE]
+On-demand functions (not computed during `invert()`) for expensive matrix operations:
+
+- ~~`model_covariance(result, fault, datasets)`~~ **Done** — `Cm = H_inv @ G^T W G @ H_inv` (regularized) or `(G^T W G)^{-1}` (unregularized)
+- ~~`model_resolution(result, fault, datasets)`~~ **Done** — `R = (G^T W G + lambda L^T L)^{-1} G^T W G`; R = I for perfect resolution
+- ~~`model_uncertainty(result, fault, datasets)`~~ **Done** — per-parameter 1-sigma = `sqrt(diag(Cm))`
+
+Design: `InversionResult` stores `smoothing` (the type/matrix used) so these functions can reconstruct L from the result without the user re-passing it. G is rebuilt from cache (fast).
+
+### 5.2 Fit Statistics [DONE]
 - ~~`result.chi2`, `result.rms`~~ **Done** — computed in `invert()`
 - ~~`result.moment`, `result.Mw`~~ **Done** — computed in `invert()`
-- Per-dataset residuals — not yet (currently returns total residuals vector)
-- F-test for model comparison
+- ~~Per-dataset diagnostics~~ **Done** — `dataset_diagnostics(result, fault, datasets)` returns per-dataset chi2, reduced chi2, WRMS, RMS, effective DOF, and leverage via the regularized hat matrix `H = G_w (G_w^T G_w + lambda L^T L)^{-1} G_w^T`. Computed on demand.
+- F-test for model comparison — not yet
 
 ### 5.3 Moment & Magnitude [DONE]
 - ~~`result.moment`, `result.Mw`~~ **Done** — computed automatically
@@ -467,11 +483,9 @@ Phase 2 (Package scaffolding)          COMPLETE
     │
     ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (352 tests)
     │       │
-    │       └── Phase 4 (Inversion)      IN PROGRESS (4.1-4.3 done, 410 tests)
+    │       └── Phase 4 (Inversion)      COMPLETE (4.1-4.4 done)
     │               │
-    │               ├── 4.4 Hyperparameter tuning  ← NEXT
-    │               │
-    │               └── Phase 5 (Uncertainty)
+    │               └── Phase 5 (Uncertainty)  IN PROGRESS (5.1-5.3 done, 478 tests)
     │
     ├── Phase 6 (Plotting + I/O)         ← can start anytime
     │

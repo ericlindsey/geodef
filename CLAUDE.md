@@ -23,11 +23,11 @@ geodef/
 │   ├── greens.py          # Green's matrix assembly + Laplacian regularization
 │   ├── fault.py           # Fault class: factory methods, forward modeling, vertices, I/O
 │   ├── data.py            # DataSet base + GNSS, InSAR, Vertical data types
-│   ├── invert.py          # One-call inversion: WLS, NNLS, bounded LS, regularization
+│   ├── invert.py          # Inversion: solvers, regularization, tuning, model assessment
 │   ├── cache.py           # Hash-based disk caching for Green's matrices and stress kernels
 │   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
 │   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
-├── tests/                 # Test suite (410 tests, run with `uv run pytest`)
+├── tests/                 # Test suite (478 tests, run with `uv run pytest`)
 │   ├── test_okada85.py    # Okada85 reference cases + property tests
 │   ├── test_okada92.py    # Okada92/DC3D tests
 │   ├── test_tdcalc.py     # Triangular dislocation tests
@@ -39,7 +39,7 @@ geodef/
 │   ├── test_data.py       # DataSet base, GNSS, InSAR, Vertical, covariance
 │   ├── test_greens_integration.py  # Green's matrix assembly, projection, stacking
 │   ├── test_cache.py      # Cache module: hashing, config, cached_compute, greens/stress integration
-│   ├── test_invert.py     # Inversion: solvers, regularization, bounds, fit statistics
+│   ├── test_invert.py     # Inversion: solvers, regularization, bounds, fit stats, model assessment
 │   └── reference_data/    # Matlab-generated .npz reference files
 ├── examples/              # Worked example notebooks
 │   ├── 01_forward_model.ipynb  # Forward modeling demo: fault, GNSS, G matrix, prediction
@@ -69,7 +69,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) | Redesigned (27 + 32 tests) |
 | `fault` | `Fault` class: planar/file/seg creation, forward modeling, vertices, moment, I/O | Redesigned (59 tests) |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
-| `invert` | One-call inversion: WLS, NNLS, bounded LS; Laplacian/damping/stress-kernel regularization; per-component selection | New (58 tests) |
+| `invert` | One-call inversion: WLS, NNLS, bounded LS, constrained QP; regularization (Laplacian/damping/stress-kernel); ABIC/CV/L-curve/ABIC-curve hyperparameter tuning; per-component selection; per-dataset diagnostics (hat matrix), model covariance/resolution/uncertainty | New (126 tests) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
@@ -121,12 +121,16 @@ High-level priorities:
    - ~~3.2 `DataSet` classes~~ **DONE** — GNSS (3-comp or horizontal-only), InSAR (LOS), Vertical; file I/O, covariance
    - ~~3.3 `greens` assembly~~ **DONE** — polymorphic G matrix, okada+tri engines, projection, stacking helpers
    - ~~3.4 `cache` module~~ **DONE** — SHA-256 hash-based `.npz` caching for greens() and stress_kernel()
-4. Implement inverse framework: regularization, solvers, hyperparameters
+4. ~~Implement inverse framework: regularization, solvers, hyperparameters~~ **DONE** (4.1–4.4)
    - ~~4.1 `invert` module~~ **DONE** — WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel regularization, smoothing_target
-   - 4.2 Hyperparameter tuning (ABIC, cross-validation, L-curve)
-   - 4.3 Constrained solver (QP for inequality constraints)
-5. Port tutorial notebooks to use the new library
-6. Add uncertainty quantification
+   - ~~4.2 Regularization~~ **DONE** — Laplacian, damping, stress-kernel, custom matrix; smoothing_target for backslip
+   - ~~4.3 Solvers~~ **DONE** — WLS, NNLS, bounded LS, constrained QP (SLSQP with inequality constraints)
+   - ~~4.4 Hyperparameter tuning~~ **DONE** — ABIC (Fukuda & Johnson 2008), K-fold CV, L-curve with corner finding
+5. Uncertainty & model assessment — **IN PROGRESS** (5.1–5.3 done, 478 tests passing)
+   - ~~5.1 Model covariance & resolution~~ **DONE** — `model_covariance()`, `model_resolution()`, `model_uncertainty()`
+   - ~~5.2 Fit statistics~~ **DONE** — per-dataset diagnostics via hat matrix, chi2/reduced_chi2/WRMS/DOF
+   - ~~5.3 Moment & magnitude~~ **DONE**
+6. Port tutorial notebooks to use the new library
 
 ## Important Rules
 
@@ -144,7 +148,7 @@ Run tests with:
 uv run pytest
 ```
 
-**410 tests passing** across 12 test files:
+**478 tests passing** across 12 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -159,7 +163,7 @@ uv run pytest
 | `tests/test_data.py` | 47 | DataSet base, GNSS (3-comp + horizontal), InSAR (LOS projection), Vertical, covariance, file I/O |
 | `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
 | `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |
-| `tests/test_invert.py` | 58 | WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, joint datasets, fit statistics, component selection, validation |
+| `tests/test_invert.py` | 126 | WLS/NNLS/bounded LS/constrained QP solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, ABIC/CV/L-curve/ABIC-curve hyperparameter tuning, joint datasets, fit statistics, component selection, validation, per-dataset diagnostics, model covariance/resolution/uncertainty |
 
 Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 
