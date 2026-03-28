@@ -284,7 +284,7 @@ G = geodef.greens.greens(fault, data)  # second call: loads from cache
 
 ### 4.1 One-Call Inversion [DONE]
 
-`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **43 tests** in `tests/test_invert.py`.
+`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **58 tests** in `tests/test_invert.py`.
 
 ```python
 # Simplest call: unregularized weighted least-squares
@@ -297,8 +297,8 @@ result = geodef.invert(fault, [gnss, insar],
                        bounds=(0, None),
                        method='bounded_ls')
 
-result.slip          # (N, 2) strike-slip and dip-slip
-result.slip_vector   # (2N,) blocked: [ss_0, ..., ss_N, ds_0, ..., ds_N]
+result.slip          # (N, n_components) — (N,2) for both, (N,1) for strike/dip
+result.slip_vector   # (n_components*N,) blocked solution vector
 result.residuals     # (M,) observation minus prediction
 result.predicted     # (M,) forward-modeled observations
 result.chi2          # reduced chi-squared
@@ -306,9 +306,17 @@ result.rms           # RMS misfit
 result.moment        # scalar seismic moment
 result.Mw            # moment magnitude
 result.smoothing_strength  # lambda used (None if unregularized)
+result.components    # 'both', 'strike', or 'dip'
 ```
 
 **Column layout:** Green's matrices and slip vectors use blocked format: columns `[:N]` are strike-slip, columns `[N:]` are dip-slip. This enables block-diagonal Laplacians and per-component bounds/regularization.
+
+**Component selection:** The `components` parameter controls which slip components to solve for:
+- `'both'` (default) — solve for strike-slip and dip-slip (2N parameters)
+- `'strike'` — strike-slip only (N parameters)
+- `'dip'` — dip-slip only (N parameters)
+
+The full 2N-column Green's matrix is always computed; `invert()` selects the appropriate columns internally. Smoothing matrices, bounds, and smoothing targets are sized to match the selected components.
 
 ### 4.2 Regularization [DONE]
 
@@ -318,12 +326,12 @@ Regularization is split into two concerns: **what matrix** to penalize with (`sm
 
 | `smoothing` value | What it builds | Status |
 |-------------------|---------------|--------|
-| `'laplacian'` | `block_diag(L, L)` — graph Laplacian for triangular meshes, finite-difference for rectangular grids | **Done** |
+| `'laplacian'` | Graph Laplacian — `block_diag(L, L)` for both components, single `L` for strike/dip only | **Done** |
 | `'stresskernel'` | Stress interaction kernel from `fault.stress_kernel()` | **Done** |
 | `'damping'` | Identity matrix (Tikhonov / L2 damping) | **Done** |
 | `numpy.ndarray` | Custom regularization matrix, passed through directly | **Done** |
 
-**`smoothing_target`** — optional reference model vector, shape (2N,). Regularizes toward this target instead of zero: minimizes ||L(m - m_ref)||^2. Useful for backslip/coupling inversions regularizing toward plate rate.
+**`smoothing_target`** — optional reference model vector, shape (n_components * N,). Regularizes toward this target instead of zero: minimizes ||L(m - m_ref)||^2. Useful for backslip/coupling inversions regularizing toward plate rate.
 
 **`smoothing_strength`** — controls the scalar weight on the regularization term:
 
@@ -459,7 +467,7 @@ Phase 2 (Package scaffolding)          COMPLETE
     │
     ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (352 tests)
     │       │
-    │       └── Phase 4 (Inversion)      IN PROGRESS (4.1-4.3 done, 395 tests)
+    │       └── Phase 4 (Inversion)      IN PROGRESS (4.1-4.3 done, 410 tests)
     │               │
     │               ├── 4.4 Hyperparameter tuning  ← NEXT
     │               │

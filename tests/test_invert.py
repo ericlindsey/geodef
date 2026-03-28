@@ -484,3 +484,116 @@ class TestValidation:
         wrong = np.eye(5)
         with pytest.raises(ValueError, match="columns"):
             invert(fault_4x3, gnss, smoothing=wrong, smoothing_strength=1.0)
+
+
+# ======================================================================
+# Components parameter
+# ======================================================================
+
+class TestComponents:
+    """Test single-component inversions via the components parameter."""
+
+    def test_default_components_is_both(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss)
+        assert result.components == "both"
+
+    def test_components_stored_in_result(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        for comp in ("both", "strike", "dip"):
+            result = invert(fault_4x3, gnss, components=comp)
+            assert result.components == comp
+
+    def test_invalid_components_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="components"):
+            invert(fault_4x3, gnss, components="invalid")
+
+    def test_strike_only_slip_shape(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="strike")
+        assert result.slip.shape == (12, 1)
+        assert result.slip_vector.shape == (12,)
+
+    def test_dip_only_slip_shape(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
+        result = invert(fault_4x3, gnss, components="dip")
+        assert result.slip.shape == (12, 1)
+        assert result.slip_vector.shape == (12,)
+
+    def test_both_slip_shape(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="both")
+        assert result.slip.shape == (12, 2)
+        assert result.slip_vector.shape == (24,)
+
+    def test_strike_only_recovers_strike_slip(self, fault_4x3, obs_points):
+        slip_ss = np.ones(12)
+        slip_ds = np.zeros(12)
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result = invert(fault_4x3, gnss, components="strike")
+        np.testing.assert_allclose(result.slip[:, 0], slip_ss, atol=0.1)
+
+    def test_dip_only_recovers_dip_slip(self, fault_4x3, obs_points):
+        slip_ss = np.zeros(12)
+        slip_ds = np.ones(12) * 0.5
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result = invert(fault_4x3, gnss, components="dip")
+        np.testing.assert_allclose(result.slip[:, 0], slip_ds, atol=0.1)
+
+    def test_strike_only_laplacian_shape(self, fault_4x3, obs_points):
+        """Laplacian should be (N, N) not (2N, 2N) for single component."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="strike",
+                        smoothing="laplacian", smoothing_strength=100.0)
+        assert result.slip.shape == (12, 1)
+
+    def test_dip_only_damping(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
+        result = invert(fault_4x3, gnss, components="dip",
+                        smoothing="damping", smoothing_strength=100.0)
+        assert result.slip.shape == (12, 1)
+
+    def test_strike_only_with_bounds(self, fault_4x3, obs_points):
+        slip_ss = np.ones(12)
+        slip_ds = np.zeros(12)
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result = invert(fault_4x3, gnss, components="strike",
+                        bounds=(0, None))
+        assert np.all(result.slip_vector >= -1e-10)
+
+    def test_strike_only_smoothing_target(self, fault_4x3, obs_points):
+        """Smoothing target should have shape (N,) for single component."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        n = fault_4x3.n_patches
+        target = np.full(n, 5.0)
+        result = invert(fault_4x3, gnss, components="strike",
+                        smoothing="damping", smoothing_strength=1e10,
+                        smoothing_target=target)
+        np.testing.assert_allclose(result.slip_vector, target, atol=0.1)
+
+    def test_smoothing_target_wrong_shape_single_component(self, fault_4x3, obs_points):
+        """Target shape (2N,) should fail when components='strike'."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="smoothing_target"):
+            invert(fault_4x3, gnss, components="strike",
+                   smoothing="damping", smoothing_strength=1.0,
+                   smoothing_target=np.zeros(24))
+
+    def test_moment_correct_single_component(self, fault_4x3, obs_points):
+        slip_ss = np.ones(12)
+        slip_ds = np.zeros(12)
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result = invert(fault_4x3, gnss, components="strike")
+        slip_mag = np.abs(result.slip[:, 0])
+        expected_moment = fault_4x3.moment(slip_mag)
+        np.testing.assert_allclose(result.moment, expected_moment, rtol=1e-6)
+
+    def test_custom_smoothing_matrix_single_component(self, fault_4x3, obs_points):
+        """Custom matrix with N columns should work for single component."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        n = fault_4x3.n_patches
+        custom = np.eye(n)
+        result = invert(fault_4x3, gnss, components="strike",
+                        smoothing=custom, smoothing_strength=100.0)
+        assert result.slip.shape == (12, 1)

@@ -27,7 +27,7 @@ geodef/
 │   ├── cache.py           # Hash-based disk caching for Green's matrices and stress kernels
 │   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
 │   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
-├── tests/                 # Test suite (395 tests, run with `uv run pytest`)
+├── tests/                 # Test suite (410 tests, run with `uv run pytest`)
 │   ├── test_okada85.py    # Okada85 reference cases + property tests
 │   ├── test_okada92.py    # Okada92/DC3D tests
 │   ├── test_tdcalc.py     # Triangular dislocation tests
@@ -69,7 +69,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) | Redesigned (27 + 32 tests) |
 | `fault` | `Fault` class: planar/file/seg creation, forward modeling, vertices, moment, I/O | Redesigned (59 tests) |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
-| `invert` | One-call inversion: WLS, NNLS, bounded LS; Laplacian/damping/stress-kernel regularization | New (43 tests) |
+| `invert` | One-call inversion: WLS, NNLS, bounded LS; Laplacian/damping/stress-kernel regularization; per-component selection | New (58 tests) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
@@ -144,7 +144,7 @@ Run tests with:
 uv run pytest
 ```
 
-**395 tests passing** across 12 test files:
+**410 tests passing** across 12 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -159,7 +159,7 @@ uv run pytest
 | `tests/test_data.py` | 47 | DataSet base, GNSS (3-comp + horizontal), InSAR (LOS projection), Vertical, covariance, file I/O |
 | `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
 | `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |
-| `tests/test_invert.py` | 43 | WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, joint datasets, fit statistics, validation |
+| `tests/test_invert.py` | 58 | WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, joint datasets, fit statistics, component selection, validation |
 
 Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 

@@ -17,6 +17,7 @@ from geodef.greens import greens, stack_obs, stack_weights
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
+_VALID_COMPONENTS = {"both", "strike", "dip"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -24,8 +25,10 @@ class InversionResult:
     """Result of a fault slip inversion.
 
     Attributes:
-        slip: Strike-slip and dip-slip per patch, shape (N, 2).
-        slip_vector: Blocked solution [ss0, ..., ssN, ds0, ..., dsN], shape (2N,).
+        slip: Slip per patch, shape (N, n_components). Columns ordered
+            as [strike-slip, dip-slip] for ``components='both'``, or
+            a single column for ``'strike'`` or ``'dip'``.
+        slip_vector: Blocked solution vector, shape (n_components * N,).
         residuals: Observation minus prediction, shape (M,).
         predicted: Forward-modeled observations, shape (M,).
         chi2: Reduced chi-squared misfit.
@@ -33,6 +36,7 @@ class InversionResult:
         moment: Scalar seismic moment in N-m.
         Mw: Moment magnitude.
         smoothing_strength: Regularization weight used, or None if unregularized.
+        components: Which slip components were solved for.
     """
 
     slip: np.ndarray
@@ -44,6 +48,7 @@ class InversionResult:
     moment: float
     Mw: float
     smoothing_strength: float | None
+    components: str
 
 
 def invert(
@@ -54,6 +59,7 @@ def invert(
     bounds: tuple[float | None, float | None] | None = None,
     method: str | None = None,
     smoothing_target: np.ndarray | None = None,
+    components: str = "both",
 ) -> InversionResult:
     """Invert geodetic data for fault slip.
 
@@ -67,9 +73,13 @@ def invert(
             Use None for unbounded side, e.g. ``(0, None)``.
         method: Solver — ``'wls'``, ``'nnls'``, or ``'bounded_ls'``.
             Auto-selected from bounds if None.
-        smoothing_target: Reference model vector, shape (2N,). Regularizes
-            toward this target instead of zero: minimizes
-            ``||L(m - m_ref)||^2``. Only valid when smoothing is set.
+        smoothing_target: Reference model vector, shape
+            (n_components * N,). Regularizes toward this target instead
+            of zero: minimizes ``||L(m - m_ref)||^2``. Only valid when
+            smoothing is set.
+        components: Which slip components to solve for. One of
+            ``'both'`` (strike + dip, default), ``'strike'``, or
+            ``'dip'``.
 
     Returns:
         InversionResult with slip, residuals, and fit statistics.
@@ -80,24 +90,35 @@ def invert(
     if isinstance(datasets, DataSet):
         datasets = [datasets]
 
-    n_params = 2 * fault.n_patches
+    if components not in _VALID_COMPONENTS:
+        raise ValueError(
+            f"components must be one of {_VALID_COMPONENTS}, "
+            f"got {components!r}"
+        )
+
+    n_patches = fault.n_patches
+    n_components = 2 if components == "both" else 1
+    n_params = n_components * n_patches
 
     _validate_args(
         smoothing, smoothing_strength, bounds, method,
         smoothing_target, n_params,
     )
 
-    # Assemble data system
-    G = greens(fault, datasets)
+    # Assemble full data system (always 2N columns from greens)
+    G_full = greens(fault, datasets)
     d = stack_obs(datasets)
     W = stack_weights(datasets)
+
+    # Select columns for requested component(s)
+    G = _select_columns(G_full, n_patches, components)
 
     # Weight the system: G_w, d_w such that ||G_w m - d_w||^2 = (Gm-d)^T W (Gm-d)
     G_w, d_w = _apply_weights(G, d, W)
 
     # Build and append regularization
     if smoothing is not None and smoothing_strength > 0:
-        L = _build_smoothing_matrix(fault, smoothing, n_params)
+        L = _build_smoothing_matrix(fault, smoothing, n_params, n_components)
         d_reg = _build_reg_rhs(L, smoothing_strength, smoothing_target)
         G_aug = np.vstack([G_w, np.sqrt(smoothing_strength) * L])
         d_aug = np.concatenate([d_w, d_reg])
@@ -120,9 +141,13 @@ def invert(
     chi2 = _compute_chi2(residuals, W, n_params)
     rms = float(np.sqrt(np.mean(residuals ** 2)))
 
-    n_patches = fault.n_patches
-    slip = np.column_stack([m[:n_patches], m[n_patches:]])
-    slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
+    # Reshape slip and compute moment
+    if components == "both":
+        slip = np.column_stack([m[:n_patches], m[n_patches:]])
+        slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
+    else:
+        slip = m.reshape(-1, 1)
+        slip_mag = np.abs(m)
     moment = fault.moment(slip_mag)
     mw = moment_to_magnitude(moment)
 
@@ -136,6 +161,7 @@ def invert(
         moment=moment,
         Mw=mw,
         smoothing_strength=reg_strength,
+        components=components,
     )
 
 
@@ -178,6 +204,26 @@ def _validate_args(
             )
 
 
+def _select_columns(
+    G_full: np.ndarray, n_patches: int, components: str,
+) -> np.ndarray:
+    """Select G matrix columns for the requested slip component(s).
+
+    Args:
+        G_full: Full Green's matrix, shape (M, 2*N).
+        n_patches: Number of fault patches N.
+        components: ``'both'``, ``'strike'``, or ``'dip'``.
+
+    Returns:
+        G matrix with columns for the requested components.
+    """
+    if components == "both":
+        return G_full
+    if components == "strike":
+        return G_full[:, :n_patches]
+    return G_full[:, n_patches:]
+
+
 def _apply_weights(
     G: np.ndarray, d: np.ndarray, W: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -202,13 +248,15 @@ def _build_smoothing_matrix(
     fault: Fault,
     smoothing: str | np.ndarray,
     n_params: int,
+    n_components: int,
 ) -> np.ndarray:
     """Build the regularization matrix L.
 
     Args:
         fault: Fault geometry.
         smoothing: Smoothing type or custom matrix.
-        n_params: Number of model parameters (2 * n_patches).
+        n_params: Number of model parameters (n_components * n_patches).
+        n_components: Number of slip components (1 or 2).
 
     Returns:
         Regularization matrix with n_params columns.
@@ -221,6 +269,8 @@ def _build_smoothing_matrix(
 
     if smoothing == "laplacian":
         L_patch = fault.laplacian
+        if n_components == 1:
+            return L_patch
         return scipy.linalg.block_diag(L_patch, L_patch)
 
     if smoothing == "stresskernel":
