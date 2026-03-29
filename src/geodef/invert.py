@@ -95,22 +95,57 @@ class LCurveResult:
     model_norms: np.ndarray
     optimal: float
 
-    def plot(self) -> "matplotlib.figure.Figure":
+    def plot(
+        self,
+        *,
+        ax: "matplotlib.axes.Axes | None" = None,
+        line_kwargs: dict | None = None,
+        marker_kwargs: dict | None = None,
+        annotate: bool = True,
+    ) -> "matplotlib.axes.Axes":
         """Plot the L-curve with the optimal point marked.
 
+        Args:
+            ax: Axes to plot on. Creates a new figure if ``None``.
+            line_kwargs: Extra kwargs for the curve line.
+            marker_kwargs: Extra kwargs for the optimal-point marker.
+            annotate: Whether to label the optimal point with its
+                smoothing-strength value (default ``True``).
+
         Returns:
-            Matplotlib Figure.
+            The axes used for plotting.
         """
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots()
-        ax.loglog(self.misfits, self.model_norms, "b.-")
+        if ax is None:
+            _, ax = plt.subplots()
+
+        lkw = {"color": "b", "marker": ".", "linestyle": "-"}
+        if line_kwargs:
+            lkw.update(line_kwargs)
+        ax.loglog(self.misfits, self.model_norms, **lkw)
+
+        mkw: dict = {"color": "r", "marker": "o", "markersize": 10,
+                      "linestyle": "none"}
+        if marker_kwargs:
+            mkw.update(marker_kwargs)
         idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
-        ax.loglog(self.misfits[idx], self.model_norms[idx], "ro", ms=10)
+        ax.loglog(self.misfits[idx], self.model_norms[idx], **mkw)
+
+        if annotate:
+            ax.annotate(
+                f"λ = {self.optimal:.3g}",
+                xy=(self.misfits[idx], self.model_norms[idx]),
+                xytext=(10, 10), textcoords="offset points",
+                fontsize=9, color=mkw.get("color", "r"),
+                arrowprops={"arrowstyle": "->",
+                             "color": mkw.get("color", "r")},
+            )
+
         ax.set_xlabel("Data misfit ||Gm - d||")
         ax.set_ylabel("Model norm ||Lm||")
         ax.set_title("L-curve")
-        return fig
+        return ax
 
 
 @dataclasses.dataclass(frozen=True)
@@ -131,22 +166,57 @@ class ABICCurveResult:
     model_norms: np.ndarray
     optimal: float
 
-    def plot(self) -> "matplotlib.figure.Figure":
+    def plot(
+        self,
+        *,
+        ax: "matplotlib.axes.Axes | None" = None,
+        line_kwargs: dict | None = None,
+        marker_kwargs: dict | None = None,
+        annotate: bool = True,
+    ) -> "matplotlib.axes.Axes":
         """Plot ABIC vs smoothing strength with the optimal point marked.
 
+        Args:
+            ax: Axes to plot on. Creates a new figure if ``None``.
+            line_kwargs: Extra kwargs for the curve line.
+            marker_kwargs: Extra kwargs for the optimal-point marker.
+            annotate: Whether to label the optimal point with its
+                smoothing-strength value (default ``True``).
+
         Returns:
-            Matplotlib Figure.
+            The axes used for plotting.
         """
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots()
-        ax.semilogx(self.smoothing_values, self.abic_values, "b.-")
+        if ax is None:
+            _, ax = plt.subplots()
+
+        lkw = {"color": "b", "marker": ".", "linestyle": "-"}
+        if line_kwargs:
+            lkw.update(line_kwargs)
+        ax.semilogx(self.smoothing_values, self.abic_values, **lkw)
+
+        mkw: dict = {"color": "r", "marker": "o", "markersize": 10,
+                      "linestyle": "none"}
+        if marker_kwargs:
+            mkw.update(marker_kwargs)
         idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
-        ax.semilogx(self.smoothing_values[idx], self.abic_values[idx], "ro", ms=10)
+        ax.semilogx(self.smoothing_values[idx], self.abic_values[idx], **mkw)
+
+        if annotate:
+            ax.annotate(
+                f"λ = {self.optimal:.3g}",
+                xy=(self.smoothing_values[idx], self.abic_values[idx]),
+                xytext=(0, 20), textcoords="offset points",
+                fontsize=9, color=mkw.get("color", "r"),
+                arrowprops={"arrowstyle": "->",
+                             "color": mkw.get("color", "r")},
+            )
+
         ax.set_xlabel("Smoothing strength (lambda)")
         ax.set_ylabel("ABIC")
         ax.set_title("ABIC curve")
-        return fig
+        return ax
 
 
 def invert(

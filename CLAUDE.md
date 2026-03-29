@@ -24,10 +24,11 @@ geodef/
 │   ├── fault.py           # Fault class: factory methods, forward modeling, vertices, I/O
 │   ├── data.py            # DataSet base + GNSS, InSAR, Vertical data types
 │   ├── invert.py          # Inversion: solvers, regularization, tuning, model assessment
+│   ├── plot.py            # Visualization: slip, vectors, InSAR, fault geometry, diagnostics
 │   ├── cache.py           # Hash-based disk caching for Green's matrices and stress kernels
 │   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
 │   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
-├── tests/                 # Test suite (478 tests, run with `uv run pytest`)
+├── tests/                 # Test suite (598 tests, run with `uv run pytest`)
 │   ├── test_okada85.py    # Okada85 reference cases + property tests
 │   ├── test_okada92.py    # Okada92/DC3D tests
 │   ├── test_tdcalc.py     # Triangular dislocation tests
@@ -40,10 +41,12 @@ geodef/
 │   ├── test_greens_integration.py  # Green's matrix assembly, projection, stacking
 │   ├── test_cache.py      # Cache module: hashing, config, cached_compute, greens/stress integration
 │   ├── test_invert.py     # Inversion: solvers, regularization, bounds, fit stats, model assessment
+│   ├── test_plot.py       # Visualization: slip, resolution, uncertainty, helpers
 │   └── reference_data/    # Matlab-generated .npz reference files
 ├── examples/              # Worked example notebooks
 │   ├── 01_forward_model.ipynb  # Forward modeling demo: fault, GNSS, G matrix, prediction
-│   └── 02_caching.ipynb   # Caching demo: Green's matrix and stress kernel speedups
+│   ├── 02_caching.ipynb   # Caching demo: Green's matrix and stress kernel speedups
+│   └── 03_plotting.ipynb  # Plotting demo: all plot types with customization examples
 ├── docs/                  # Auto-generated code overviews
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
 │   ├── okada/             # Okada85/92 rectangular dislocations (originals)
@@ -70,6 +73,7 @@ See `docs/` for detailed file-level and function-level overviews of the referenc
 | `fault` | `Fault` class: planar/file/seg creation, forward modeling, vertices, moment, I/O | Redesigned (59 tests) |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
 | `invert` | One-call inversion: WLS, NNLS, bounded LS, constrained QP; regularization (Laplacian/damping/stress-kernel); ABIC/CV/L-curve/ABIC-curve hyperparameter tuning; per-component selection; per-dataset diagnostics (hat matrix), model covariance/resolution/uncertainty | New (126 tests) |
+| `plot` | Visualization: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty | New (95 tests) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids | Migrated (requires optional deps) |
@@ -126,11 +130,15 @@ High-level priorities:
    - ~~4.2 Regularization~~ **DONE** — Laplacian, damping, stress-kernel, custom matrix; smoothing_target for backslip
    - ~~4.3 Solvers~~ **DONE** — WLS, NNLS, bounded LS, constrained QP (SLSQP with inequality constraints)
    - ~~4.4 Hyperparameter tuning~~ **DONE** — ABIC (Fukuda & Johnson 2008), K-fold CV, L-curve with corner finding
-5. Uncertainty & model assessment — **IN PROGRESS** (5.1–5.3 done, 478 tests passing)
+5. ~~Uncertainty & model assessment~~ **DONE** (5.1–5.3, 478 tests passing)
    - ~~5.1 Model covariance & resolution~~ **DONE** — `model_covariance()`, `model_resolution()`, `model_uncertainty()`
    - ~~5.2 Fit statistics~~ **DONE** — per-dataset diagnostics via hat matrix, chi2/reduced_chi2/WRMS/DOF
    - ~~5.3 Moment & magnitude~~ **DONE**
-6. Port tutorial notebooks to use the new library
+6. Visualization (`geodef.plot`) — **CURRENT** — see `PLAN.md` for detailed sub-tasks
+7. Mesh generation (`geodef.mesh`) — clean up and integrate existing code
+8. I/O additions — GMT export, extended data/fault formats
+9. Tutorial notebooks — scaffolded tutorials + worked examples with real data
+10. Future extensions — earthquake cycles, volume strain, cartopy, Euler poles, MCMC
 
 ## Important Rules
 
@@ -148,7 +156,7 @@ Run tests with:
 uv run pytest
 ```
 
-**478 tests passing** across 12 test files:
+**598 tests passing** across 14 test files:
 
 | File | Tests | What it covers |
 |------|-------|---------------|
@@ -164,6 +172,7 @@ uv run pytest
 | `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
 | `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |
 | `tests/test_invert.py` | 126 | WLS/NNLS/bounded LS/constrained QP solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, ABIC/CV/L-curve/ABIC-curve hyperparameter tuning, joint datasets, fit statistics, component selection, validation, per-dataset diagnostics, model covariance/resolution/uncertainty |
+| `tests/test_plot.py` | 120 | All plot types (slip, vectors, insar, fit, fault3d, map, resolution, uncertainty), rect+tri faults, kwargs passthrough, vertical colorbar, scale arrow loc, surface trace, 3D zorder, map values/slip_vector, L-curve/ABIC annotate refactor |
 
 Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
 

@@ -788,7 +788,7 @@ class TestLCurve:
         assert len(lc.smoothing_values) == 10
 
     def test_lcurve_plot(self, fault_4x3, obs_points):
-        """LCurveResult.plot() should return a matplotlib figure."""
+        """LCurveResult.plot() should return matplotlib axes."""
         from geodef.invert import lcurve
         import matplotlib
         matplotlib.use('Agg')
@@ -796,9 +796,9 @@ class TestLCurve:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
                      smoothing_range=(1e-2, 1e6), n=10)
-        fig = lc.plot()
-        assert isinstance(fig, plt.Figure)
-        plt.close(fig)
+        ax = lc.plot()
+        assert isinstance(ax, plt.Axes)
+        plt.close(ax.figure)
 
 
 # ======================================================================
@@ -870,9 +870,9 @@ class TestABICCurve:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
                         smoothing_range=(1e-2, 1e6), n=10)
-        fig = ac.plot()
-        assert isinstance(fig, plt.Figure)
-        plt.close(fig)
+        ax = ac.plot()
+        assert isinstance(ax, plt.Axes)
+        plt.close(ax.figure)
 
     def test_abic_curve_with_damping(self, fault_4x3, obs_points):
         from geodef.invert import abic_curve

@@ -8,503 +8,410 @@ Build **GeoDef**: a flexible, student-friendly Python library for forward and in
 
 ---
 
-## Phase 1: Foundation — Green's Functions & Testing [COMPLETED]
+## Completed Phases (1-5)
 
-All three Green's function implementations are verified and cross-validated. **113 tests pass** across 4 test files (949 lines total).
+Phases 1-5 are complete. See `CLAUDE.md` for the full module inventory, test counts, and architectural details.
 
-### 1.1 Finalize Okada92 Python Implementation [DONE]
-- Surface results verified to match `okada85.py` exactly (Okada92 at z=0 reproduces Okada85).
-- Tested across multiple dip angles (15, 45, 70, 90 degrees) and all slip components.
-- Depth variation, decay, linearity, and zero-slip tests all pass.
+| Phase | What was built | Tests |
+|-------|---------------|-------|
+| 1. Green's Functions | `okada85`, `okada92`, `tri` — verified against Matlab references, cross-validated | 113 |
+| 2. Library Structure | Package layout, `okada` dispatcher, tooling, code migration | 25 |
+| 3. Fault & Data | `Fault` class, `DataSet`/`GNSS`/`InSAR`/`Vertical`, `greens` assembly, `cache` | 167 |
+| 4. Inverse Framework | WLS/NNLS/bounded LS/constrained QP, Laplacian/damping/stress-kernel regularization, ABIC/CV/L-curve tuning | 126 |
+| 5. Uncertainty | Model covariance/resolution/uncertainty, per-dataset diagnostics, moment/magnitude | 47 |
+| 6. Visualization | `plot` module: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty; L-curve/ABIC refactor | 120 |
 
-### 1.2 Expand Okada85 Test Coverage [DONE]
-- 9 reference cases from Okada (1985) Table 2 for displacement, tilt, and strain (27 parametrized tests).
-- Geometry tests across 4 dip angles x 3 slip types (12 tests).
-- Symmetry: antisymmetry for vertical strike-slip, zero-slip, linearity.
-- Far-field decay test, vectorized input tests.
+**Total: 598 tests passing.**
 
-### 1.3 Expand tdcalc Test Coverage [DONE]
-- 4 Matlab reference configurations (FS_simple, FS_complex, HS_simple, HS_complex) for displacement and strain (8 tests).
-- Property tests: zero-slip, linearity, far-field decay, full-space vs half-space deep source.
-- Cross-validated against Okada85 at surface (triangle pair = rectangle, 9 geometry x slip combos).
-- Cross-validated against DC3D (Okada92) at depth for displacement and strain.
-
-### 1.4 Cross-Validation Suite [DONE]
-- `test_cross_validation.py` (428 lines): Okada85 vs DC3D at surface, Okada85 vs Okada92 wrapper at surface, tdcalc vs Okada85 at surface, tdcalc vs DC3D at depth (displacement + strain).
+Key design decisions preserved from earlier phases:
+- **Flat module structure** — `geodef.okada`, `geodef.fault`, `geodef.invert` (one file, one concept)
+- **Transparent Okada85/92 dispatch** — auto-selects based on observation depth
+- **Progressive complexity** — quick-start (Fault methods) → modular (compose modules) → low-level (raw Green's functions)
+- **Polymorphic data dispatch** — `DataSet.greens_type` + `DataSet.project()` enables new data types with zero changes elsewhere
+- **Blocked column layout** — `[ss_0..ss_N, ds_0..ds_N]` for Green's matrices and slip vectors
 
 ---
 
-## Phase 2: Library Structure & Packaging [COMPLETED]
+## Phase 6: Visualization (`geodef.plot`) — COMPLETE
 
-### 2.1 Package Layout [DONE]
+A plotting module with sensible defaults that remain fully customizable. All plotting functions pass `**kwargs` through to underlying matplotlib calls, so any artist property can be overridden without the library getting in the way.
 
-Design principle: **flat is better than nested**. Students should be able to do useful work with 1-2 imports. Advanced features are available but never required.
+### 6.1 Core Design Principles
 
-```
-geodef/
-├── pyproject.toml
-├── src/geodef/
-│   ├── __init__.py            # Top-level convenience API
-│   ├── okada.py               # Unified dispatcher: auto-selects okada85 or okada92
-│   ├── okada85.py             # Okada (1985) — surface displacements, tilts, strains
-│   ├── okada92.py             # Okada (1992) — internal deformation at depth
-│   ├── tri.py                 # Triangular dislocation interface (tdcalc)
-│   ├── fault.py               # Fault geometry: create, load, discretize, plot
-│   ├── data.py                # DataSet base + GNSS, InSAR, Vertical, etc.
-│   ├── greens.py              # Green's matrix assembly (G for any source+data combo)
-│   ├── invert.py              # Inversion: solve, regularize, tune hyperparameters
-│   ├── cache.py               # Hash-based caching for expensive matrix computations
-│   ├── transforms.py          # Coordinate transforms (geographic <-> local Cartesian)
-│   ├── mesh.py                # Triangular mesh generation (from slabMesh)
-│   └── plot.py                # Visualization utilities
-├── tests/
-├── tutorials/                 # Progressive notebook series (ported from shakeout_v2)
-└── examples/                  # Research-level worked examples
-```
+- **Defaults that look good out of the box** — colorbar, labels, title, appropriate colormap
+- **Full customizability via kwargs** — any matplotlib artist property can be overridden
+- **Axes-first pattern** — every function accepts an optional `ax` parameter; if `None`, creates a new figure/axes. Returns `ax` so users can continue customizing
+- **No hidden state** — functions never call `plt.show()`; users control display
+- **All functions return `ax`** — simple, consistent, composable. Users who need specific artists (colorbar, quiver, etc.) can grab them from the axes or capture them before calling the plot function
+- **Local Cartesian coordinates** — all plots use x (East, km) / y (North, km) by default. Geographic projection (lon/lat with cartopy) is deferred to Phase 9
 
-### 2.2 Key Design Decisions [DONE]
+### 6.2 Slip Distribution Plot (`plot.slip`)
 
-**Flat module structure**: No deeply nested subpackages. `geodef.okada`, `geodef.fault`, `geodef.invert` — each is one file, one concept. This avoids `from geodef.greens.rectangular.okada85 import displacement` in favor of `geodef.okada.displacement(...)`.
+Plot fault slip as colored patches. Works for both rectangular (`PatchCollection`) and triangular (`PolyCollection`) meshes with a unified interface.
 
-**Transparent Okada85/92 selection**: `okada.py` is a thin dispatcher — it calls okada85 when all observation points are at the surface (z=0) for speed, and okada92 otherwise. The user never needs to know which is called. The underlying `okada85.py` and `okada92.py` remain as separate files (this is convention in the geodetic community), but users typically only interact with `okada.py`.
-
-**Capitalization convention**: Classes use PascalCase (`Fault`, `Vertical`). Acronym class names stay fully capitalized (`GNSS`, `InSAR`). Standard scientific notation is preserved (`result.Mw`). Modules and functions are always snake_case. Data types are top-level classes (not nested under a `Data` namespace) with a shared `DataSet` base class — this is more Pythonic and plays better with type hints, pickle, and introspection. Examples:
-- `geodef.Fault.planar(...)` — class with factory classmethods
-- `geodef.GNSS(...)`, `geodef.InSAR(...)`, `geodef.Vertical(...)` — data type classes, importable directly
-- `isinstance(gnss, geodef.DataSet)` — base class for type checking
-- `result.Mw` — standard seismological notation
-- `geodef.greens(...)`, `geodef.invert(...)` — module-level functions, lowercase
-
-**Convenience top-level API**: Common 3-line workflows should work from `import geodef`:
 ```python
-import geodef
+ax = geodef.plot.slip(fault, result.slip)
 
-# Create a discretized fault
-fault = geodef.Fault.planar(lat=0, lon=100, depth=10e3, strike=320, dip=15,
-                            length=100e3, width=50e3, n_length=10, n_width=5)
-
-# Forward model with per-patch slip (50 patches = 10 x 5)
-slip_strike = np.random.uniform(0, 2, fault.n_patches)  # (50,) array
-slip_dip = np.zeros(fault.n_patches)
-ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip)
-
-# Scalar slip values broadcast to all patches
-ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=1.0, slip_dip=0.5)
+ax = geodef.plot.slip(fault, result.slip,
+    ax=ax,                          # plot on existing axes
+    component='dip',                # 'strike', 'dip', 'magnitude' (default)
+    cmap='RdBu_r',                  # any matplotlib colormap
+    vmin=-2, vmax=2,                # color limits
+    edgecolor='gray', linewidth=0.5,# patch outline style (**kwargs → PatchCollection)
+    colorbar=True,                  # default True
+    colorbar_label='Slip (m)',      # auto-generated if None
+    colorbar_kwargs={...},          # passed to fig.colorbar()
+    title='Coseismic slip',
+)
 ```
 
-**Progressive complexity**: The library exposes three levels:
-1. **Quick start** — `geodef.Fault.planar(...)` + `.displacement()` / `.invert()` methods (notebook-friendly)
-2. **Modular** — Compose `geodef.okada`, `geodef.greens`, `geodef.invert` for custom workflows
-3. **Low-level** — Direct access to `geodef.okada.displacement(e, n, depth, ...)` for maximum control
+**Implementation tasks:**
+1. Internal helper `_get_patch_vertices(fault)` → list of (4,2) or (3,2) arrays in km
+2. Internal helper `_get_slip_component(slip, n_patches, component)` → 1D array
+3. Build `PatchCollection` / `PolyCollection`, set array, apply kwargs
+4. Colorbar creation with label and kwargs passthrough
+5. Axis labels ("East (km)", "North (km)"), equal aspect ratio, optional title
 
-### 2.3 Set Up Packaging & Tooling [DONE]
-- `pyproject.toml` with hatchling build system, `uv`, `ruff`, `mypy`, `pytest`
-- Installable via `uv pip install -e .`
-- Minimal required dependencies: `numpy`, `scipy`, `matplotlib`
-- Optional: `meshpy` (for mesh generation), `netCDF4` (for slab2.0), `emcee` (for MCMC)
+### 6.3 Data Observation Plots
 
-### 2.4 Migrate Existing Code [DONE]
-- `geometry/okada/okada85.py` → `src/geodef/okada85.py`
-- `geometry/okada/okada92.py` → `src/geodef/okada92.py`
-- New `src/geodef/okada.py` — dispatcher that auto-selects 85 vs 92
-- `geometry/tdcalc/tdcalc.py` → `src/geodef/tri.py`
-- `geometry/okada/okada_greens.py` + `okada_utils.py` → `src/geodef/greens.py`
-- `related/shakeout_v2/fault_model.py` + `slip_model.py` → `src/geodef/fault.py`
-- `related/shakeout_v2/geod_transform.py` → `src/geodef/transforms.py`
-- `geometry/slabMesh/slabMesh.py` → `src/geodef/mesh.py`
-- `related/shakeout_v2/test_geod_transform.py` → `tests/test_transforms.py`
-- `related/shakeout_v2/test_laplacian.py` → `tests/test_greens.py`
-- `related/shakeout_v2/notebooks/` → `tutorials/` (deferred to Phase 7)
+#### 6.3.1 GNSS Vectors (`plot.vectors`)
+
+Plot GNSS displacement or velocity vectors as quiver arrows, with optional uncertainty ellipses and predicted vectors overlaid.
+
+```python
+ax = geodef.plot.vectors(gnss,
+    predicted=result.predicted,     # optional overlay of model predictions
+    scale=1e3,                      # quiver scale factor
+    obs_color='black',
+    pred_color='red',
+    ellipses=True,                  # uncertainty ellipses from gnss.sigma
+    ellipse_kwargs={'alpha': 0.3},  # → Ellipse artist kwargs
+    components='horizontal',        # 'horizontal', 'vertical', 'both'
+    legend=True,
+    quiver_kwargs={},               # → ax.quiver() kwargs
+)
+```
+
+**Implementation tasks:**
+1. Extract x, y, components from GNSS dataset
+2. Horizontal: `ax.quiver(x, y, ux, uy, **quiver_kwargs)` for obs and pred
+3. Vertical: plot as colored circles (up=one color, down=another) or scaled symbols
+4. Uncertainty ellipses from sigma values using `matplotlib.patches.Ellipse`
+5. Legend with obs/pred distinction
+6. Support `components='both'` with side-by-side or combined layout
+
+#### 6.3.2 InSAR LOS (`plot.insar`)
+
+Plot InSAR line-of-sight data as colored scatter points, with optional predicted and residual panels.
+
+```python
+ax = geodef.plot.insar(insar,
+    predicted=result.predicted,
+    layout='obs_pred_res',          # 'obs', 'pred', 'residual', 'obs_pred_res' (3 panels)
+    cmap='RdBu_r',
+    vmin=-0.1, vmax=0.1,
+    scatter_kwargs={'s': 2},        # → ax.scatter() kwargs
+    colorbar=True,
+)
+```
+
+**Implementation tasks:**
+1. Single-panel: `ax.scatter(x, y, c=data, **scatter_kwargs)`
+2. Multi-panel layout with shared colorbar and clim
+3. Residual computation when predicted is provided
+4. Shared vmin/vmax across panels for consistency
+
+#### 6.3.3 Observed vs. Predicted Fit (`plot.fit`)
+
+Simple diagnostic scatter plot of observed vs. predicted values (1:1 line).
+
+```python
+ax = geodef.plot.fit(result, datasets,
+    dataset_index=0,                # which dataset (or 'all')
+    style='scatter',                # 'scatter' or 'residual_histogram'
+)
+```
+
+### 6.4 Fault Geometry Visualization
+
+#### 6.4.1 3D View (`plot.fault3d`)
+
+3D visualization of fault mesh geometry, colored by depth, area, or a user-supplied array.
+
+```python
+ax = geodef.plot.fault3d(fault,
+    color_by='depth',               # 'depth', 'area', 1D array, or None
+    cmap='viridis',
+    show_edges=True,
+    station_locations=gnss,         # optional: overlay station positions
+)
+```
+
+**Implementation tasks:**
+1. Build `Poly3DCollection` from fault vertices (3D coords in km)
+2. Color by depth/area/custom array using `set_array()` + `set_clim()`
+3. Invert z-axis for depth convention (positive down)
+4. Optional station overlay via `ax.scatter3D()`
+
+#### 6.4.2 Map View (`plot.map`)
+
+2D map view of fault patches and optional station locations.
+
+```python
+ax = geodef.plot.map(fault,
+    datasets=None,                  # overlay dataset locations
+    show_patches=True,
+    show_trace=True,                # surface projection of top edge
+    patch_kwargs={},                # → PatchCollection kwargs
+    trace_kwargs={'color': 'red', 'linewidth': 2},
+)
+```
+
+### 6.5 Diagnostic & Tuning Plots
+
+#### 6.5.1 Resolution and Uncertainty on Fault (`plot.resolution`, `plot.uncertainty`)
+
+These reuse the same `plot.slip` machinery but with different default colormaps and labels.
+
+```python
+ax = geodef.plot.resolution(fault, R_diag,
+    cmap='viridis', vmin=0, vmax=1,
+    colorbar_label='Resolution',
+)
+
+ax = geodef.plot.uncertainty(fault, sigma,
+    cmap='magma_r',
+    colorbar_label='1-sigma uncertainty (m)',
+)
+```
+
+**Implementation:** thin wrappers around the core `_plot_patch_scalar()` helper (shared with `plot.slip`).
+
+#### 6.5.2 Update Existing L-curve / ABIC Plots
+
+Refactor `LCurveResult.plot()` and `ABICCurveResult.plot()` in `invert.py` for consistency:
+- Accept `ax=None` parameter (create figure if None, plot on existing axes if provided)
+- Accept `**kwargs` passed through to the line/marker artists
+- Return `ax` instead of `fig`
+- Keep them as methods on their result objects (not moved to `plot` module)
+
+### 6.6 Module Structure
+
+```
+src/geodef/plot.py          # single module (flat, consistent with project structure)
+tests/test_plot.py          # tests for all plot functions
+```
+
+Public API:
+- `geodef.plot.slip(fault, slip, ...)`
+- `geodef.plot.vectors(dataset, ...)`
+- `geodef.plot.insar(dataset, ...)`
+- `geodef.plot.fit(result, datasets, ...)`
+- `geodef.plot.fault3d(fault, ...)`
+- `geodef.plot.map(fault, ...)`
+- `geodef.plot.resolution(fault, values, ...)`
+- `geodef.plot.uncertainty(fault, values, ...)`
+
+### 6.7 Implementation Order
+
+1. ~~**6.7a** — Internal helpers: `_get_patch_vertices()`, `_get_slip_component()`, `_plot_patch_scalar()`, axes creation helper~~ **DONE**
+2. ~~**6.7b** — `plot.slip()` + `plot.resolution()` + `plot.uncertainty()` (all use `_plot_patch_scalar`)~~ **DONE**
+3. ~~**6.7c** — `plot.vectors()` (GNSS quiver + ellipses)~~ **DONE**
+4. ~~**6.7d** — `plot.insar()` (scatter + multi-panel layout)~~ **DONE**
+5. ~~**6.7e** — `plot.fault3d()` (3D Poly3DCollection)~~ **DONE**
+6. ~~**6.7f** — `plot.map()` (2D overview with trace + stations)~~ **DONE**
+7. ~~**6.7g** — `plot.fit()` (obs vs pred scatter / residual histogram)~~ **DONE**
+8. ~~**6.7h** — Refactor `LCurveResult.plot()` and `ABICCurveResult.plot()` for consistency (add `ax`, `**kwargs`, return `ax`)~~ **DONE**
+
+### 6.8 Testing Strategy
+
+- Use `matplotlib.testing` or `pytest-mpl` for image comparison where valuable
+- At minimum: every function returns an `Axes`, no exceptions raised for valid input
+- Test with both rectangular and triangular faults
+- Test with and without optional arguments (colorbar, predicted, etc.)
+- Test multi-panel layouts produce correct number of axes
+- Test kwargs passthrough (e.g., edgecolor actually applied)
 
 ---
 
-## Phase 3: Fault & Data Abstractions [COMPLETED]
+## Phase 7: Mesh Generation (`geodef.mesh`)
 
-### 3.1 `geodef.Fault` — Fault Geometry [DONE]
+Migrate and modernize the existing `mesh.py` (currently a raw port from slabMesh) into a proper module with clean API, tests, and integration with `Fault`.
 
-Immutable `Fault` class with factory classmethods, engine abstraction, and vectorized forward modeling. **59 tests** in `tests/test_fault.py`.
+### 7.1 Clean Up Existing Code
 
-**Factory classmethods:**
-- `Fault.planar(lat, lon, depth, strike, dip, length, width, n_length, n_width)` — centroid-based
-- `Fault.planar_from_corner(...)` — top-left corner-based
-- `Fault.load(fname, format=..., ref_lat=..., ref_lon=...)` — center, topleft, or seg format
-- `Fault.from_slab2(...)` — triangular mesh from slab2.0 (deferred)
+- Add type hints, docstrings, and proper error handling
+- Replace `print()` statements with `logging` or exceptions
+- Remove `scipy.io` (Matlab `.mat` export) — keep only Python-native formats
+- Make `netCDF4` and `meshpy` optional imports with clear error messages
 
-**Properties:** `n_patches`, `centers`, `centers_local`, `areas`, `engine`, `grid_shape`, `laplacian`, `vertices_2d`, `vertices_3d`
-
-**Methods:** `displacement()`, `greens_matrix()`, `stress_kernel()`, `moment()`, `magnitude()`, `patch_index()`, `save()`
-
-**Module utilities:** `moment_to_magnitude()`, `magnitude_to_moment()`
-
-**Seg format support:** Ported unicycle `flt2flt.m` algorithm for geometric depth-variable patch sizing. Loads/saves `.seg` files with `ref_lat`/`ref_lon` for geographic placement.
-
-**Open issues:**
-- Coordinate transforms: `.seg` format uses `translate_flat` (flat-earth); stress-shadows uses polyconic projection. For large faults, a proper projection system should be added to `transforms.py`.
-- Patch ordering: `Fault.planar()` orders deepest-first; `flt2flt` orders shallowest-first.
+### 7.2 API Design
 
 ```python
-# Simple planar fault (rectangular patches → uses okada engine)
-fault = geodef.Fault.planar(lat, lon, depth, strike, dip,
-                            length, width, n_length=10, n_width=5)
+mesh = geodef.mesh.from_slab2("cas_slab2_dep.grd",
+    bounds=[lon_min, lon_max, lat_min, lat_max],
+    max_area=0.03,                  # uniform refinement threshold
+    depth_variable=True,            # finer near trench, coarser at depth
+    depth_factor=0.00007,           # scaling factor for depth-based refinement
+)
 
-# Load from unicycle seg file
-fault = geodef.Fault.load("mentawai.seg", format="seg",
-                          ref_lat=-2.0, ref_lon=100.0)
-
-# Triangular mesh from slab2.0 (triangular patches → uses tri engine)
-fault = geodef.Fault.from_slab2("cas_slab2_dep_02.24.18.grd", bounds=[...])
-
-# Properties available on all faults
-fault.centers        # (N, 3) patch centroids [lat, lon, depth]
-fault.areas          # (N,) patch areas in m²
-fault.n_patches      # number of patches
-fault.engine         # 'okada' or 'tri' (set at creation, not changeable)
-fault.laplacian      # (N, N) smoothing operator
-fault.moment(slip)   # scalar seismic moment
+fault = geodef.Fault.from_mesh(mesh)
+# or one-step:
+fault = geodef.Fault.from_slab2("cas_slab2_dep.grd", bounds=[...])
 ```
 
-### 3.2 `geodef.DataSet` — Geodetic Data [DONE]
+### 7.3 Mesh Object
 
-All data types inherit from a common `DataSet` base class, which defines the polymorphic interface used by `greens()` and `invert()`. Each subclass specifies two things:
-1. **`greens_type`** — what kind of raw Green's function it needs from the engine (`'displacement'` or `'strain'`)
-2. **`project()`** — how to map those raw components to the data's observation space
+Return a lightweight `Mesh` dataclass or named tuple:
+- `points` — (N, 3) vertices in geographic coordinates (lon, lat, depth)
+- `triangles` — (M, 3) connectivity (indices into points)
+- `save(fname, format='ned')` — write `.ned` + `.tri` files (unicycle format)
 
-Acronym names stay capitalized; non-acronym names use PascalCase per Python class convention. All are importable directly from `geodef`:
+### 7.4 Tests
 
-```python
-gnss  = geodef.GNSS(lat, lon, ve, vn, vu, se, sn, su)
-insar = geodef.InSAR(lat, lon, los, sigma, look_e, look_n, look_u)
-vert  = geodef.Vertical(lat, lon, displacement, sigma)
-```
-
-Each data type also exposes a common interface for `invert()`:
-- `data.obs` — observation vector (what was measured)
-- `data.sigma` — uncertainties (1-sigma)
-- `data.covariance` — optional full covariance matrix
-
-Full covariance matrices are optional; if not provided, `sigma` is used to build a diagonal weight matrix.
-
-**Base class and dispatch mechanism:**
-
-```python
-class DataSet:
-    """Base class for all geodetic data types."""
-    greens_type: str = 'displacement'  # what to request from the engine
-
-    def project(self, *components):
-        """Map raw Green's function output to this data type's observation space."""
-        raise NotImplementedError
-
-class GNSS(DataSet):
-    greens_type = 'displacement'
-
-    def project(self, ue, un, uz):
-        # 3 components per station, interleaved by station: [e1,n1,u1, e2,n2,u2, ...]
-        return np.column_stack([ue, un, uz]).ravel()
-
-class InSAR(DataSet):
-    greens_type = 'displacement'
-
-    def project(self, ue, un, uz):
-        # Project onto look vector → 1 scalar per pixel
-        return self.look_e * ue + self.look_n * un + self.look_u * uz
-
-class Vertical(DataSet):
-    greens_type = 'displacement'
-
-    def project(self, ue, un, uz):
-        return uz
-
-# Future: strain data types request strain Green's functions
-class Strainmeter(DataSet):
-    greens_type = 'strain'
-
-    def project(self, exx, exy, exz, eyy, eyz, ezz):
-        # Project strain tensor to observed components
-        ...
-```
-
-Adding a new data type = write a new class with `greens_type` and `project()`. Nothing else in the library changes.
-
-### 3.3 `geodef.greens` — Green's Matrix Assembly [DONE]
-
-Polymorphic Green's matrix assembly using `DataSet.greens_type` dispatch and `DataSet.project()`. **32 tests** in `tests/test_greens_integration.py`.
-
-**Core function:** `greens(fault, datasets)` — assembles the full Green's matrix for any combination of fault engine and data type. Slip columns are blocked: `[ss_0, ..., ss_N, ds_0, ..., ds_N]`.
-
-```python
-G = geodef.greens.greens(fault, gnss)              # single dataset
-G = geodef.greens.greens(fault, [gnss, insar])     # joint: auto-stacks vertically
-```
-
-**Engine dispatch:** Four internal Green's functions handle all engine/data combinations:
-- `displacement_greens()` — Okada engine, displacement data types
-- `strain_greens()` — Okada engine, strain data types
-- `tri_displacement_greens()` — Triangular engine, displacement data types
-- `tri_strain_greens()` — Triangular engine, strain data types
-
-**Stacking helpers:** `stack_obs()` and `stack_weights()` concatenate observation vectors and weight matrices across multiple datasets, matching the row layout of the joint G matrix.
-
-**Also in `greens.py`:** `resolution()` matrix, `build_laplacian_2d()` / `build_laplacian_2d_simple()` regularization operators for structured grids, and `build_laplacian_knn()` for unstructured meshes (distance-weighted K-nearest-neighbors, sparse output).
-
-**Changes from plan:** `build_patch_grid()` and `rect_fault_outline()` were moved from `greens.py` to `fault.py` as `Fault` methods/properties (`Fault.vertices_2d`, `Fault.vertices_3d`, `Fault.patch_outlines`), since they are fundamentally fault geometry operations.
-
-### 3.4 Computation Caching (`geodef.cache`) [DONE]
-
-Hash-based disk caching for expensive matrix computations, ported from the stress-shadows Matlab `DataHash` + HDF5 pattern. **29 tests** in `tests/test_cache.py`.
-
-**Module API:**
-```python
-geodef.cache.set_dir("path/to/cache")  # default: .geodef_cache/
-geodef.cache.get_dir()
-geodef.cache.clear()
-geodef.cache.enable() / geodef.cache.disable()
-geodef.cache.is_enabled()
-geodef.cache.info()  # {"n_files": int, "total_bytes": int}
-```
-
-**Transparent caching** — `greens()` and `stress_kernel()` automatically check for cached results:
-```python
-G = geodef.greens.greens(fault, data)  # first call: computes and saves
-G = geodef.greens.greens(fault, data)  # second call: loads from cache
-```
-
-**Implementation:**
-- `compute_hash(key_data)` — SHA-256 of serialized numpy arrays + metadata (dtype, shape, bytes), strings, floats, None
-- `cached_compute(key_data, compute_fn)` — check cache, compute if missing, save compressed `.npz`
-- Storage: `.geodef_cache/<hash[:2]>/<hash>.npz` (2-char subdirectories)
-- Cache key includes: fault geometry arrays, engine, observation coordinates, data type, and type-specific fields (InSAR look vectors, GNSS component mode)
-- Per-dataset caching in `greens()`: each dataset block is cached independently, so changing one dataset in a joint inversion doesn't invalidate the others
-
-**Bug fix included:** `stress_kernel()` now correctly evaluates strain at patch centroid depths (using `okada92`/DC3D for internal deformation) instead of incorrectly computing surface strain. Added `obs_depth` parameter to `greens_matrix()`, `strain_greens()`, and `tri_strain_greens()`.
+- Round-trip: generate mesh → save → load → compare
+- Basic properties: all triangles have positive area, no degenerate elements
+- Bounds cropping produces mesh within specified region
+- Depth-variable refinement produces smaller elements near trench
 
 ---
 
-## Phase 4: Inverse Framework (`geodef.invert`) [COMPLETED]
+## Phase 8: I/O Additions
 
-### 4.1 One-Call Inversion [DONE]
+Extend import/export capabilities after plotting and mesh are solid.
 
-`geodef.invert()` solves `d = Gm` for slip `m`, returning an `InversionResult` dataclass. **95 tests** in `tests/test_invert.py`.
+- `result.to_gmt()` — export slip patches as GMT-plottable polygons with values
+- `geodef.GNSS.load()` / `.save()` — common GNSS velocity/displacement formats
+- `geodef.InSAR.load()` / `.save()` — LOS + look vectors (e.g. GMTSAR/ISCE format)
+- `geodef.Fault.load()` — extend with triangular mesh (`.ned` + `.tri`) format support
+
+---
+
+## Phase 9: Tutorial Notebooks
+
+Progressive series rewritten to use `geodef`, ported from `related/shakeout_v2/notebooks/`. Placed in `tutorials/`.
+
+### 9.1 Scaffolded Tutorials (based on shakeout notebooks)
+
+| # | Title | Source | Key concepts |
+|---|-------|--------|-------------|
+| 01 | Forward Model Basics | nb 03 | `Fault.planar()`, `displacement()`, single-fault map-view plot |
+| 02 | Fault Discretization & the G Matrix | nb 04 | Multi-patch fault, `greens()`, column layout, matrix visualization |
+| 03 | Unregularized Inversion | nb 04 | `invert()` with WLS, interpreting `InversionResult`, overfitting demo |
+| 04 | Regularization: Smoothing & Damping | nb 05 | Laplacian, damping, stress-kernel; effect on slip distribution |
+| 05 | Choosing Regularization Strength | nb 06 | L-curve, ABIC, cross-validation; `lcurve()`, `abic_curve()` |
+| 06 | Weighted Least Squares & Multiple Datasets | nb 07 | GNSS + InSAR joint inversion, covariance matrices, data weighting |
+| 07 | Correlated Noise & InSAR | nb 07b | Full covariance for InSAR, effect on slip uncertainty |
+| 08 | Bounds & Constraints | — | Non-negative slip (NNLS), bounded LS, inequality constraints |
+| 09 | Uncertainty & Model Assessment | — | `model_covariance()`, `model_resolution()`, `model_uncertainty()`, diagnostics |
+| 10 | Nonlinear Inversion (MCMC) | nb 08 | `scipy.optimize`, `emcee` for fault geometry parameters |
+
+Each tutorial should:
+- Build on the previous one (progressive complexity)
+- Include clear markdown explanations of the math/concepts
+- Use synthetic data so no external files needed
+- Show plots inline with well-labeled axes
+- End with exercises or extension questions for students
+
+### 9.2 Worked Examples with Real Data
+
+Full research-level examples in `examples/`, demonstrating real-world workflows. Each uses actual fault geometries and geodetic data.
+
+| # | Title | Data source | Key features |
+|---|-------|------------|-------------|
+| 01 | Forward Model Demo | — | Already exists (`01_forward_model.ipynb`) |
+| 02 | Caching Demo | — | Already exists (`02_caching.ipynb`) |
+| 03 | Cascadia Interseismic Coupling | `stress-shadows/cascadia/` | Slab2.0 mesh, GNSS velocities, backslip inversion, smoothing_target |
+| 04 | Japan Megathrust Coupling | `stress-shadows/japan/` | Slab2.0 mesh, GNSS data, stress-kernel regularization |
+| 05 | Nepal Earthquake Coseismic Slip | `stress-shadows/example_nepal_earthquake/` | Coseismic GNSS + InSAR, triangular mesh, joint inversion |
+| 06 | 2D Earthquake Example | `stress-shadows/example_2d_earthquake/` | Simple planar fault, GNSS-only, good for validation |
+| 07 | 3D Earthquake Example | `stress-shadows/example_3d_earthquake/` | Multi-segment fault, 3D geometry |
+| TBD | Additional earthquake examples | User to provide | New coseismic events with data |
+
+---
+
+## Phase 10: Future Extensions
+
+### 10.1 Quasi-Dynamic Earthquake Cycle Modeling
+
+Port the earthquake cycle simulation framework from `related/stress-shadows/unicycle/` (Barbot et al.). This would extend geodef from static slip inversions to time-dependent earthquake cycle modeling.
+
+**Key components:**
+- **Rate-and-state friction** — aging law and slip law formulations on fault patches
+- **Stress interaction** — use existing `stress_kernel()` infrastructure to compute inter-patch stress transfer
+- **ODE integration** — adaptive time-stepping (e.g. Runge-Kutta) for coupled evolution of slip velocity and state variable on each patch
+- **Driving load** — tectonic backslip loading between earthquakes
+- **Output** — time series of slip, slip rate, and stress on each patch; synthetic surface displacement time series
+
+**Design sketch:**
+```python
+cycle = geodef.CycleModel(fault,
+    friction='aging',           # 'aging' or 'slip' law
+    a=0.01, b=0.015,           # rate-state parameters (arrays or scalars)
+    dc=0.01,                   # critical slip distance
+    sigma_n=50e6,              # effective normal stress
+    v_plate=40e-3 / YEAR,      # plate convergence rate
+)
+history = cycle.run(t_max=1000 * YEAR, dt_max=YEAR/12)
+history.slip       # (n_patches, n_timesteps)
+history.velocity   # (n_patches, n_timesteps)
+history.time       # (n_timesteps,)
+```
+
+### 10.2 Finite-Volume Strain Green's Functions
+
+Extend the Green's function library beyond point-source (Okada/triangular dislocation) solutions to include volume-based strain sources. These are needed for modeling distributed deformation (e.g., volcanic inflation, post-seismic viscoelastic relaxation).
+
+**Key components:**
+- **Volume strain source** — Mogi point source, finite spherical/ellipsoidal cavity, arbitrary volume elements
+- **Finite-volume Green's functions** — displacement and strain at the surface or at depth due to volumetric strain in a finite element
+- **Integration with existing framework** — new `DataSet.greens_type = 'volume_strain'` for seamless use with `greens()` and `invert()`
+
+### 10.3 Geographic Projection & Cartopy Plotting
+
+Add optional geographic coordinate support to the plotting module:
+- `projection='geographic'` option on all plot functions
+- Cartopy-based coastlines, country borders, topography
+- Automatic coordinate transform from local Cartesian to lon/lat
+- Keep cartopy as an optional dependency with clear error messages
+
+### 10.4 Interpolated Slip Visualization
+
+Add smooth/contour-style slip rendering as an alternative to flat-colored patches:
+- For rectangular meshes: `pcolormesh` or `contourf` on a regular grid
+- For triangular meshes: `matplotlib.tri.Triangulation` with `tricontourf`
+- Useful for publication-quality figures where patch boundaries are distracting
+
+### 10.5 Euler Pole Fitting
+
+Port `related/shakeout_v2/euler_calc.py` for fitting rigid plate rotation (Euler pole) to GNSS velocities. Useful as a preprocessing step to remove plate motion before interseismic analysis.
 
 ```python
-# Simplest call: unregularized weighted least-squares
-result = geodef.invert(fault, [gnss, insar])
-
-# Laplacian smoothing with fixed weight and non-negative bounds
-result = geodef.invert(fault, [gnss, insar],
-                       smoothing='laplacian',
-                       smoothing_strength=1e3,
-                       bounds=(0, None),
-                       method='bounded_ls')
-
-result.slip          # (N, n_components) — (N,2) for both, (N,1) for strike/dip
-result.slip_vector   # (n_components*N,) blocked solution vector
-result.residuals     # (M,) observation minus prediction
-result.predicted     # (M,) forward-modeled observations
-result.chi2          # reduced chi-squared
-result.rms           # RMS misfit
-result.moment        # scalar seismic moment
-result.Mw            # moment magnitude
-result.smoothing_strength  # lambda used (None if unregularized)
-result.components    # 'both', 'strike', or 'dip'
+pole = geodef.euler_pole(gnss, plate='fixed')  # fit Euler pole to GNSS velocities
+gnss_residual = gnss.remove_euler(pole)         # remove rigid rotation
 ```
 
-**Column layout:** Green's matrices and slip vectors use blocked format: columns `[:N]` are strike-slip, columns `[N:]` are dip-slip. This enables block-diagonal Laplacians and per-component bounds/regularization.
+### 10.6 Moment Tensor Decomposition
 
-**Component selection:** The `components` parameter controls which slip components to solve for:
-- `'both'` (default) — solve for strike-slip and dip-slip (2N parameters)
-- `'strike'` — strike-slip only (N parameters)
-- `'dip'` — dip-slip only (N parameters)
+Port `related/shakeout_v2/moment_tensor.py` for computing and decomposing moment tensors from slip on discretized faults.
 
-The full 2N-column Green's matrix is always computed; `invert()` selects the appropriate columns internally. Smoothing matrices, bounds, and smoothing targets are sized to match the selected components.
+### 10.7 MCMC / Bayesian Inversion Module
 
-### 4.2 Regularization [DONE]
+Structured interface for nonlinear Bayesian inversion of fault geometry parameters (location, strike, dip, rake) using MCMC sampling (e.g., `emcee`). Currently covered in tutorial 10 as a manual workflow; could become a first-class module.
 
-Regularization is split into two concerns: **what matrix** to penalize with (`smoothing`) and **how strongly** to weight it (`smoothing_strength`).
+### 10.8 Additional Green's Function Engines
 
-**`smoothing`** — controls the regularization matrix L in the penalty term ||L(m - m_ref)||^2:
-
-| `smoothing` value | What it builds | Status |
-|-------------------|---------------|--------|
-| `'laplacian'` | Graph Laplacian — `block_diag(L, L)` for both components, single `L` for strike/dip only | **Done** |
-| `'stresskernel'` | Stress interaction kernel from `fault.stress_kernel()` | **Done** |
-| `'damping'` | Identity matrix (Tikhonov / L2 damping) | **Done** |
-| `numpy.ndarray` | Custom regularization matrix, passed through directly | **Done** |
-
-**`smoothing_target`** — optional reference model vector, shape (n_components * N,). Regularizes toward this target instead of zero: minimizes ||L(m - m_ref)||^2. Useful for backslip/coupling inversions regularizing toward plate rate.
-
-**`smoothing_strength`** — controls the scalar weight on the regularization term:
-
-| `smoothing_strength` value | Behavior | Status |
-|---------------------------|----------|--------|
-| `float` (e.g. `1e3`) | Fixed weight (lambda) | **Done** |
-| `'abic'` | Automatic via ABIC optimization | **Done** |
-| `'cv'` | Automatic via cross-validation | **Done** |
-
-**Examples showing the full range:**
-
-```python
-# Laplacian smoothing with fixed weight
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength=1e3)
-
-# Stress-kernel regularization, non-negative
-result = geodef.invert(fault, data, smoothing='stresskernel', smoothing_strength=1e4,
-                       bounds=(0, None))
-
-# Damping
-result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1.0)
-
-# Custom matrix
-result = geodef.invert(fault, data, smoothing=my_matrix, smoothing_strength=1e3)
-
-# Regularize toward a reference model
-result = geodef.invert(fault, data, smoothing='damping', smoothing_strength=1e3,
-                       smoothing_target=m_ref)
-
-# No regularization (default)
-result = geodef.invert(fault, data)
-```
-
-### 4.3 Solvers [DONE]
-
-| `method` value | Description | When to use | Status |
-|----------------|-------------|------------|--------|
-| `'wls'` (default) | Weighted least-squares (`np.linalg.lstsq`) | Fast, no constraints | **Done** |
-| `'nnls'` | `scipy.optimize.nnls` | Non-negative slip only | **Done** |
-| `'bounded_ls'` | `scipy.optimize.lsq_linear` | Bounded slip components | **Done** |
-| `'constrained'` | QP via `scipy.optimize.minimize` (SLSQP) | Inequality constraints | **Done** |
-
-Auto-selection when `method=None`: `bounds=None` → WLS, `bounds=(0, None)` → NNLS, general bounds → bounded_ls.
-
-The `'constrained'` solver accepts inequality constraints via the `constraints=(C, d_ineq)` parameter, enforcing `C @ m <= d_ineq`. Supports simultaneous box bounds and inequality constraints using SLSQP.
-
-### 4.4 Hyperparameter Tuning [DONE]
-
-```python
-# Automatic via ABIC (works with any smoothing type)
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='abic')
-
-# Automatic via cross-validation
-result = geodef.invert(fault, data, smoothing='laplacian',
-                       smoothing_strength='cv', cv_folds=5)
-
-# Manual exploration: L-curve
-lc = geodef.lcurve(fault, data, smoothing='laplacian',
-                   smoothing_range=(1e-2, 1e6), n=50)
-lc.plot()           # trade-off curve with optimal point marked
-lc.optimal          # recommended smoothing_strength value
-
-# Manual exploration: ABIC curve
-ac = geodef.abic_curve(fault, data, smoothing='laplacian',
-                       smoothing_range=(1e-2, 1e8), n=50)
-ac.plot()           # ABIC vs lambda with optimal point marked
-ac.optimal          # lambda at minimum ABIC
-ac.abic_values      # ABIC at each lambda
-ac.misfits          # data misfit norms (for context)
-ac.model_norms      # regularized model norms (for context)
-```
-
-**Implementation details:**
-- `smoothing_strength='abic'`: ABIC criterion (Fukuda & Johnson 2008). Solves the regularized system for each candidate lambda, computes eigenvalue decomposition of `L^T L` and `G^T W G + lambda * L^T L`. Optimized via `scipy.optimize.minimize_scalar` in log10 space over [-6, 10]. Standalone function `geodef.compute_abic()` also exported for manual exploration.
-- `smoothing_strength='cv'`: K-fold cross-validation. Randomly partitions weighted data rows into K folds (default 5), trains on K-1 folds with regularization, evaluates prediction error on the held-out fold. Sweeps 50 lambda values in geomspace [1e-4, 1e8] and selects the minimizer.
-- `geodef.lcurve()`: Sweeps lambda over a log-spaced range, computes data misfit norm ||Gm - d|| and model norm ||Lm|| at each. Returns `LCurveResult` with `.plot()` (matplotlib figure) and `.optimal` (max-curvature corner via parametric curvature of the log-log L-curve).
-- `geodef.abic_curve()`: Sweeps lambda and computes ABIC at each value, along with misfit and model norms. Returns `ABICCurveResult` with `.plot()` (semilog ABIC vs lambda) and `.optimal` (lambda at minimum ABIC). Useful for visualizing the ABIC landscape and verifying the automatic selection.
-
----
-
-## Phase 5: Uncertainty & Model Assessment [IN PROGRESS]
-
-### 5.1 Model Covariance & Resolution [DONE]
-
-On-demand functions (not computed during `invert()`) for expensive matrix operations:
-
-- ~~`model_covariance(result, fault, datasets)`~~ **Done** — `Cm = H_inv @ G^T W G @ H_inv` (regularized) or `(G^T W G)^{-1}` (unregularized)
-- ~~`model_resolution(result, fault, datasets)`~~ **Done** — `R = (G^T W G + lambda L^T L)^{-1} G^T W G`; R = I for perfect resolution
-- ~~`model_uncertainty(result, fault, datasets)`~~ **Done** — per-parameter 1-sigma = `sqrt(diag(Cm))`
-
-Design: `InversionResult` stores `smoothing` (the type/matrix used) so these functions can reconstruct L from the result without the user re-passing it. G is rebuilt from cache (fast).
-
-### 5.2 Fit Statistics [DONE]
-- ~~`result.chi2`, `result.rms`~~ **Done** — computed in `invert()`
-- ~~`result.moment`, `result.Mw`~~ **Done** — computed in `invert()`
-- ~~Per-dataset diagnostics~~ **Done** — `dataset_diagnostics(result, fault, datasets)` returns per-dataset chi2, reduced chi2, WRMS, RMS, effective DOF, and leverage via the regularized hat matrix `H = G_w (G_w^T G_w + lambda L^T L)^{-1} G_w^T`. Computed on demand.
-- F-test for model comparison — not yet
-
-### 5.3 Moment & Magnitude [DONE]
-- ~~`result.moment`, `result.Mw`~~ **Done** — computed automatically
-- ~~`fault.moment(slip)`~~ **Done** — standalone calculation
-
----
-
-## Phase 6: Visualization (`geodef.plot`)
-
-Built-in plotting with sensible defaults:
-```python
-geodef.plot.slip(fault, result.slip)                        # colored patches
-geodef.plot.fit(result, dataset_index=0)                    # observed vs predicted
-geodef.plot.vectors(gnss, predicted=result.predict(gnss))   # gnss arrows
-geodef.plot.lcurve(smoothing_values, misfits, norms)        # trade-off curve
-```
-
-### I/O
-- `geodef.Fault.load()` / `.save()` — auto-detect format (seg, tri/ned, unicycle)
-- `geodef.GNSS.load()` — common GNSS formats
-- `geodef.InSAR.load()` — LOS + look vectors
-- `result.to_gmt()` — export for GMT plotting
-
----
-
-## Phase 7: Tutorials & Documentation
-
-### 7.1 Tutorial Notebooks (port from `related/shakeout_v2/notebooks/`)
-Progressive series rewritten to use `geodef`:
-1. Forward model basics (single fault)
-2. Fault discretization and G matrix
-3. Regularized inversion
-4. Choosing regularization strength
-5. Multiple datasets and weighting
-6. Real earthquake example
-7. Interseismic coupling example
-8. Nonlinear inversion (MCMC)
-
-### 7.2 Documentation
-- API reference (auto-generated from docstrings)
-- Quick-start guide (5-minute first model)
-- User guide with worked examples
-
----
-
-## Execution Order
-
-```
-Phase 1 (Tests & Green's functions)    COMPLETE
-    │
-Phase 2 (Package scaffolding)          COMPLETE
-    │
-    ├── Phase 3 (Fault + Data + Greens + Cache)  COMPLETE (352 tests)
-    │       │
-    │       └── Phase 4 (Inversion)      COMPLETE (4.1-4.4 done)
-    │               │
-    │               └── Phase 5 (Uncertainty)  IN PROGRESS (5.1-5.3 done, 478 tests)
-    │
-    ├── Phase 6 (Plotting + I/O)         ← can start anytime
-    │
-    └── Phase 7 (Tutorials + Docs)       ← after core library is stable
-```
-
----
-
-## Phase 8: Future Additions
-
-- **Angular-weighted KNN Laplacian**: The current `build_laplacian_knn` uses simple inverse-distance weighting. The Huiskamp (1991) formulation adds angular correction terms (`Theta_j / Theta_tot`) that account for uneven angular distribution of neighbors. This could be added as an option (e.g. `method='huiskamp'`) if cases arise where the simple version produces visibly different regularization behavior. See `related/stress-shadows/functions/compute_laplacian.m` for the Matlab reference implementation.
+- **Meade (2007)** — backslip triangular dislocations (already in unicycle)
+- **Compound dislocation model (CDM)** — for volcanic sources
+- **Layered elastic half-space** — for more realistic Earth structure (e.g., EDGRN/EDCMP)
 
 ---
 
 ## Notes & Open Questions
 
 - **Coordinate conventions**: Public API uses East/North/Up and lat/lon consistently. Green's functions handle internal conventions (Okada x=strike) behind the interface.
-- **Performance**: For large inversions (thousands of patches, millions of InSAR pixels), the hash-based caching system (Phase 3.4) handles reuse of expensive G and L matrices. For truly massive problems, consider lazy G matrix evaluation or HDF5/memmap storage as a future extension.
+- **Performance**: Hash-based caching handles reuse of expensive G and L matrices. For truly massive problems, consider lazy G matrix evaluation or HDF5/memmap storage.
 - **Backslip model**: Careful sign conventions needed. Matlab logic in `Backslip_Translation_Source.m`.
-- **Stress kernels**: Implemented in `fault.stress_kernel()`. Uses okada92/DC3D to evaluate strain at patch centroid depths (not the surface). Cached via `geodef.cache`.
-- **Mesh generation**: `slabMesh` depends on `meshpy`/`triangle`. Keep as optional dependency.
-- **Name**: The package is called `geodef` (geodetic deformation). Short, unique, pip-installable.
+- **Mesh generation**: Depends on `meshpy`/`triangle` and `netCDF4`. Keep as optional dependencies.
+- **Patch ordering**: `Fault.planar()` orders deepest-first; `flt2flt` orders shallowest-first.
+- **Projections**: `.seg` format uses flat-earth; stress-shadows uses polyconic. For large faults, a proper projection system should be added to `transforms.py`.

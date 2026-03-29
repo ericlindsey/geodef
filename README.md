@@ -4,13 +4,14 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 
 ## Current Status
 
-**478 tests passing** across 12 test files.
+**598 tests passing** across 14 test files.
 
 - **Phase 1 (Green's functions)** -- complete
 - **Phase 2 (Package structure)** -- complete
 - **Phase 3 (Fault + Data + Greens + Cache)** -- complete
 - **Phase 4 (Inversion)** -- complete
-- **Phase 5 (Uncertainty & model assessment)** -- in progress
+- **Phase 5 (Uncertainty & model assessment)** -- complete
+- **Phase 6 (Visualization)** -- complete
 
 See `PLAN.md` for the full development roadmap.
 
@@ -26,6 +27,7 @@ See `PLAN.md` for the full development roadmap.
 | `fault` | `Fault` class: fault creation, forward modeling, vertices, moment, file I/O |
 | `data` | `DataSet` base class + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, regularization, hyperparameter tuning, model assessment |
+| `plot` | Visualization: slip, vectors, InSAR, fit, fault geometry, map, resolution, uncertainty |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
 | `mesh` | Triangular mesh generation from slab2.0 NetCDF grids (optional deps) |
@@ -369,7 +371,7 @@ ac.misfits              # (50,) data misfit norms
 ac.model_norms          # (50,) regularized model norms
 ```
 
-Both return result objects with a `.plot()` method (returns a matplotlib Figure) and an `.optimal` attribute for the recommended lambda.
+Both return result objects with a `.plot()` method (accepts `ax=None`, returns `ax`) and an `.optimal` attribute for the recommended lambda. The optimal value is annotated on the plot by default.
 
 ### Model Assessment
 
@@ -398,6 +400,82 @@ R = geodef.model_resolution(result, fault, data)
 unc = geodef.model_uncertainty(result, fault, data)
 ```
 
+## Visualization
+
+`geodef.plot` provides publication-ready plots with sensible defaults and full customizability. Every function accepts `ax=None` (creates a figure) or an existing axes, returns `ax`, and never calls `plt.show()`.
+
+### Slip Distribution
+
+```python
+# One line for a nice plot
+geodef.plot.slip(fault, result.slip_vector)
+
+# Full control: component, colormap, limits, patch styling
+geodef.plot.slip(fault, result.slip_vector,
+                 component='dip', cmap='RdBu_r', vmin=-2, vmax=2,
+                 edgecolor='gray', colorbar_label='Dip slip (m)')
+```
+
+### GNSS Vectors
+
+```python
+# Observed vs predicted with scale arrow legend
+geodef.plot.vectors(gnss, fault,
+                    predicted=result.predicted[:gnss.n_obs],
+                    scale=10, legend=True,
+                    scale_arrow=0.5, scale_arrow_label="50 cm observed")
+
+# Vertical component as color-coded circles
+geodef.plot.vectors(gnss, fault, components='vertical', scale=5)
+```
+
+### InSAR
+
+```python
+# Three-panel layout: observed, predicted, residual
+geodef.plot.insar(insar, fault, predicted=pred_insar, layout='obs_pred_res')
+```
+
+### Map View
+
+Patches can be colored by a scalar array or slip vector:
+
+```python
+geodef.plot.map(fault, datasets=[gnss, insar],
+                slip_vector=result.slip_vector, cmap='YlOrRd',
+                colorbar_label='Slip (m)',
+                show_trace=True, trace_kwargs={'color': 'red'})
+```
+
+### Composing Plots
+
+Since every function accepts `ax`, you can layer plots freely:
+
+```python
+fig, ax = plt.subplots()
+geodef.plot.slip(fault, result.slip_vector, ax=ax, cmap='YlOrRd')
+geodef.plot.vectors(gnss, fault, ax=ax, scale=10, legend=True)
+```
+
+### Other Plot Types
+
+```python
+geodef.plot.patches(fault, values, ...)       # generic per-patch scalar
+geodef.plot.fit(obs, pred, ...)               # obs vs pred scatter or residual histogram
+geodef.plot.fault3d(fault, color_by='depth')  # 3D fault geometry
+geodef.plot.resolution(fault, R_diag, ...)    # model resolution on patches
+geodef.plot.uncertainty(fault, sigma, ...)    # model uncertainty on patches
+```
+
+L-curve and ABIC curve results also have `.plot()` methods that follow the same pattern:
+
+```python
+lc = geodef.lcurve(fault, data, smoothing='laplacian', smoothing_range=(1e-2, 1e6))
+lc.plot()  # optimal lambda annotated automatically
+```
+
+See `examples/03_plotting.ipynb` for a full demo of every plot type.
+
 ## Caching
 
 Green's matrices and stress kernels are automatically cached to disk for fast reuse:
@@ -411,21 +489,19 @@ geodef.cache.clear()                 # remove all cached files
 
 ## Examples
 
-See `examples/01_forward_model.ipynb` for a worked demo covering:
-- Creating a discretized fault
-- Defining synthetic GNSS stations
-- Building the Green's matrix
-- Predicting displacements from input slip
-- Joint Green's matrix for GNSS + InSAR
-- Visualizing slip distribution and predicted displacements
-
-See `examples/02_caching.ipynb` for a caching demo.
+| Notebook | What it covers |
+|----------|---------------|
+| `examples/01_forward_model.ipynb` | Fault creation, GNSS stations, Green's matrix, forward prediction, joint GNSS + InSAR |
+| `examples/02_caching.ipynb` | Green's matrix and stress kernel caching for fast reuse |
+| `examples/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty, L-curve/ABIC, composing plots |
 
 ## Planned Features
 
-- **Triangular faults** -- slab2.0 mesh generation
-- **Visualization** -- built-in plotting for slip, fit, vectors, L-curves
+- **Mesh generation** -- slab2.0 triangular mesh creation (`geodef.mesh`)
+- **I/O additions** -- GMT export, extended data/fault formats
 - **Tutorial notebooks** -- progressive series from basic statistics to full geodetic inversion
+- **Geographic projection** -- cartopy-based plotting with coastlines and topography
+- **Earthquake cycle modeling** -- rate-and-state friction, quasi-dynamic simulations
 
 ## Testing
 
