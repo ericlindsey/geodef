@@ -8,9 +8,9 @@ Build **GeoDef**: a flexible, student-friendly Python library for forward and in
 
 ---
 
-## Completed Phases (1-5)
+## Completed Phases (1-7)
 
-Phases 1-5 are complete. See `CLAUDE.md` for the full module inventory, test counts, and architectural details.
+Phases 1-7 are complete. See `CLAUDE.md` for the full module inventory, test counts, and architectural details.
 
 | Phase | What was built | Tests |
 |-------|---------------|-------|
@@ -20,8 +20,9 @@ Phases 1-5 are complete. See `CLAUDE.md` for the full module inventory, test cou
 | 4. Inverse Framework | WLS/NNLS/bounded LS/constrained QP, Laplacian/damping/stress-kernel regularization, ABIC/CV/L-curve tuning | 126 |
 | 5. Uncertainty | Model covariance/resolution/uncertainty, per-dataset diagnostics, moment/magnitude | 47 |
 | 6. Visualization | `plot` module: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty; L-curve/ABIC refactor | 120 |
+| 7. Mesh Generation | `mesh` module: `Mesh` dataclass, `from_trace`, `from_polygon`, `from_points`, `from_slab2`; `Fault.from_mesh()`, `Fault.from_triangles()` | 70 |
 
-**Total: 598 tests passing.**
+**Total: 669 tests passing.**
 
 Key design decisions preserved from earlier phases:
 - **Flat module structure** — `geodef.okada`, `geodef.fault`, `geodef.invert` (one file, one concept)

@@ -4,7 +4,7 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 
 ## Current Status
 
-**598 tests passing** across 14 test files.
+**669 tests passing** across 15 test files.
 
 - **Phase 1 (Green's functions)** -- complete
 - **Phase 2 (Package structure)** -- complete
@@ -12,6 +12,7 @@ A flexible, student-friendly Python library for forward and inverse modeling of 
 - **Phase 4 (Inversion)** -- complete
 - **Phase 5 (Uncertainty & model assessment)** -- complete
 - **Phase 6 (Visualization)** -- complete
+- **Phase 7 (Mesh generation)** -- complete
 
 See `PLAN.md` for the full development roadmap.
 
@@ -30,7 +31,7 @@ See `PLAN.md` for the full development roadmap.
 | `plot` | Visualization: slip, vectors, InSAR, fit, fault geometry, map, resolution, uncertainty |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
-| `mesh` | Triangular mesh generation from slab2.0 NetCDF grids (optional deps) |
+| `mesh` | Triangular mesh generation: trace+dip, polygon, scattered points, slab2.0 grids (optional deps) |
 
 Green's function engines are cross-validated against each other (okada85 vs okada92 at the surface, triangular pairs vs rectangles, etc.).
 
@@ -476,6 +477,36 @@ lc.plot()  # optimal lambda annotated automatically
 
 See `examples/03_plotting.ipynb` for a full demo of every plot type.
 
+## Mesh Generation
+
+`geodef.mesh` creates triangular fault meshes from several input types. Requires optional dependencies: `meshpy` (meshing) and `netCDF4` (slab2.0 grids).
+
+```python
+from geodef.mesh import from_trace, from_polygon, from_slab2
+
+# From a surface trace + constant dip
+mesh = from_trace(trace_lon, trace_lat, max_depth=30e3, dip=15.0,
+                  dip_direction=90.0, target_length=10e3)
+
+# From a 3D polygon boundary
+mesh = from_polygon(lon, lat, depth, target_length=15e3)
+
+# From a slab2.0 NetCDF depth grid
+mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6),
+                  max_area=0.05, depth_variable=True)
+
+# Convert to Fault for modeling/inversion
+fault = geodef.Fault.from_mesh(mesh)
+```
+
+The `Mesh` dataclass is immutable and provides:
+- `mesh.n_nodes`, `mesh.n_triangles` -- counts
+- `mesh.centers_geo` -- triangle centroids as `[lon, lat, depth]`
+- `mesh.areas` -- triangle areas in m^2
+- `mesh.save(fname)` / `Mesh.load(fname)` -- unicycle `.ned`/`.tri` format
+
+See `examples/04_mesh_generation.ipynb` for a full demo.
+
 ## Caching
 
 Green's matrices and stress kernels are automatically cached to disk for fast reuse:
@@ -494,10 +525,10 @@ geodef.cache.clear()                 # remove all cached files
 | `examples/01_forward_model.ipynb` | Fault creation, GNSS stations, Green's matrix, forward prediction, joint GNSS + InSAR |
 | `examples/02_caching.ipynb` | Green's matrix and stress kernel caching for fast reuse |
 | `examples/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty, L-curve/ABIC, composing plots |
+| `examples/04_mesh_generation.ipynb` | Triangular mesh creation: surface trace + dip, exterior polygon, slab2.0 grids, I/O |
 
 ## Planned Features
 
-- **Mesh generation** -- slab2.0 triangular mesh creation (`geodef.mesh`)
 - **I/O additions** -- GMT export, extended data/fault formats
 - **Tutorial notebooks** -- progressive series from basic statistics to full geodetic inversion
 - **Geographic projection** -- cartopy-based plotting with coastlines and topography

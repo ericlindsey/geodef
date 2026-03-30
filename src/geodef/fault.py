@@ -237,6 +237,73 @@ class Fault:
         )
 
     @classmethod
+    def from_triangles(
+        cls,
+        vertices: np.ndarray,
+        ref_lat: float = 0.0,
+        ref_lon: float = 0.0,
+    ) -> "Fault":
+        """Create a triangular fault from ENU vertex coordinates.
+
+        Derives per-triangle strike, dip, and geographic centers automatically
+        from the vertex geometry.
+
+        Args:
+            vertices: Triangle vertices in local ENU meters, shape (N, 3, 3).
+                Each triangle has 3 vertices with [east, north, up] coords.
+            ref_lat: Reference latitude for the ENU origin.
+            ref_lon: Reference longitude for the ENU origin.
+
+        Returns:
+            A triangular Fault with ``engine="tri"``.
+        """
+        from geodef.mesh import _compute_strike_dip
+
+        vertices = np.asarray(vertices, dtype=float)
+        if vertices.ndim != 3 or vertices.shape[1:] != (3, 3):
+            raise ValueError("vertices must have shape (N, 3, 3)")
+
+        n = vertices.shape[0]
+        strike, dip = _compute_strike_dip(vertices)
+
+        # Compute centroids in ENU then convert to geographic
+        centroids_enu = np.mean(vertices, axis=1)  # (N, 3)
+        lat, lon, alt = transforms.enu2geod(
+            centroids_enu[:, 0],
+            centroids_enu[:, 1],
+            centroids_enu[:, 2],
+            ref_lat, ref_lon, 0.0,
+        )
+        depth = -alt  # ENU up → depth positive down
+
+        return cls(
+            lat, lon, depth, strike, dip, None, None,
+            vertices=vertices, engine="tri",
+        )
+
+    @classmethod
+    def from_mesh(
+        cls,
+        mesh: "Mesh",
+    ) -> "Fault":
+        """Create a triangular fault from a ``Mesh`` object.
+
+        Converts mesh geographic coordinates to local ENU vertices and
+        derives per-triangle strike and dip from the vertex geometry.
+
+        Args:
+            mesh: A ``geodef.mesh.Mesh`` instance.
+
+        Returns:
+            A triangular Fault with ``engine="tri"``.
+        """
+        centers = mesh.centers_geo
+        ref_lat = float(np.mean(mesh.lat))
+        ref_lon = float(np.mean(mesh.lon))
+        vertices = mesh.vertices_enu(ref_lat, ref_lon)
+        return cls.from_triangles(vertices, ref_lat, ref_lon)
+
+    @classmethod
     def load(
         cls,
         fname: str,
@@ -272,6 +339,17 @@ class Fault:
         """
         if format is None:
             format = "center"
+
+        if format == "ned":
+            if ref_lat == 0.0 and ref_lon == 0.0:
+                raise ValueError(
+                    "The 'ned' format uses local Cartesian coordinates. "
+                    "You must provide ref_lat and ref_lon to place the "
+                    "mesh geographically."
+                )
+            from geodef.mesh import Mesh
+            mesh = Mesh.load(fname, format="ned")
+            return cls.from_mesh(mesh)
 
         if format == "seg":
             return cls._load_seg(fname, ref_lat, ref_lon)
