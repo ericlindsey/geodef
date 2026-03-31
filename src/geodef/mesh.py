@@ -830,7 +830,7 @@ def from_trace(
     Args:
         trace_lon: Surface trace longitudes, shape (K,).
         trace_lat: Surface trace latitudes, shape (K,).
-        max_depth: Maximum fault depth in meters (positive down).
+        max_depth: Maximum fault depth in km (positive down).
         dip: Dip angle. Either a scalar (constant dip in degrees) or a
             callable ``dip(depth_m) -> angle_deg`` for variable (listric)
             geometry. Users with array data can use
@@ -849,6 +849,7 @@ def from_trace(
     """
     trace_lon = np.asarray(trace_lon, dtype=float)
     trace_lat = np.asarray(trace_lat, dtype=float)
+    max_depth = float(max_depth) * 1000.0  # km → m
 
     if target_length is not None and max_area is not None:
         raise ValueError("target_length and max_area are mutually exclusive")
@@ -954,6 +955,67 @@ def from_trace(
     )
 
 
+def _splice_surface_trace(
+    boundary_xy: np.ndarray,
+    trace_lon: np.ndarray,
+    trace_lat: np.ndarray,
+) -> np.ndarray:
+    """Replace the shallow edge of a slab boundary with a surface trace.
+
+    Finds the two boundary points closest to the trace endpoints, then
+    replaces the shorter arc between them with the trace (at depth = 0).
+    This extends the slab mesh from its shallowest edge up to the
+    user-supplied fault trace at the surface.
+
+    Args:
+        boundary_xy: Ordered boundary polygon, shape (K, 2) of [lon, lat].
+        trace_lon: Surface trace longitudes, shape (T,).
+        trace_lat: Surface trace latitudes, shape (T,).
+
+    Returns:
+        Modified boundary polygon with the shallow edge replaced by the
+        trace, shape (K', 2).
+    """
+    n = len(boundary_xy)
+    trace_start = np.array([trace_lon[0], trace_lat[0]])
+    trace_end = np.array([trace_lon[-1], trace_lat[-1]])
+
+    # Find boundary points closest to trace endpoints
+    dist_start = np.linalg.norm(boundary_xy - trace_start, axis=1)
+    dist_end = np.linalg.norm(boundary_xy - trace_end, axis=1)
+    idx_a = int(np.argmin(dist_start))
+    idx_b = int(np.argmin(dist_end))
+
+    # Ensure idx_a < idx_b for consistent arc extraction
+    if idx_a > idx_b:
+        idx_a, idx_b = idx_b, idx_a
+        trace_lon = trace_lon[::-1]
+        trace_lat = trace_lat[::-1]
+
+    # Two arcs: a→b (short way) and b→a (long way around)
+    arc1_len = idx_b - idx_a
+    arc2_len = n - arc1_len
+
+    # Replace the shorter arc with the trace
+    trace_pts = np.column_stack([trace_lon, trace_lat])
+    if arc1_len <= arc2_len:
+        # Replace arc a→b with trace; keep arc b→...→a
+        kept = np.vstack([
+            boundary_xy[idx_b:],
+            boundary_xy[:idx_a + 1],
+        ])
+        return np.vstack([boundary_xy[idx_a:idx_a + 1], trace_pts,
+                          boundary_xy[idx_b:idx_b + 1],
+                          boundary_xy[idx_b + 1:],
+                          boundary_xy[:idx_a]])
+    else:
+        # Replace arc b→...→a with trace (reversed); keep arc a→b
+        return np.vstack([
+            boundary_xy[idx_a:idx_b + 1],
+            trace_pts[::-1],
+        ])
+
+
 def _km_to_deg(km: float, lat: float) -> float:
     """Convert a distance in km to approximate degrees at a given latitude.
 
@@ -979,6 +1041,8 @@ def from_slab2(
     *,
     target_length: float = 50.0,
     depth_growth: float = 1.0,
+    max_depth: float | None = None,
+    surface_trace: tuple[np.ndarray, np.ndarray] | None = None,
     boundary_subsample: int = 1,
     max_refinements: int = 100_000,
 ) -> Mesh:
@@ -997,6 +1061,13 @@ def from_slab2(
             length at the shallowest. Values > 1 produce coarser triangles
             at depth (e.g. 2.0 means twice as coarse). Default 1.0
             (uniform).
+        max_depth: Maximum slab depth in km (positive). Grid cells deeper
+            than this are excluded. If None (default), no depth clipping.
+        surface_trace: Optional ``(lon, lat)`` tuple of arrays defining
+            the fault trace at the surface. The slab boundary is extended
+            from its shallowest edge to this trace at depth = 0, with
+            depths linearly interpolated between the slab edge and the
+            trace.
         boundary_subsample: Keep every nth boundary point when tracing the
             grid boundary. Increase to simplify the polygon (e.g. 3 or 5).
             Default 1 (all boundary points).
@@ -1034,6 +1105,10 @@ def from_slab2(
     # Offset so shallowest point is at zero depth
     Zc = Zc - np.nanmax(Zc)
 
+    # Clip at max_depth (Zc is in km, negative = down)
+    if max_depth is not None:
+        Zc[Zc < -max_depth] = np.nan
+
     # Extract boundary from non-NaN region
     valid = ~np.isnan(Zc)
     valid_lons = Xc[valid]
@@ -1047,13 +1122,28 @@ def from_slab2(
         Xc, Yc, valid, subsample=boundary_subsample
     )
 
+    # Extend boundary to a surface trace if provided
+    if surface_trace is not None:
+        trace_lon_arr = np.asarray(surface_trace[0], dtype=float)
+        trace_lat_arr = np.asarray(surface_trace[1], dtype=float)
+        boundary_xy = _splice_surface_trace(
+            boundary_xy, trace_lon_arr, trace_lat_arr
+        )
+        # Add trace points at depth=0 to the interpolation dataset
+        valid_lons = np.concatenate([valid_lons, trace_lon_arr])
+        valid_lats = np.concatenate([valid_lats, trace_lat_arr])
+        valid_depths = np.concatenate([
+            valid_depths, np.zeros(len(trace_lon_arr))
+        ])
+        points_2d = np.column_stack([valid_lons, valid_lats])
+
     # Build depth interpolator and compute scale factors
     depth_interp = interpolate.LinearNDInterpolator(
         points_2d, valid_depths
     )
-    max_depth = float(np.max(valid_depths))
-    if max_depth < 1.0:
-        max_depth = 1.0
+    data_max_depth = float(np.max(valid_depths))
+    if data_max_depth < 1.0:
+        data_max_depth = 1.0
 
     ref_lat = 0.5 * (lat_min + lat_max)
     base_length_deg = _km_to_deg(target_length, ref_lat)
@@ -1065,7 +1155,7 @@ def from_slab2(
         d = depth_interp(lon, lat)
         if d is None or np.isnan(d):
             return base_length_deg
-        frac = float(np.clip(d / max_depth, 0.0, 1.0))
+        frac = float(np.clip(d / data_max_depth, 0.0, 1.0))
         return base_length_deg * (1.0 + (depth_growth - 1.0) * frac)
 
     # Simplify boundary to match local target edge length

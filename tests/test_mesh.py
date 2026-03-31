@@ -551,7 +551,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -565,7 +565,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -576,14 +576,14 @@ class TestFromTrace:
 
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
-        max_depth = 30000.0
+        max_depth = 30.0
         mesh = from_trace(
             trace_lon, trace_lat,
             max_depth=max_depth,
             dip=45.0,
             target_length=10000.0,
         )
-        assert mesh.depth.max() <= max_depth * 1.1
+        assert mesh.depth.max() <= max_depth * 1000 * 1.1
 
     def test_callable_dip(self):
         """Variable dip (listric): dip increases with depth."""
@@ -593,7 +593,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=lambda z: 10 + 40 * z / 30000,  # 10° at surface, 50° at depth
             target_length=10000.0,
         )
@@ -606,7 +606,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             dip_direction=0.0,  # dip to the north
             target_length=10000.0,
@@ -623,7 +623,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0, 0.1])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=20000.0,
+            max_depth=20.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -637,7 +637,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -652,7 +652,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -670,7 +670,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.05, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=50000.0,
+            max_depth=50.0,
             dip=80.0,
             target_length=5000.0,
         )
@@ -688,7 +688,7 @@ class TestFromTrace:
         trace_lat = 0.2 * np.sin(theta)
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=20000.0,
+            max_depth=20.0,
             dip=45.0,
             target_length=5000.0,
         )
@@ -704,7 +704,7 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
             trace_lon, trace_lat,
-            max_depth=40000.0,
+            max_depth=40.0,
             dip=lambda z: 10 + 60 * z / 40000,
             target_length=8000.0,
         )
@@ -939,6 +939,183 @@ class TestFromSlab2:
         with pytest.raises(ValueError, match="depth_growth"):
             from_slab2("fake.grd", bounds=(0, 1, 0, 1), depth_growth=0.5)
 
+    def test_max_depth_clips_valid_region(self, monkeypatch):
+        """max_depth should NaN-out cells deeper than the threshold."""
+        import geodef.mesh as mesh_mod
+
+        # Synthetic slab: depth increases linearly with latitude
+        lons = np.linspace(99, 101, 30)
+        lats = np.linspace(-1, 1, 30)
+        X, Y = np.meshgrid(lons, lats)
+        # Depth in km, negative = down: 0 at lat=1, -200 at lat=-1
+        Z = (Y - 1.0) * 100.0  # ranges from 0 to -200 km
+
+        def mock_netcdf4():
+            """Return a mock Dataset class."""
+            class FakeVar:
+                def __init__(self, data):
+                    self._data = data
+                def __getitem__(self, key):
+                    return self._data[key]
+            class FakeDS:
+                def __init__(self, fname, mode="r"):
+                    self.variables = {
+                        "x": FakeVar(lons),
+                        "y": FakeVar(lats),
+                        "z": FakeVar(Z),
+                    }
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+            return FakeDS
+
+        monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
+
+        # Without max_depth: full slab, max depth ≈ 200 km
+        mesh_full = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1), target_length=30.0,
+        )
+        # With max_depth=100 km: should clip roughly in half
+        mesh_clipped = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1),
+            target_length=30.0, max_depth=100.0,
+        )
+        assert mesh_clipped.depth.max() <= 105_000  # 100 km + tolerance
+        assert mesh_clipped.depth.max() < mesh_full.depth.max()
+
+    def test_max_depth_reduces_extent(self, monkeypatch):
+        """max_depth should reduce the spatial extent of the mesh."""
+        import geodef.mesh as mesh_mod
+
+        lons = np.linspace(99, 101, 30)
+        lats = np.linspace(-1, 1, 30)
+        X, Y = np.meshgrid(lons, lats)
+        Z = (Y - 1.0) * 100.0
+
+        def mock_netcdf4():
+            class FakeVar:
+                def __init__(self, data):
+                    self._data = data
+                def __getitem__(self, key):
+                    return self._data[key]
+            class FakeDS:
+                def __init__(self, fname, mode="r"):
+                    self.variables = {
+                        "x": FakeVar(lons),
+                        "y": FakeVar(lats),
+                        "z": FakeVar(Z),
+                    }
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+            return FakeDS
+
+        monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
+
+        mesh_full = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1), target_length=30.0,
+        )
+        mesh_clipped = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1),
+            target_length=30.0, max_depth=50.0,
+        )
+        # Clipped mesh should cover less latitude range
+        lat_range_full = mesh_full.lat.max() - mesh_full.lat.min()
+        lat_range_clip = mesh_clipped.lat.max() - mesh_clipped.lat.min()
+        assert lat_range_clip < lat_range_full * 0.8
+
+    def test_surface_trace_extends_to_zero(self, monkeypatch):
+        """surface_trace should extend the mesh up to depth=0."""
+        import geodef.mesh as mesh_mod
+
+        lons = np.linspace(99, 101, 30)
+        lats = np.linspace(-1, 1, 30)
+        X, Y = np.meshgrid(lons, lats)
+        # Slab that doesn't reach the surface: starts at -20 km
+        Z = (Y - 1.0) * 100.0 - 20.0  # -20 to -220 km
+
+        def mock_netcdf4():
+            class FakeVar:
+                def __init__(self, data):
+                    self._data = data
+                def __getitem__(self, key):
+                    return self._data[key]
+            class FakeDS:
+                def __init__(self, fname, mode="r"):
+                    self.variables = {
+                        "x": FakeVar(lons),
+                        "y": FakeVar(lats),
+                        "z": FakeVar(Z),
+                    }
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+            return FakeDS
+
+        monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
+
+        # Surface trace: a line at lat≈1.2, beyond the slab's shallow edge
+        trace_lon = np.array([99.2, 100.0, 100.8])
+        trace_lat = np.array([1.3, 1.3, 1.3])
+
+        mesh = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1),
+            target_length=30.0,
+            surface_trace=(trace_lon, trace_lat),
+        )
+        # Should have nodes at depth ≈ 0
+        assert mesh.depth.min() < 1000  # within 1 km of surface
+        # The trace nodes should be in the mesh
+        assert mesh.lat.max() > 1.2
+
+    def test_surface_trace_with_max_depth(self, monkeypatch):
+        """surface_trace and max_depth should compose correctly."""
+        import geodef.mesh as mesh_mod
+
+        lons = np.linspace(99, 101, 30)
+        lats = np.linspace(-1, 1, 30)
+        X, Y = np.meshgrid(lons, lats)
+        Z = (Y - 1.0) * 100.0 - 20.0  # -20 to -220 km
+
+        def mock_netcdf4():
+            class FakeVar:
+                def __init__(self, data):
+                    self._data = data
+                def __getitem__(self, key):
+                    return self._data[key]
+            class FakeDS:
+                def __init__(self, fname, mode="r"):
+                    self.variables = {
+                        "x": FakeVar(lons),
+                        "y": FakeVar(lats),
+                        "z": FakeVar(Z),
+                    }
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+            return FakeDS
+
+        monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
+
+        trace_lon = np.array([99.2, 100.0, 100.8])
+        trace_lat = np.array([1.3, 1.3, 1.3])
+
+        mesh = mesh_mod.from_slab2(
+            "fake.grd", bounds=(99, 101, -1, 1),
+            target_length=30.0,
+            max_depth=100.0,
+            surface_trace=(trace_lon, trace_lat),
+        )
+        # Extended to surface
+        assert mesh.depth.min() < 1000
+        assert mesh.lat.max() > 1.2
+        # Clipped at depth
+        assert mesh.depth.max() <= 105_000
+
 
 # ======================================================================
 # from_points()
@@ -1056,7 +1233,7 @@ class TestIntegration:
         mesh = from_trace(
             trace_lon=np.array([100.0, 100.2]),
             trace_lat=np.array([0.0, 0.0]),
-            max_depth=30000.0,
+            max_depth=30.0,
             dip=30.0,
             target_length=15000.0,
         )
