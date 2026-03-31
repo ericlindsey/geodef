@@ -714,8 +714,198 @@ class TestFromTrace:
 
 
 # ======================================================================
+# _trace_grid_boundary()
+# ======================================================================
+
+
+class TestTraceGridBoundary:
+    def test_rectangle(self):
+        """Rectangular valid region should trace all 4 edges."""
+        from geodef.mesh import _trace_grid_boundary
+
+        X, Y = np.meshgrid(np.arange(5.0), np.arange(4.0))
+        valid = np.ones((4, 5), dtype=bool)
+        boundary = _trace_grid_boundary(X, Y, valid)
+        assert boundary.shape[1] == 2
+        # All edge cells should be boundary (4+5+4+5 - 4 corners = 14)
+        # but the polygon is ordered, so we get 14 unique points
+        assert len(boundary) == 14
+
+    def test_concave_l_shape(self):
+        """L-shaped region should produce a concave boundary."""
+        from geodef.mesh import _trace_grid_boundary
+
+        # L-shape: top-left quadrant is invalid
+        valid = np.ones((6, 6), dtype=bool)
+        valid[:3, :3] = False
+        X, Y = np.meshgrid(np.arange(6.0), np.arange(6.0))
+        boundary = _trace_grid_boundary(X, Y, valid)
+
+        # Verify the boundary is concave: the centroid of the L's
+        # empty quadrant should NOT be inside the polygon
+        from matplotlib.path import Path
+
+        path = Path(boundary)
+        # Point in the missing top-left area
+        assert not path.contains_point((1.0, 1.0))
+        # Point in the valid bottom-right area
+        assert path.contains_point((4.0, 4.0))
+
+    def test_concave_arc_shape(self):
+        """Arc-shaped region (like a curved slab) should be concave."""
+        from geodef.mesh import _trace_grid_boundary
+
+        # Create a concave arc: valid region only on one side of a curve
+        X, Y = np.meshgrid(np.arange(20.0), np.arange(20.0))
+        valid = np.zeros((20, 20), dtype=bool)
+        for row in range(20):
+            # The left boundary curves inward (concave)
+            left = int(5 + 5 * np.sin(np.pi * row / 19))
+            valid[row, left:18] = True
+
+        boundary = _trace_grid_boundary(X, Y, valid)
+
+        from matplotlib.path import Path
+
+        path = Path(boundary)
+        # Point in the concave indentation (left of the curve) should be outside
+        assert not path.contains_point((2.0, 10.0))
+        # Point in the valid region should be inside
+        assert path.contains_point((15.0, 10.0))
+
+    def test_subsample(self):
+        """Subsampling should reduce boundary points."""
+        from geodef.mesh import _trace_grid_boundary
+
+        X, Y = np.meshgrid(np.arange(10.0), np.arange(10.0))
+        valid = np.ones((10, 10), dtype=bool)
+        full = _trace_grid_boundary(X, Y, valid)
+        sub3 = _trace_grid_boundary(X, Y, valid, subsample=3)
+        assert len(sub3) < len(full)
+
+    def test_empty_raises(self):
+        """Empty valid region should raise ValueError."""
+        from geodef.mesh import _trace_grid_boundary
+
+        X, Y = np.meshgrid(np.arange(5.0), np.arange(5.0))
+        valid = np.zeros((5, 5), dtype=bool)
+        with pytest.raises(ValueError, match="boundary"):
+            _trace_grid_boundary(X, Y, valid)
+
+    def test_slab_like_concavity(self):
+        """Slab-like shape (curved trace + downdip) is smaller than hull."""
+        from geodef.mesh import _trace_grid_boundary
+
+        # Simulate a slab: left boundary curves inward significantly
+        X, Y = np.meshgrid(np.linspace(90, 100, 50), np.linspace(-5, 5, 50))
+        valid = np.zeros((50, 50), dtype=bool)
+        for row in range(50):
+            # Left edge curves in by up to 10 columns at the center
+            left = int(10 * np.sin(np.pi * row / 49) ** 2)
+            valid[row, left:45] = True
+
+        boundary = _trace_grid_boundary(X, Y, valid)
+        boundary_area = _shoelace_area(boundary)
+
+        from scipy.spatial import ConvexHull
+
+        valid_pts = np.column_stack([X[valid], Y[valid]])
+        hull = ConvexHull(valid_pts)
+        hull_area = hull.volume
+
+        # Traced boundary should have noticeably less area than convex hull
+        assert boundary_area < hull_area * 0.90
+
+
+def _shoelace_area(polygon: np.ndarray) -> float:
+    """Compute polygon area via the shoelace formula."""
+    x = polygon[:, 0]
+    y = polygon[:, 1]
+    return 0.5 * abs(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
+                      + x[-1] * y[0] - x[0] * y[-1])
+
+
+# ======================================================================
+# _simplify_boundary()
+# ======================================================================
+
+
+class TestSimplifyBoundary:
+    def test_variable_spacing_preserves_dense_region(self):
+        """Points in the small-spacing region should be kept denser."""
+        from geodef.mesh import _simplify_boundary
+
+        n = 100
+        top = np.column_stack([np.linspace(0, 1, n // 2), np.zeros(n // 2)])
+        right = np.column_stack([np.ones(2), [0.0, 1.0]])
+        bottom = np.column_stack([
+            np.linspace(1, 0, n // 2), np.ones(n // 2)
+        ])
+        left = np.column_stack([np.zeros(2), [1.0, 0.0]])
+        boundary = np.vstack([top, right[1:], bottom[1:], left[1:]])
+
+        # Small spacing near y=0, large near y=1
+        def spacing(lon, lat):
+            return 0.05 + 0.5 * lat
+
+        result = _simplify_boundary(boundary, spacing)
+        shallow = np.sum(result[:, 1] < 0.1)
+        deep = np.sum(result[:, 1] > 0.9)
+        assert shallow > deep
+
+    def test_constant_spacing_thins(self):
+        """Constant spacing function should thin a dense polygon."""
+        from geodef.mesh import _simplify_boundary
+
+        n = 200
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        boundary = np.column_stack([np.cos(theta), np.sin(theta)])
+
+        result = _simplify_boundary(boundary, lambda lon, lat: 0.5)
+        assert len(result) < n
+        assert len(result) >= 3
+
+    def test_always_keeps_first_and_last(self):
+        """First and last boundary points are always retained."""
+        from geodef.mesh import _simplify_boundary
+
+        boundary = np.array([
+            [0.0, 0.0], [0.1, 0.0], [0.2, 0.0], [0.3, 0.0],
+            [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        ])
+        result = _simplify_boundary(boundary, lambda lon, lat: 0.5)
+        npt.assert_array_equal(result[0], boundary[0])
+        npt.assert_array_equal(result[-1], boundary[-1])
+
+
+# ======================================================================
 # from_slab2()
 # ======================================================================
+
+
+class TestKmToDeg:
+    def test_equator(self):
+        """At the equator, 111 km ≈ 1 degree."""
+        from geodef.mesh import _km_to_deg
+
+        result = _km_to_deg(111.0, 0.0)
+        npt.assert_allclose(result, 1.0, atol=0.01)
+
+    def test_high_latitude(self):
+        """At 60N, 111 km should be more than 1 degree."""
+        from geodef.mesh import _km_to_deg
+
+        result = _km_to_deg(111.0, 60.0)
+        assert result > 1.0
+
+    def test_scales_linearly(self):
+        """Double the km should give double the degrees."""
+        from geodef.mesh import _km_to_deg
+
+        npt.assert_allclose(
+            _km_to_deg(200.0, 30.0),
+            2.0 * _km_to_deg(100.0, 30.0),
+        )
 
 
 class TestFromSlab2:
@@ -741,6 +931,13 @@ class TestFromSlab2:
 
         with pytest.raises(Exception):
             from_slab2("/nonexistent/file.grd", bounds=(0, 1, 0, 1))
+
+    def test_depth_growth_validation(self):
+        """depth_growth < 1 should raise ValueError."""
+        from geodef.mesh import from_slab2
+
+        with pytest.raises(ValueError, match="depth_growth"):
+            from_slab2("fake.grd", bounds=(0, 1, 0, 1), depth_growth=0.5)
 
 
 # ======================================================================

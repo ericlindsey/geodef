@@ -364,6 +364,147 @@ def _snap_boundary_nodes(
     return snapped, snapped_depth
 
 
+def _trace_grid_boundary(
+    X: np.ndarray,
+    Y: np.ndarray,
+    valid: np.ndarray,
+    subsample: int = 1,
+) -> np.ndarray:
+    """Trace the boundary of a non-NaN region on a regular grid.
+
+    Identifies valid cells adjacent to invalid (or off-grid) cells, then
+    walks the boundary using Moore neighborhood tracing (8-connected) to
+    produce an ordered polygon. This correctly handles concave slab
+    geometries where a convex hull would include regions outside the data.
+
+    Args:
+        X: Longitude grid, shape (nrows, ncols).
+        Y: Latitude grid, shape (nrows, ncols).
+        valid: Boolean mask, shape (nrows, ncols). True = valid data.
+        subsample: Keep every nth boundary point (default 1 = all).
+
+    Returns:
+        Boundary polygon as (K, 2) array of [lon, lat] vertices, ordered
+        as a closed contour.
+
+    Raises:
+        ValueError: If the valid region is empty.
+    """
+    # Find boundary cells: valid with at least one 4-neighbor invalid/off-grid
+    padded = np.pad(valid, 1, constant_values=False)
+    neighbor_invalid = (
+        ~padded[:-2, 1:-1]
+        | ~padded[2:, 1:-1]
+        | ~padded[1:-1, :-2]
+        | ~padded[1:-1, 2:]
+    )
+    boundary_mask = valid & neighbor_invalid
+    boundary_coords = np.argwhere(boundary_mask)
+
+    if len(boundary_coords) == 0:
+        raise ValueError("No boundary found -- valid region may be empty")
+
+    boundary_set = set(map(tuple, boundary_coords))
+
+    # Start from topmost-then-leftmost boundary cell
+    start_idx = np.lexsort((boundary_coords[:, 1], boundary_coords[:, 0]))[0]
+    start = tuple(boundary_coords[start_idx])
+
+    # Moore neighborhood tracing (clockwise).
+    # Directions indexed 0-7: E, SE, S, SW, W, NW, N, NE
+    dirs = [(0, 1), (1, 1), (1, 0), (1, -1),
+            (0, -1), (-1, -1), (-1, 0), (-1, 1)]
+
+    ordered = [start]
+    current = start
+    # We entered from above (the start is the topmost cell), so the
+    # "backtrack" direction is N (index 6). Moore tracing searches
+    # clockwise starting from the cell after the backtrack direction.
+    backtrack = 6
+
+    for _ in range(len(boundary_set) + 1):
+        search_start = (backtrack + 1) % 8
+        moved = False
+        for offset in range(8):
+            di = (search_start + offset) % 8
+            dr, dc = dirs[di]
+            nb = (current[0] + dr, current[1] + dc)
+
+            if nb not in boundary_set:
+                continue
+
+            if nb == start and len(ordered) > 2:
+                # Closed the loop
+                moved = True
+                current = nb
+                break
+
+            if nb != start:
+                ordered.append(nb)
+                current = nb
+                # Backtrack direction = opposite of the step we just took
+                backtrack = (di + 4) % 8
+                moved = True
+                break
+
+        if not moved or current == start:
+            break
+
+    rows = np.array([rc[0] for rc in ordered])
+    cols = np.array([rc[1] for rc in ordered])
+    boundary_lon = X[rows, cols]
+    boundary_lat = Y[rows, cols]
+
+    if subsample > 1 and len(boundary_lon) > subsample:
+        indices = np.arange(0, len(boundary_lon), subsample)
+        if indices[-1] != len(boundary_lon) - 1:
+            indices = np.append(indices, len(boundary_lon) - 1)
+        boundary_lon = boundary_lon[indices]
+        boundary_lat = boundary_lat[indices]
+
+    return np.column_stack([boundary_lon, boundary_lat])
+
+
+def _simplify_boundary(
+    boundary_xy: np.ndarray,
+    spacing_func: "Callable[[float, float], float]",
+) -> np.ndarray:
+    """Thin a boundary polygon so point spacing matches a target function.
+
+    Walks the boundary and keeps a point only when the distance from the
+    last kept point exceeds the local target spacing evaluated at the
+    midpoint of the segment.
+
+    Args:
+        boundary_xy: Ordered boundary polygon, shape (K, 2) of [lon, lat].
+        spacing_func: Callable ``f(lon, lat) -> spacing`` returning the
+            target point spacing (in the same units as boundary_xy) at a
+            given location.
+
+    Returns:
+        Simplified boundary polygon, shape (K', 2) with K' <= K.
+    """
+    keep = [0]
+    last_kept = 0
+
+    for i in range(1, len(boundary_xy)):
+        mid = 0.5 * (boundary_xy[last_kept] + boundary_xy[i])
+        target = spacing_func(mid[0], mid[1])
+
+        dx = boundary_xy[i, 0] - boundary_xy[last_kept, 0]
+        dy = boundary_xy[i, 1] - boundary_xy[last_kept, 1]
+        dist = np.sqrt(dx**2 + dy**2)
+
+        if dist >= target:
+            keep.append(i)
+            last_kept = i
+
+    if keep[-1] != len(boundary_xy) - 1:
+        keep.append(len(boundary_xy) - 1)
+
+    return boundary_xy[np.array(keep)]
+
+
 def _polygon_to_facets(n: int) -> list[tuple[int, int]]:
     """Create closed polygon edge connectivity for meshpy.
 
@@ -813,30 +954,52 @@ def from_trace(
     )
 
 
+def _km_to_deg(km: float, lat: float) -> float:
+    """Convert a distance in km to approximate degrees at a given latitude.
+
+    Uses the mean of the longitude and latitude scale factors so that the
+    result is reasonable for both directions.
+
+    Args:
+        km: Distance in kilometers.
+        lat: Representative latitude in degrees.
+
+    Returns:
+        Approximate equivalent in degrees.
+    """
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = 111.0 * np.cos(np.radians(lat))
+    km_per_deg = 0.5 * (km_per_deg_lat + km_per_deg_lon)
+    return km / km_per_deg
+
+
 def from_slab2(
     fname: str,
     bounds: tuple[float, float, float, float],
     *,
-    max_area: float = 0.03,
-    depth_variable: bool = False,
-    depth_factor: float = 7e-5,
+    target_length: float = 50.0,
+    depth_growth: float = 1.0,
+    boundary_subsample: int = 1,
     max_refinements: int = 100_000,
 ) -> Mesh:
     """Create a triangular mesh from a slab2.0 NetCDF depth grid.
 
-    Loads the slab2.0 grid, crops to the specified bounds, extracts the
-    non-NaN boundary as a polygon, meshes the interior, and interpolates
-    depth from the grid onto mesh nodes.
+    Loads the slab2.0 grid, crops to the specified bounds, traces the
+    concave boundary of the non-NaN region, meshes the interior, and
+    interpolates depth from the grid onto mesh nodes.
 
     Args:
         fname: Path to slab2.0 ``.grd`` file (NetCDF format).
         bounds: ``(lon_min, lon_max, lat_min, lat_max)`` cropping region.
-        max_area: Maximum triangle area in degrees^2 (the meshing is done
-            in lon/lat space). Default 0.03.
-        depth_variable: If True, use depth-dependent refinement (finer near
-            the trench, coarser at depth).
-        depth_factor: Scaling factor for depth-dependent refinement threshold.
-            Only used when ``depth_variable=True``.
+        target_length: Target triangle edge length in km at the shallowest
+            point. Default 50 km.
+        depth_growth: Ratio of edge length at the deepest point to edge
+            length at the shallowest. Values > 1 produce coarser triangles
+            at depth (e.g. 2.0 means twice as coarse). Default 1.0
+            (uniform).
+        boundary_subsample: Keep every nth boundary point when tracing the
+            grid boundary. Increase to simplify the polygon (e.g. 3 or 5).
+            Default 1 (all boundary points).
         max_refinements: Safety limit on refinement iterations.
 
     Returns:
@@ -844,7 +1007,13 @@ def from_slab2(
 
     Raises:
         ImportError: If ``netCDF4`` is not installed.
+        ValueError: If ``depth_growth`` is less than 1.
     """
+    if depth_growth < 1.0:
+        raise ValueError(
+            f"depth_growth must be >= 1.0, got {depth_growth}"
+        )
+
     NCDataset = _require_netcdf4()
     _require_meshpy()
 
@@ -871,20 +1040,38 @@ def from_slab2(
     valid_lats = Yc[valid]
     valid_depths = -Zc[valid] * 1000  # km → m, flip sign (positive down)
 
-    # Use convex hull as boundary polygon
-    from scipy.spatial import ConvexHull
-
     points_2d = np.column_stack([valid_lons, valid_lats])
-    hull = ConvexHull(points_2d)
-    hull_vertices = hull.vertices
-    boundary_xy = points_2d[hull_vertices]
 
-    # Build depth interpolator
+    # Trace the concave boundary of the valid grid region
+    boundary_xy = _trace_grid_boundary(
+        Xc, Yc, valid, subsample=boundary_subsample
+    )
+
+    # Build depth interpolator and compute scale factors
     depth_interp = interpolate.LinearNDInterpolator(
         points_2d, valid_depths
     )
+    max_depth = float(np.max(valid_depths))
+    if max_depth < 1.0:
+        max_depth = 1.0
 
-    if depth_variable:
+    ref_lat = 0.5 * (lat_min + lat_max)
+    base_length_deg = _km_to_deg(target_length, ref_lat)
+    sqrt3_4 = np.sqrt(3.0) / 4.0
+    base_area = sqrt3_4 * base_length_deg**2
+
+    def _local_length_deg(lon: float, lat: float) -> float:
+        """Target edge length in degrees at a given point."""
+        d = depth_interp(lon, lat)
+        if d is None or np.isnan(d):
+            return base_length_deg
+        frac = float(np.clip(d / max_depth, 0.0, 1.0))
+        return base_length_deg * (1.0 + (depth_growth - 1.0) * frac)
+
+    # Simplify boundary to match local target edge length
+    boundary_xy = _simplify_boundary(boundary_xy, _local_length_deg)
+
+    if depth_growth > 1.0:
         tri_mod = _require_meshpy()
         x_fixed, y_fixed = _fix_vertical_edges(
             boundary_xy[:, 0], boundary_xy[:, 1]
@@ -905,18 +1092,16 @@ def from_slab2(
                 )
                 return False
             bary = np.mean(vertices, axis=0)
-            d = depth_interp(bary[0], bary[1])
-            if d is None or np.isnan(d):
-                d = 0
-            threshold = max_area + depth_factor * (float(d) - 1)
-            return area > threshold
+            local_len = _local_length_deg(bary[0], bary[1])
+            return area > sqrt3_4 * local_len**2
 
         mesh_result = tri_mod.build(info, refinement_func=refinement)
         mesh_pts = np.array(mesh_result.points)
         mesh_tris = np.array(mesh_result.elements)
     else:
         mesh_pts, mesh_tris = _mesh_polygon_2d(
-            boundary_xy, max_area=max_area, max_refinements=max_refinements
+            boundary_xy, max_area=base_area,
+            max_refinements=max_refinements,
         )
 
     # Interpolate depth onto mesh nodes
