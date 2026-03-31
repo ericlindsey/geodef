@@ -32,3 +32,6 @@ uv.lock
 
 # Compiled binaries
 geometry/okada/dc3d
+
+# Related reference code
+related/
