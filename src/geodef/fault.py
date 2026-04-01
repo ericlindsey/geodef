@@ -341,12 +341,6 @@ class Fault:
             format = "center"
 
         if format == "ned":
-            if ref_lat == 0.0 and ref_lon == 0.0:
-                raise ValueError(
-                    "The 'ned' format uses local Cartesian coordinates. "
-                    "You must provide ref_lat and ref_lon to place the "
-                    "mesh geographically."
-                )
             from geodef.mesh import Mesh
             mesh = Mesh.load(fname, format="ned")
             return cls.from_mesh(mesh)
@@ -796,36 +790,57 @@ class Fault:
         self,
         fname: str,
         *,
-        format: str = "center",
+        format: str | None = None,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
         vpl: float = 1.0,
         rake: float = 90.0,
     ) -> None:
-        """Save fault model to a text file.
+        """Save fault model to a file.
+
+        For rectangular faults the default format is ``"center"``.
+        For triangular faults the default (and only supported) format is
+        ``"ned"`` (unicycle ``.ned`` + ``.tri`` pair).
 
         Args:
-            fname: Output file path.
-            format: ``"center"`` for center-defined patches, or ``"seg"``
-                for unicycle segment format.
-            ref_lat: Reference latitude for ``"seg"`` format (used to convert
-                geographic coordinates back to local Cartesian).
+            fname: Output file path (base name for ``"ned"`` format).
+            format: ``"center"`` or ``"seg"`` for rectangular faults;
+                ``"ned"`` for triangular faults.  ``None`` auto-selects
+                ``"ned"`` for triangular and ``"center"`` for rectangular.
+            ref_lat: Reference latitude for ``"seg"`` format.
             ref_lon: Reference longitude for ``"seg"`` format.
             vpl: Plate velocity for ``"seg"`` format header.
             rake: Rake angle for ``"seg"`` format header.
 
         Raises:
-            ValueError: If format is unknown or fault is not rectangular.
+            ValueError: If the format is unknown or incompatible with the
+                fault engine.
         """
-        if self._engine != "okada":
-            raise ValueError("save() is only supported for rectangular faults")
+        if format is None:
+            format = "ned" if self._engine == "tri" else "center"
 
-        if format == "center":
-            self._save_center(fname)
-        elif format == "seg":
-            self._save_seg(fname, ref_lat, ref_lon, vpl, rake)
+        if format == "ned":
+            if self._engine != "tri":
+                raise ValueError(
+                    "ned format requires a triangular fault (engine='tri'); "
+                    "use format='center' or 'seg' for rectangular faults"
+                )
+            self._save_tri_ned(fname)
+        elif format in ("center", "seg"):
+            if self._engine != "okada":
+                raise ValueError(
+                    f"format={format!r} requires a rectangular fault "
+                    f"(engine='okada'); use format='ned' for triangular faults"
+                )
+            if format == "center":
+                self._save_center(fname)
+            else:
+                self._save_seg(fname, ref_lat, ref_lon, vpl, rake)
         else:
-            raise ValueError(f"Unknown format: {format!r}")
+            raise ValueError(
+                f"Unknown format: {format!r}. "
+                "Use 'center' or 'seg' for rectangular, 'ned' for triangular."
+            )
 
     def _save_center(self, fname: str) -> None:
         """Save in center-defined format."""
@@ -933,6 +948,91 @@ class Fault:
                 f"{total_L:.9f} {total_W:.9f} {strike_val:.9f} {dip_val:.9f} "
                 f"{rake:.9f} {L0:.9f} {W0:.9f} {qL:.9f} {qW:.9f}\n"
             )
+
+    def _save_tri_ned(self, fname: str) -> None:
+        """Save triangular fault as a unicycle .ned + .tri file pair.
+
+        Reconstructs the mesh node/triangle topology by deduplicating the
+        stored ENU vertex positions and converting back to geographic
+        coordinates.
+        """
+        from geodef.mesh import Mesh
+
+        n_tri = self.n_patches
+        verts_flat = self._vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
+
+        # Convert ENU offsets (relative to fault centroid) back to geographic
+        lat_nodes, lon_nodes, _ = transforms.translate_flat(
+            self._ref_lat, self._ref_lon, 0.0,
+            verts_flat[:, 0], verts_flat[:, 1], 0.0,
+        )
+        depth_nodes = -verts_flat[:, 2]  # up -> positive-down depth
+
+        # Deduplicate nodes with fixed precision to merge shared vertices
+        coords = np.column_stack([lon_nodes, lat_nodes, depth_nodes])
+        coords_rounded = np.round(coords, 6)
+        _, unique_idx, inverse = np.unique(
+            coords_rounded, axis=0, return_index=True, return_inverse=True
+        )
+
+        mesh = Mesh(
+            lon=lon_nodes[unique_idx],
+            lat=lat_nodes[unique_idx],
+            depth=depth_nodes[unique_idx],
+            triangles=inverse.reshape(n_tri, 3),
+        )
+        mesh.save(fname)
+
+    def to_gmt(
+        self,
+        fname: str,
+        values: np.ndarray | None = None,
+    ) -> None:
+        """Export fault patches as a GMT multi-segment polygon file.
+
+        Each patch becomes one closed polygon segment with a ``> -Z{value}``
+        header line.  The file is compatible with GMT's ``psxy -L`` (closed
+        polygons) and ``-Z`` coloring.
+
+        Args:
+            fname: Output file path.
+            values: Scalar value per patch (e.g. slip magnitude), shape (N,).
+                Defaults to zeros if not provided.
+
+        Raises:
+            ValueError: If ``values`` is provided but has the wrong length.
+        """
+        n = self.n_patches
+        if values is None:
+            values = np.zeros(n)
+        else:
+            values = np.asarray(values, dtype=float)
+            if values.shape != (n,):
+                raise ValueError(
+                    f"values must have shape ({n},), got {values.shape}"
+                )
+
+        if self._engine == "okada":
+            # vertices_2d: (N, 4, 2) as [lon, lat]
+            verts = self.vertices_2d  # (N, 4, 2)
+        else:
+            # Triangular: convert ENU to geographic lon/lat
+            verts_enu = self._vertices  # (N, 3, 3)
+            verts_flat = verts_enu.reshape(-1, 3)
+            lat_v, lon_v, _ = transforms.translate_flat(
+                self._ref_lat, self._ref_lon, 0.0,
+                verts_flat[:, 0], verts_flat[:, 1], 0.0,
+            )
+            verts = np.stack(
+                [lon_v.reshape(n, 3), lat_v.reshape(n, 3)], axis=-1
+            )  # (N, 3, 2)
+
+        with open(fname, "w") as fh:
+            fh.write("# geodef GMT fault export\n")
+            for i in range(n):
+                fh.write(f"> -Z{values[i]:.6f}\n")
+                for corner in range(verts.shape[1]):
+                    fh.write(f"{verts[i, corner, 0]:.6f} {verts[i, corner, 1]:.6f}\n")
 
     # ==================================================================
     # Vertex computation

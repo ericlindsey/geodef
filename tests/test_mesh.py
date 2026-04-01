@@ -226,6 +226,43 @@ class TestMeshIO:
         loaded = Mesh.load(fname, format="ned")
         npt.assert_allclose(loaded.lon, simple_mesh.lon, atol=1e-4)
 
+    def test_latlon_coord_order_is_default(self, simple_mesh, tmp_path):
+        """Default coord_order='latlon' writes index lat lon depth."""
+        fname = str(tmp_path / "test_mesh")
+        simple_mesh.save(fname)
+        # Read raw file and verify col 1 is lat (not lon)
+        import numpy as np
+        ned_data = np.loadtxt(str(tmp_path / "test_mesh.ned"))
+        col1 = ned_data[:, 1]
+        col2 = ned_data[:, 2]
+        # simple_mesh lat values are small (near 0), lon near 100
+        # lat should match col1 in latlon order
+        npt.assert_allclose(col1, simple_mesh.lat, atol=1e-6)
+        npt.assert_allclose(col2, simple_mesh.lon, atol=1e-6)
+
+    def test_lonlat_coord_order_roundtrip(self, simple_mesh, tmp_path):
+        """coord_order='lonlat' saves lon lat depth and can be loaded back."""
+        fname = str(tmp_path / "test_lonlat")
+        simple_mesh.save(fname, coord_order="lonlat")
+        loaded = Mesh.load(fname, coord_order="lonlat")
+        npt.assert_allclose(loaded.lon, simple_mesh.lon, atol=1e-6)
+        npt.assert_allclose(loaded.lat, simple_mesh.lat, atol=1e-6)
+        npt.assert_allclose(loaded.depth, simple_mesh.depth, atol=1e-4)
+        npt.assert_array_equal(loaded.triangles, simple_mesh.triangles)
+
+    def test_lonlat_file_column_order(self, simple_mesh, tmp_path):
+        """With coord_order='lonlat', col 1 is lon."""
+        import numpy as np
+        fname = str(tmp_path / "test_lonlat2")
+        simple_mesh.save(fname, coord_order="lonlat")
+        ned_data = np.loadtxt(str(tmp_path / "test_lonlat2.ned"))
+        col1 = ned_data[:, 1]
+        npt.assert_allclose(col1, simple_mesh.lon, atol=1e-6)
+
+    def test_invalid_coord_order_raises(self, simple_mesh, tmp_path):
+        with pytest.raises(ValueError, match="coord_order"):
+            simple_mesh.save(str(tmp_path / "test"), coord_order="xyz")
+
     def test_save_unsupported_format_raises(self, simple_mesh, tmp_path):
         fname = str(tmp_path / "test_mesh")
         with pytest.raises(ValueError, match="format"):
@@ -389,13 +426,15 @@ class TestFaultLoadNed:
         assert fault.engine == "tri"
         assert fault.n_patches == 2
 
-    def test_load_ned_requires_ref(self, simple_mesh, tmp_path):
+    def test_load_ned_no_ref_required(self, simple_mesh, tmp_path):
+        """ned files contain geographic coordinates; no ref point is needed."""
         from geodef.fault import Fault
 
         fname = str(tmp_path / "test_mesh")
         simple_mesh.save(fname)
-        with pytest.raises(ValueError, match="ref_lat.*ref_lon"):
-            Fault.load(fname, format="ned")
+        fault = Fault.load(fname, format="ned")
+        assert fault.engine == "tri"
+        assert fault.n_patches == simple_mesh.n_triangles
 
 
 # ======================================================================

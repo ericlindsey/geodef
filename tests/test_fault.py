@@ -676,3 +676,139 @@ class TestSegIO:
         assert f.grid_shape is None
 
         Path(fname).unlink()
+
+
+# ======================================================================
+# 14. Triangular fault ned save
+# ======================================================================
+
+def _make_tri_fault() -> Fault:
+    """Small triangular fault from a simple planar mesh."""
+    from geodef.mesh import Mesh
+    lon = np.array([100.0, 100.1, 100.0, 100.1])
+    lat = np.array([0.0, 0.0, 0.1, 0.1])
+    depth = np.array([5e3, 5e3, 15e3, 15e3])
+    triangles = np.array([[0, 1, 2], [1, 3, 2]])
+    mesh = Mesh(lon=lon, lat=lat, depth=depth, triangles=triangles)
+    return Fault.from_mesh(mesh)
+
+
+class TestFaultSaveNed:
+    """Test Fault.save(format='ned') for triangular faults."""
+
+    def test_tri_save_creates_files(self, tmp_path):
+        fault = _make_tri_fault()
+        fname = str(tmp_path / "tri_fault")
+        fault.save(fname, format="ned")
+        assert (tmp_path / "tri_fault.ned").exists()
+        assert (tmp_path / "tri_fault.tri").exists()
+
+    def test_tri_save_roundtrip(self, tmp_path):
+        fault = _make_tri_fault()
+        fname = str(tmp_path / "tri_fault")
+        fault.save(fname, format="ned")
+        loaded = Fault.load(fname, format="ned")
+        assert loaded.engine == "tri"
+        assert loaded.n_patches == fault.n_patches
+        # Round-trip uses flat-earth approximation; ~300 m tolerance (~0.003 deg)
+        np.testing.assert_allclose(loaded._lat, fault._lat, atol=3e-4)
+        np.testing.assert_allclose(loaded._lon, fault._lon, atol=3e-4)
+        np.testing.assert_allclose(loaded._depth, fault._depth, atol=10.0)
+
+    def test_auto_format_tri_picks_ned(self, tmp_path):
+        """format=None on a tri fault should default to ned."""
+        fault = _make_tri_fault()
+        fname = str(tmp_path / "auto_tri")
+        fault.save(fname)
+        assert (tmp_path / "auto_tri.ned").exists()
+
+    def test_rect_fault_ned_raises(self, simple_fault, tmp_path):
+        with pytest.raises(ValueError, match="ned"):
+            simple_fault.save(str(tmp_path / "rect"), format="ned")
+
+    def test_tri_fault_center_raises(self, tmp_path):
+        fault = _make_tri_fault()
+        with pytest.raises(ValueError, match="center"):
+            fault.save(str(tmp_path / "tri"), format="center")
+
+
+# ======================================================================
+# 15. Fault.to_gmt()
+# ======================================================================
+
+class TestFaultToGmt:
+    """Test Fault.to_gmt() polygon export."""
+
+    def test_rect_creates_file(self, simple_fault, tmp_path):
+        fpath = tmp_path / "fault.gmt"
+        simple_fault.to_gmt(str(fpath), values=np.ones(simple_fault.n_patches))
+        assert fpath.exists()
+
+    def test_segment_count_equals_n_patches(self, simple_fault, tmp_path):
+        fpath = tmp_path / "fault.gmt"
+        simple_fault.to_gmt(str(fpath), values=np.ones(simple_fault.n_patches))
+        lines = fpath.read_text().splitlines()
+        segment_headers = [l for l in lines if l.startswith(">")]
+        assert len(segment_headers) == simple_fault.n_patches
+
+    def test_z_values_in_header(self, tmp_path):
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=10e3,
+            strike=0.0, dip=45.0,
+            length=20e3, width=10e3,
+            n_length=2, n_width=1,
+        )
+        values = np.array([1.5, 3.0])
+        fpath = tmp_path / "fault.gmt"
+        fault.to_gmt(str(fpath), values=values)
+        text = fpath.read_text()
+        assert "1.5" in text
+        assert "3.0" in text
+
+    def test_default_values_zeros(self, tmp_path):
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=10e3,
+            strike=0.0, dip=45.0,
+            length=10e3, width=10e3,
+        )
+        fpath = tmp_path / "fault.gmt"
+        fault.to_gmt(str(fpath))  # no values
+        text = fpath.read_text()
+        assert "0.0" in text or "-Z0" in text
+
+    def test_polygon_vertices_are_lon_lat(self, tmp_path):
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=10e3,
+            strike=0.0, dip=45.0,
+            length=10e3, width=10e3,
+        )
+        fpath = tmp_path / "fault.gmt"
+        fault.to_gmt(str(fpath))
+        data_lines = [
+            l for l in fpath.read_text().splitlines()
+            if l and not l.startswith(">") and not l.startswith("#")
+        ]
+        assert len(data_lines) > 0
+        for line in data_lines:
+            parts = line.split()
+            assert len(parts) == 2
+            lon_val = float(parts[0])
+            lat_val = float(parts[1])
+            # Should be geographically sensible for a fault near 0N, 100E
+            assert 95.0 < lon_val < 105.0
+            assert -5.0 < lat_val < 5.0
+
+    def test_tri_fault_to_gmt(self, tmp_path):
+        fault = _make_tri_fault()
+        fpath = tmp_path / "tri.gmt"
+        fault.to_gmt(str(fpath), values=np.ones(fault.n_patches))
+        lines = fpath.read_text().splitlines()
+        segment_headers = [l for l in lines if l.startswith(">")]
+        assert len(segment_headers) == fault.n_patches
+
+    def test_values_wrong_length_raises(self, simple_fault, tmp_path):
+        with pytest.raises(ValueError, match="values"):
+            simple_fault.to_gmt(
+                str(tmp_path / "fault.gmt"),
+                values=np.ones(simple_fault.n_patches + 1),
+            )

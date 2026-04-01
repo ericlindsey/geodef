@@ -511,3 +511,271 @@ class TestVerticalLoad:
     def test_load_nonexistent_raises(self):
         with pytest.raises(FileNotFoundError):
             Vertical.load("/nonexistent/file.dat")
+
+
+# ======================================================================
+# 12. GNSS save / to_gmt
+# ======================================================================
+
+class TestGNSSSave:
+    """Test GNSS.save() round-trip and format behaviour."""
+
+    def _make_gnss_enu(self):
+        return GNSS(
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 101.0]),
+            ve=np.array([1.0, 2.0]),
+            vn=np.array([0.5, 1.5]),
+            vu=np.array([-0.1, -0.2]),
+            se=np.array([0.1, 0.2]),
+            sn=np.array([0.1, 0.2]),
+            su=np.array([0.5, 0.5]),
+        )
+
+    def _make_gnss_en(self):
+        return GNSS(
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 101.0]),
+            ve=np.array([1.0, 2.0]),
+            vn=np.array([0.5, 1.5]),
+            vu=None,
+            se=np.array([0.1, 0.2]),
+            sn=np.array([0.1, 0.2]),
+            su=None,
+        )
+
+    def test_save_roundtrip_enu(self, tmp_path):
+        g = self._make_gnss_enu()
+        fpath = tmp_path / "gnss.dat"
+        g.save(fpath)
+        loaded = GNSS.load(fpath)
+        np.testing.assert_allclose(loaded.lat, g.lat)
+        np.testing.assert_allclose(loaded.lon, g.lon)
+        np.testing.assert_allclose(loaded._ve, g._ve)
+        np.testing.assert_allclose(loaded._vn, g._vn)
+        np.testing.assert_allclose(loaded._vu, g._vu)
+        np.testing.assert_allclose(loaded._se, g._se)
+        np.testing.assert_allclose(loaded._sn, g._sn)
+        np.testing.assert_allclose(loaded._su, g._su)
+        assert loaded.components == "enu"
+
+    def test_save_roundtrip_en(self, tmp_path):
+        g = self._make_gnss_en()
+        fpath = tmp_path / "gnss_en.dat"
+        g.save(fpath)
+        loaded = GNSS.load(fpath, components="en")
+        np.testing.assert_allclose(loaded.lat, g.lat)
+        np.testing.assert_allclose(loaded._ve, g._ve)
+        np.testing.assert_allclose(loaded._vn, g._vn)
+        assert loaded.components == "en"
+
+    def test_save_writes_header_comment(self, tmp_path):
+        g = self._make_gnss_enu()
+        fpath = tmp_path / "gnss.dat"
+        g.save(fpath)
+        lines = fpath.read_text().splitlines()
+        assert any(line.startswith("#") for line in lines)
+
+    def test_save_creates_file(self, tmp_path):
+        g = self._make_gnss_enu()
+        fpath = tmp_path / "out.dat"
+        assert not fpath.exists()
+        g.save(fpath)
+        assert fpath.exists()
+
+    def test_save_unknown_format_raises(self, tmp_path):
+        g = self._make_gnss_enu()
+        with pytest.raises(ValueError, match="format"):
+            g.save(tmp_path / "out.dat", format="csv")
+
+
+class TestGNSSToGmt:
+    """Test GNSS.to_gmt() output."""
+
+    def test_creates_file(self, tmp_path):
+        g = GNSS(
+            lat=np.array([0.0]),
+            lon=np.array([100.0]),
+            ve=np.array([1.0]),
+            vn=np.array([0.5]),
+            vu=None,
+            se=np.array([0.1]),
+            sn=np.array([0.1]),
+            su=None,
+        )
+        fpath = tmp_path / "gnss.gmt"
+        g.to_gmt(fpath)
+        assert fpath.exists()
+
+    def test_columns_horizontal(self, tmp_path):
+        """Horizontal-only GNSS: lon lat uE uN sigE sigN (6 cols)."""
+        g = GNSS(
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 101.0]),
+            ve=np.array([1.0, 2.0]),
+            vn=np.array([0.5, 1.5]),
+            vu=None,
+            se=np.array([0.1, 0.2]),
+            sn=np.array([0.1, 0.2]),
+            su=None,
+        )
+        fpath = tmp_path / "gnss.gmt"
+        g.to_gmt(fpath)
+        data = np.loadtxt(fpath, comments="#")
+        assert data.shape == (2, 6)
+        np.testing.assert_allclose(data[:, 0], g.lon)
+        np.testing.assert_allclose(data[:, 1], g.lat)
+        np.testing.assert_allclose(data[:, 2], g._ve)
+        np.testing.assert_allclose(data[:, 3], g._vn)
+
+
+# ======================================================================
+# 13. InSAR save / to_gmt
+# ======================================================================
+
+class TestInSARSave:
+    """Test InSAR.save() round-trip."""
+
+    def _make_insar(self):
+        n = 3
+        return InSAR(
+            lat=np.array([0.0, 1.0, 2.0]),
+            lon=np.array([100.0, 100.5, 101.0]),
+            los=np.array([0.01, 0.02, -0.01]),
+            sigma=np.full(n, 0.005),
+            look_e=np.full(n, 0.38),
+            look_n=np.full(n, -0.09),
+            look_u=np.full(n, 0.92),
+        )
+
+    def test_save_roundtrip(self, tmp_path):
+        d = self._make_insar()
+        fpath = tmp_path / "insar.dat"
+        d.save(fpath)
+        loaded = InSAR.load(fpath)
+        np.testing.assert_allclose(loaded.lat, d.lat)
+        np.testing.assert_allclose(loaded.lon, d.lon)
+        np.testing.assert_allclose(loaded.obs, d.obs)
+        np.testing.assert_allclose(loaded.sigma, d.sigma)
+        np.testing.assert_allclose(loaded._look_e, d._look_e)
+        np.testing.assert_allclose(loaded._look_n, d._look_n)
+        np.testing.assert_allclose(loaded._look_u, d._look_u)
+
+    def test_save_writes_header_comment(self, tmp_path):
+        d = self._make_insar()
+        fpath = tmp_path / "insar.dat"
+        d.save(fpath)
+        lines = fpath.read_text().splitlines()
+        assert any(line.startswith("#") for line in lines)
+
+    def test_save_unknown_format_raises(self, tmp_path):
+        d = self._make_insar()
+        with pytest.raises(ValueError, match="format"):
+            d.save(tmp_path / "out.dat", format="hdf5")
+
+
+class TestInSARToGmt:
+    """Test InSAR.to_gmt() output."""
+
+    def test_creates_file(self, tmp_path):
+        d = InSAR(
+            lat=np.array([0.0]),
+            lon=np.array([100.0]),
+            los=np.array([0.01]),
+            sigma=np.array([0.005]),
+            look_e=np.array([0.38]),
+            look_n=np.array([-0.09]),
+            look_u=np.array([0.92]),
+        )
+        fpath = tmp_path / "insar.gmt"
+        d.to_gmt(fpath)
+        assert fpath.exists()
+
+    def test_columns(self, tmp_path):
+        """InSAR GMT file: lon lat uLOS (3 cols)."""
+        n = 4
+        d = InSAR(
+            lat=np.linspace(0, 1, n),
+            lon=np.linspace(100, 101, n),
+            los=np.linspace(0.01, 0.04, n),
+            sigma=np.full(n, 0.005),
+            look_e=np.full(n, 0.38),
+            look_n=np.full(n, -0.09),
+            look_u=np.full(n, 0.92),
+        )
+        fpath = tmp_path / "insar.gmt"
+        d.to_gmt(fpath)
+        data = np.loadtxt(fpath, comments="#")
+        assert data.shape == (n, 3)
+        np.testing.assert_allclose(data[:, 0], d.lon)
+        np.testing.assert_allclose(data[:, 1], d.lat)
+        np.testing.assert_allclose(data[:, 2], d.obs)
+
+
+# ======================================================================
+# 14. Vertical save / to_gmt
+# ======================================================================
+
+class TestVerticalSave:
+    """Test Vertical.save() round-trip."""
+
+    def _make_vertical(self):
+        return Vertical(
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 101.0]),
+            displacement=np.array([0.01, 0.02]),
+            sigma=np.array([0.003, 0.003]),
+        )
+
+    def test_save_roundtrip(self, tmp_path):
+        d = self._make_vertical()
+        fpath = tmp_path / "vert.dat"
+        d.save(fpath)
+        loaded = Vertical.load(fpath)
+        np.testing.assert_allclose(loaded.lat, d.lat)
+        np.testing.assert_allclose(loaded.lon, d.lon)
+        np.testing.assert_allclose(loaded.obs, d.obs)
+        np.testing.assert_allclose(loaded.sigma, d.sigma)
+
+    def test_save_writes_header_comment(self, tmp_path):
+        d = self._make_vertical()
+        fpath = tmp_path / "vert.dat"
+        d.save(fpath)
+        lines = fpath.read_text().splitlines()
+        assert any(line.startswith("#") for line in lines)
+
+    def test_save_unknown_format_raises(self, tmp_path):
+        d = self._make_vertical()
+        with pytest.raises(ValueError, match="format"):
+            d.save(tmp_path / "out.dat", format="nc")
+
+
+class TestVerticalToGmt:
+    """Test Vertical.to_gmt() output."""
+
+    def test_creates_file(self, tmp_path):
+        d = Vertical(
+            lat=np.array([0.0]),
+            lon=np.array([100.0]),
+            displacement=np.array([0.01]),
+            sigma=np.array([0.003]),
+        )
+        fpath = tmp_path / "vert.gmt"
+        d.to_gmt(fpath)
+        assert fpath.exists()
+
+    def test_columns(self, tmp_path):
+        """Vertical GMT file: lon lat uZ (3 cols)."""
+        d = Vertical(
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 101.0]),
+            displacement=np.array([0.01, 0.02]),
+            sigma=np.array([0.003, 0.003]),
+        )
+        fpath = tmp_path / "vert.gmt"
+        d.to_gmt(fpath)
+        data = np.loadtxt(fpath, comments="#")
+        assert data.shape == (2, 3)
+        np.testing.assert_allclose(data[:, 0], d.lon)
+        np.testing.assert_allclose(data[:, 1], d.lat)
+        np.testing.assert_allclose(data[:, 2], d.obs)

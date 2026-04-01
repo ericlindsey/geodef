@@ -112,54 +112,94 @@ class Mesh:
     # I/O
     # ------------------------------------------------------------------
 
-    def save(self, fname: str, format: str = "ned") -> None:
+    def save(
+        self,
+        fname: str,
+        format: str = "ned",
+        *,
+        coord_order: str = "latlon",
+    ) -> None:
         """Save mesh to files.
 
         Args:
             fname: Base filename (without extension).
-            format: File format. Currently only ``"ned"`` (unicycle
-                ``.ned`` + ``.tri`` files) is supported.
+            format: File format.  Only ``"ned"`` (unicycle ``.ned`` +
+                ``.tri`` pair) is currently supported.
+            coord_order: Column order for node coordinates in the ``.ned``
+                file.  ``"latlon"`` (default) writes ``index lat lon depth``
+                for compatibility with existing unicycle / stress-shadows
+                files.  ``"lonlat"`` writes ``index lon lat depth``, which
+                is consistent with all other geodef data classes and is
+                recommended for new files.
 
-        The ``.ned`` file stores nodes as ``index lat lon depth`` (1-indexed).
-        The ``.tri`` file stores ``index v1 v2 v3 rake`` (1-indexed).
+        The ``.tri`` file always stores ``index v1 v2 v3 rake`` (1-indexed).
+
+        Raises:
+            ValueError: If ``format`` or ``coord_order`` is not supported.
         """
         if format != "ned":
             raise ValueError(
                 f"Unsupported format {format!r}; only 'ned' is supported"
             )
+        if coord_order not in ("latlon", "lonlat"):
+            raise ValueError(
+                f"Invalid coord_order {coord_order!r}; "
+                "use 'latlon' (default) or 'lonlat'"
+            )
         ned_path = Path(f"{fname}.ned")
         tri_path = Path(f"{fname}.tri")
 
-        with open(ned_path, "w") as f:
+        with open(ned_path, "w") as fh:
             for i in range(self.n_nodes):
-                f.write(
-                    f"{i + 1} {self.lat[i]:.8f} {self.lon[i]:.8f}"
-                    f" {self.depth[i]:.4f}\n"
-                )
+                if coord_order == "latlon":
+                    fh.write(
+                        f"{i + 1} {self.lat[i]:.8f} {self.lon[i]:.8f}"
+                        f" {self.depth[i]:.4f}\n"
+                    )
+                else:
+                    fh.write(
+                        f"{i + 1} {self.lon[i]:.8f} {self.lat[i]:.8f}"
+                        f" {self.depth[i]:.4f}\n"
+                    )
 
-        with open(tri_path, "w") as f:
+        with open(tri_path, "w") as fh:
             for i in range(self.n_triangles):
                 v = self.triangles[i] + 1  # 1-indexed
-                f.write(f"{i + 1} {v[0]} {v[1]} {v[2]} 90.00\n")
+                fh.write(f"{i + 1} {v[0]} {v[1]} {v[2]} 90.00\n")
 
     @classmethod
-    def load(cls, fname: str, format: str = "ned") -> Mesh:
+    def load(
+        cls,
+        fname: str,
+        format: str = "ned",
+        *,
+        coord_order: str = "latlon",
+    ) -> "Mesh":
         """Load mesh from files.
 
         Args:
             fname: Base filename (without extension).
-            format: File format. Currently only ``"ned"`` is supported.
+            format: File format.  Only ``"ned"`` is supported.
+            coord_order: Column order of node coordinates in the ``.ned``
+                file.  Must match the value used when the file was saved.
+                ``"latlon"`` (default) expects ``index lat lon depth``;
+                ``"lonlat"`` expects ``index lon lat depth``.
 
         Returns:
             Loaded ``Mesh`` instance.
 
         Raises:
             FileNotFoundError: If the required files do not exist.
-            ValueError: If the format is not supported.
+            ValueError: If ``format`` or ``coord_order`` is not supported.
         """
         if format != "ned":
             raise ValueError(
                 f"Unsupported format {format!r}; only 'ned' is supported"
+            )
+        if coord_order not in ("latlon", "lonlat"):
+            raise ValueError(
+                f"Invalid coord_order {coord_order!r}; "
+                "use 'latlon' (default) or 'lonlat'"
             )
         ned_path = Path(f"{fname}.ned")
         tri_path = Path(f"{fname}.tri")
@@ -169,13 +209,15 @@ class Mesh:
         if not tri_path.exists():
             raise FileNotFoundError(f"Triangle file not found: {tri_path}")
 
-        # Parse .ned: index lat lon depth
         ned_data = np.loadtxt(ned_path, comments="#")
-        lat = ned_data[:, 1]
-        lon = ned_data[:, 2]
+        if coord_order == "latlon":
+            lat = ned_data[:, 1]
+            lon = ned_data[:, 2]
+        else:
+            lon = ned_data[:, 1]
+            lat = ned_data[:, 2]
         depth = ned_data[:, 3]
 
-        # Parse .tri: index v1 v2 v3 rake
         tri_data = np.loadtxt(tri_path, comments="#")
         triangles = tri_data[:, 1:4].astype(int) - 1  # 0-indexed
 

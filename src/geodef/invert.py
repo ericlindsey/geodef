@@ -7,6 +7,7 @@ Automatic hyperparameter tuning via ABIC or cross-validation.
 """
 
 import dataclasses
+from pathlib import Path
 
 import numpy as np
 import scipy.linalg
@@ -53,6 +54,154 @@ class InversionResult:
     smoothing: str | np.ndarray | None
     smoothing_strength: float | None
     components: str
+
+    # ------------------------------------------------------------------
+    # I/O
+    # ------------------------------------------------------------------
+
+    def save(self, fname: str | Path) -> None:
+        """Save inversion result to a NumPy ``.npz`` archive.
+
+        All numeric arrays and scalar fields are preserved.  String fields
+        (``smoothing``, ``components``) are stored as object arrays.
+        Custom ``smoothing`` matrices are saved as arrays; named strings are
+        saved as-is.
+
+        Args:
+            fname: Output file path.  ``.npz`` extension is recommended.
+        """
+        smoothing_str: str
+        smoothing_arr: np.ndarray | None
+        if self.smoothing is None:
+            smoothing_str = "__none__"
+            smoothing_arr = None
+        elif isinstance(self.smoothing, str):
+            smoothing_str = self.smoothing
+            smoothing_arr = None
+        else:
+            smoothing_str = "__array__"
+            smoothing_arr = np.asarray(self.smoothing)
+
+        strength = (
+            np.array([float("nan")])
+            if self.smoothing_strength is None
+            else np.array([self.smoothing_strength])
+        )
+
+        arrays: dict = {
+            "slip": self.slip,
+            "slip_vector": self.slip_vector,
+            "residuals": self.residuals,
+            "predicted": self.predicted,
+            "chi2": np.array([self.chi2]),
+            "rms": np.array([self.rms]),
+            "moment": np.array([self.moment]),
+            "Mw": np.array([self.Mw]),
+            "smoothing_str": np.array([smoothing_str]),
+            "smoothing_strength": strength,
+            "components": np.array([self.components]),
+        }
+        if smoothing_arr is not None:
+            arrays["smoothing_arr"] = smoothing_arr
+
+        np.savez_compressed(fname, **arrays)
+
+    @classmethod
+    def load(cls, fname: str | Path) -> "InversionResult":
+        """Load an inversion result from a ``.npz`` archive.
+
+        Args:
+            fname: Path to a ``.npz`` file previously written by ``save()``.
+
+        Returns:
+            Reconstructed ``InversionResult`` instance.
+        """
+        data = np.load(fname, allow_pickle=False)
+
+        smoothing_str = str(data["smoothing_str"][0])
+        if smoothing_str == "__none__":
+            smoothing: str | np.ndarray | None = None
+        elif smoothing_str == "__array__":
+            smoothing = data["smoothing_arr"]
+        else:
+            smoothing = smoothing_str
+
+        raw_strength = float(data["smoothing_strength"][0])
+        strength: float | None = None if np.isnan(raw_strength) else raw_strength
+
+        return cls(
+            slip=data["slip"],
+            slip_vector=data["slip_vector"],
+            residuals=data["residuals"],
+            predicted=data["predicted"],
+            chi2=float(data["chi2"][0]),
+            rms=float(data["rms"][0]),
+            moment=float(data["moment"][0]),
+            Mw=float(data["Mw"][0]),
+            smoothing=smoothing,
+            smoothing_strength=strength,
+            components=str(data["components"][0]),
+        )
+
+    def save_table(self, fname: str | Path, fault: "Fault") -> None:
+        """Save slip distribution as a human-readable text table.
+
+        Writes a ``#``-prefixed header with summary statistics followed by
+        one data row per fault patch.  For rectangular faults the columns
+        are ``lon lat depth_m strike dip length_m width_m slip_strike_m
+        slip_dip_m``; for triangular faults ``length_m`` and ``width_m`` are
+        replaced by ``area_m2``.
+
+        Args:
+            fault: Fault geometry matching this result.
+            fname: Output file path.
+        """
+        slip_2d = self.slip if self.slip.ndim == 2 else self.slip[:, np.newaxis]
+        n_comp = slip_2d.shape[1]
+
+        smoothing_desc = (
+            "none"
+            if self.smoothing is None
+            else (self.smoothing if isinstance(self.smoothing, str) else "custom")
+        )
+        strength_desc = (
+            "N/A" if self.smoothing_strength is None
+            else f"{self.smoothing_strength:.6g}"
+        )
+
+        header_lines = [
+            "geodef InversionResult",
+            f"components: {self.components}",
+            f"smoothing: {smoothing_desc}, strength: {strength_desc}",
+            f"chi2_reduced: {self.chi2:.6g}",
+            f"rms: {self.rms:.6g} m",
+            f"moment: {self.moment:.6g} N-m",
+            f"Mw: {self.Mw:.4f}",
+        ]
+
+        if fault.engine == "okada":
+            col_names = "lon lat depth_m strike dip length_m width_m"
+            geom = np.column_stack([
+                fault._lon, fault._lat, fault._depth,
+                fault._strike, fault._dip,
+                fault._length, fault._width,
+            ])
+        else:
+            col_names = "lon lat depth_m strike dip area_m2"
+            geom = np.column_stack([
+                fault._lon, fault._lat, fault._depth,
+                fault._strike, fault._dip,
+                fault.areas,
+            ])
+
+        slip_cols = "  ".join(
+            ["slip_strike_m", "slip_dip_m"][:n_comp]
+        )
+        header_lines.append(f"{col_names}  {slip_cols}")
+
+        data = np.column_stack([geom, slip_2d])
+        header = "\n".join(header_lines)
+        np.savetxt(Path(fname), data, header=header, fmt="%.6f")
 
 
 @dataclasses.dataclass(frozen=True)

@@ -263,6 +263,54 @@ class GNSS(DataSet):
             return np.column_stack([ue, un, uz]).ravel()
         return np.column_stack([ue, un]).ravel()
 
+    def save(self, fname: str | Path, *, format: str = "dat") -> None:
+        """Save GNSS data to a whitespace-delimited file.
+
+        Always writes 9 columns (``lon lat hgt uE uN uZ sigE sigN sigZ``) so
+        the file can always be read back with ``load()``.  For horizontal-only
+        instances, ``uZ`` and ``sigZ`` are written as ``0.0`` / ``1.0``
+        placeholders; reload with ``components='en'`` to discard them.
+        Height (``hgt``) is written as zeros because the class does not store
+        elevation.
+
+        Args:
+            fname: Output file path.
+            format: File format.  Only ``"dat"`` is supported.
+
+        Raises:
+            ValueError: If ``format`` is not ``"dat"``.
+        """
+        if format != "dat":
+            raise ValueError(f"Unknown format {format!r}; use 'dat'")
+        hgt = np.zeros(self.n_stations)
+        vu = self._vu if self._vu is not None else np.zeros(self.n_stations)
+        su = self._su if self._su is not None else np.ones(self.n_stations)
+        data = np.column_stack([
+            self._lon, self._lat, hgt,
+            self._ve, self._vn, vu,
+            self._se, self._sn, su,
+        ])
+        np.savetxt(Path(fname), data,
+                   header="lon lat hgt uE uN uZ sigE sigN sigZ",
+                   fmt="%.8f")
+
+    def to_gmt(self, fname: str | Path) -> None:
+        """Save GNSS data in GMT-compatible format.
+
+        Writes ``lon lat uE uN sigE sigN`` (horizontal) with a ``#``-prefixed
+        header, suitable for ``psvelo`` or ``psxy`` GMT commands.
+
+        Args:
+            fname: Output file path.
+        """
+        header = "lon lat uE uN sigE sigN"
+        data = np.column_stack([
+            self._lon, self._lat,
+            self._ve, self._vn,
+            self._se, self._sn,
+        ])
+        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
+
     @classmethod
     def load(
         cls,
@@ -385,6 +433,43 @@ class InSAR(DataSet):
         ue, un, uz = components
         return self._look_e * ue + self._look_n * un + self._look_u * uz
 
+    def save(self, fname: str | Path, *, format: str = "dat") -> None:
+        """Save InSAR data to a whitespace-delimited file.
+
+        Writes the same column layout expected by ``load()``.  Height is
+        written as zeros.
+
+        Args:
+            fname: Output file path.
+            format: File format.  Only ``"dat"`` is supported.
+
+        Raises:
+            ValueError: If ``format`` is not ``"dat"``.
+        """
+        if format != "dat":
+            raise ValueError(f"Unknown format {format!r}; use 'dat'")
+        hgt = np.zeros(self.n_stations)
+        data = np.column_stack([
+            self._lon, self._lat, hgt,
+            self._los, self._sigma,
+            self._look_e, self._look_n, self._look_u,
+        ])
+        np.savetxt(Path(fname), data,
+                   header="lon lat hgt uLOS sigLOS losE losN losU",
+                   fmt="%.8f")
+
+    def to_gmt(self, fname: str | Path) -> None:
+        """Save InSAR data in GMT-compatible format.
+
+        Writes ``lon lat uLOS`` with a ``#``-prefixed header, suitable for
+        ``xyz2grd`` or ``surface`` GMT commands.
+
+        Args:
+            fname: Output file path.
+        """
+        data = np.column_stack([self._lon, self._lat, self._los])
+        np.savetxt(Path(fname), data, header="lon lat uLOS", fmt="%.8f")
+
     @classmethod
     def load(
         cls,
@@ -488,6 +573,41 @@ class Vertical(DataSet):
         """
         _ue, _un, uz = components
         return uz
+
+    def save(self, fname: str | Path, *, format: str = "dat") -> None:
+        """Save vertical data to a whitespace-delimited file.
+
+        Writes the same column layout expected by ``load()``.  Height is
+        written as zeros.
+
+        Args:
+            fname: Output file path.
+            format: File format.  Only ``"dat"`` is supported.
+
+        Raises:
+            ValueError: If ``format`` is not ``"dat"``.
+        """
+        if format != "dat":
+            raise ValueError(f"Unknown format {format!r}; use 'dat'")
+        hgt = np.zeros(self.n_stations)
+        data = np.column_stack([
+            self._lon, self._lat, hgt,
+            self._displacement, self._sigma,
+        ])
+        np.savetxt(Path(fname), data,
+                   header="lon lat hgt uZ sigZ",
+                   fmt="%.8f")
+
+    def to_gmt(self, fname: str | Path) -> None:
+        """Save vertical data in GMT-compatible format.
+
+        Writes ``lon lat uZ`` with a ``#``-prefixed header.
+
+        Args:
+            fname: Output file path.
+        """
+        data = np.column_stack([self._lon, self._lat, self._displacement])
+        np.savetxt(Path(fname), data, header="lon lat uZ", fmt="%.8f")
 
     @classmethod
     def load(

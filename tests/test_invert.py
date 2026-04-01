@@ -1262,3 +1262,116 @@ class TestModelUncertainty:
         result = invert(fault_4x3, gnss, components='strike')
         unc = model_uncertainty(result, fault_4x3, gnss)
         assert unc.shape == (12,)
+
+
+# ======================================================================
+# InversionResult I/O
+# ======================================================================
+
+class TestInversionResultIO:
+    """Test InversionResult.save(), .load(), and .save_table()."""
+
+    def _make_result(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        return invert(
+            fault_4x3, gnss,
+            smoothing="laplacian",
+            smoothing_strength=10.0,
+        )
+
+    def test_save_creates_npz(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        assert fpath.exists()
+
+    def test_save_load_roundtrip_slip(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        np.testing.assert_allclose(loaded.slip, result.slip)
+
+    def test_save_load_roundtrip_predicted(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        np.testing.assert_allclose(loaded.predicted, result.predicted)
+
+    def test_save_load_roundtrip_scalars(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        np.testing.assert_allclose(loaded.chi2, result.chi2)
+        np.testing.assert_allclose(loaded.rms, result.rms)
+        np.testing.assert_allclose(loaded.moment, result.moment)
+        np.testing.assert_allclose(loaded.Mw, result.Mw)
+        assert loaded.components == result.components
+        assert loaded.smoothing_strength == result.smoothing_strength
+
+    def test_save_load_string_smoothing(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        assert isinstance(result.smoothing, str)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        assert loaded.smoothing == result.smoothing
+
+    def test_save_load_no_smoothing(self, fault_4x3, obs_points, tmp_path):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss)
+        fpath = tmp_path / "result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        assert loaded.smoothing is None
+        assert loaded.smoothing_strength is None
+
+    def test_save_table_creates_file(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.dat"
+        result.save_table(fpath, fault_4x3)
+        assert fpath.exists()
+
+    def test_save_table_has_header_stats(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.dat"
+        result.save_table(fpath, fault_4x3)
+        text = fpath.read_text()
+        assert "chi2" in text.lower() or "rms" in text.lower()
+        assert "Mw" in text or "mw" in text.lower()
+
+    def test_save_table_rect_fault_columns(self, fault_4x3, obs_points, tmp_path):
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "result.dat"
+        result.save_table(fpath, fault_4x3)
+        # Data lines (non-comment) should have at least 9 columns
+        data_lines = [
+            l for l in fpath.read_text().splitlines()
+            if l and not l.startswith("#")
+        ]
+        assert len(data_lines) == fault_4x3.n_patches
+        cols = len(data_lines[0].split())
+        assert cols >= 9  # lon lat depth strike dip length width ss ds
+
+    def test_save_table_tri_fault(self, obs_points, tmp_path):
+        from geodef.mesh import Mesh
+        lon = np.array([100.0, 100.2, 100.0, 100.2])
+        lat = np.array([0.0, 0.0, 0.2, 0.2])
+        depth = np.array([5e3, 5e3, 15e3, 15e3])
+        triangles = np.array([[0, 1, 2], [1, 3, 2]])
+        mesh = Mesh(lon=lon, lat=lat, depth=depth, triangles=triangles)
+        fault = Fault.from_mesh(mesh)
+        lat_pts, lon_pts = obs_points
+        gnss = _make_gnss(fault, (lat_pts, lon_pts), 1.0, 0.0)
+        result = invert(fault, gnss)
+        fpath = tmp_path / "tri_result.dat"
+        result.save_table(fpath, fault)
+        data_lines = [
+            l for l in fpath.read_text().splitlines()
+            if l and not l.startswith("#")
+        ]
+        assert len(data_lines) == fault.n_patches
+        cols = len(data_lines[0].split())
+        assert cols >= 7  # lon lat depth strike dip ss ds
