@@ -2,187 +2,67 @@
 
 ## Project Overview
 
-**GeoDef** is being built as a flexible, student-friendly Python library for **forward and inverse modeling of fault slip** in elastic half-spaces. It targets both coseismic (earthquake) and interseismic (locked fault / coupling) applications.
+**GeoDef** is a Python library for forward and inverse modeling of fault slip in elastic half-spaces. It targets both coseismic (earthquake) and interseismic (locked fault / coupling) applications. The core library is complete; remaining work is tutorial notebooks and future extensions.
 
-The project name is `geodef`. Install with `uv pip install -e .`.
+**Read `PYTHON.md` before editing any code.**
 
-## Current Repository Layout
+---
+
+## Repository Layout
 
 ```
 geodef/
-├── CLAUDE.md              # This file — agent onboarding
+├── CLAUDE.md              # This file
 ├── PLAN.md                # Development roadmap
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
-├── src/geodef/            # The installable package
-│   ├── __init__.py        # Top-level convenience API + version
-│   ├── okada.py           # Unified dispatcher: auto-selects okada85 or okada92
-│   ├── okada85.py         # Okada (1985) — surface displacements, tilts, strains
-│   ├── okada92.py         # Okada (1992) — internal deformation at depth
-│   ├── tri.py             # Triangular dislocation interface (Nikkhoo & Walter 2015)
-│   ├── greens.py          # Green's matrix assembly + Laplacian regularization
-│   ├── fault.py           # Fault class: factory methods, forward modeling, vertices, I/O
-│   ├── data.py            # DataSet base + GNSS, InSAR, Vertical data types
-│   ├── invert.py          # Inversion: solvers, regularization, tuning, model assessment
-│   ├── plot.py            # Visualization: slip, vectors, InSAR, fault geometry, diagnostics
-│   ├── cache.py           # Hash-based disk caching for Green's matrices and stress kernels
-│   ├── transforms.py      # Coordinate transforms (geographic <-> local Cartesian)
-│   └── mesh.py            # Triangular mesh generation from slab2.0 (optional deps)
-├── tests/                 # Test suite (669 tests, run with `uv run pytest`)
-│   ├── test_okada85.py    # Okada85 reference cases + property tests
-│   ├── test_okada92.py    # Okada92/DC3D tests
-│   ├── test_tdcalc.py     # Triangular dislocation tests
-│   ├── test_cross_validation.py  # Cross-validation between all engines
-│   ├── test_package.py    # Package structure, imports, okada dispatcher
-│   ├── test_transforms.py # Coordinate transformation tests
-│   ├── test_greens.py     # Laplacian operator tests
-│   ├── test_fault.py      # Fault construction, forward modeling, I/O, vertices
-│   ├── test_data.py       # DataSet base, GNSS, InSAR, Vertical, covariance
-│   ├── test_greens_integration.py  # Green's matrix assembly, projection, stacking
-│   ├── test_cache.py      # Cache module: hashing, config, cached_compute, greens/stress integration
-│   ├── test_invert.py     # Inversion: solvers, regularization, bounds, fit stats, model assessment
-│   ├── test_plot.py       # Visualization: slip, resolution, uncertainty, helpers
-│   ├── test_mesh.py       # Mesh generation: dataclass, I/O, factory functions, Fault integration
-│   └── reference_data/    # Matlab-generated .npz reference files
-├── examples/              # Worked example notebooks
-│   ├── 01_forward_model.ipynb  # Forward modeling demo: fault, GNSS, G matrix, prediction
-│   ├── 02_caching.ipynb   # Caching demo: Green's matrix and stress kernel speedups
-│   ├── 03_plotting.ipynb  # Plotting demo: all plot types with customization examples
-│   ├── 04_mesh_generation.ipynb  # Mesh generation: trace+dip, polygon, slab2.0
-│   └── data/              # Example data files (slab2.0 grids, etc.)
-├── docs/                  # Auto-generated code overviews
+├── src/geodef/            # Installable package
+├── tests/                 # 669 tests across 15 files
+├── examples/              # Worked example notebooks (01–04)
+├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
-│   ├── okada/             # Okada85/92 rectangular dislocations (originals)
-│   ├── tdcalc/            # Triangular dislocations (originals)
-│   └── slabMesh/          # Mesh generation (original)
-└── related/               # Reference code and teaching materials
-    ├── shakeout_v2/       # Python fault modeling classes, plotting, inversions, tutorials
-    │   ├── notebooks/     # Numbered tutorial series (00-08) on geodetic inversion
-    │   └── *.py           # Original FaultModel, SlipModel, geod_transform, etc.
-    └── stress-shadows/    # Matlab inversion framework (Lindsey et al., 2021)
+└── related/               # Reference code: shakeout_v2/, stress-shadows/, and docs
 ```
 
-See `docs/` for detailed file-level and function-level overviews of the reference code.
+---
 
 ## Package Modules (`src/geodef/`)
 
-| Module | What it provides | Status |
-|--------|-----------------|--------|
-| `okada85` | Surface displacements, tilts, strains (Okada 1985) | Verified (44 tests) |
-| `okada92` | Internal deformation at depth (Okada 1992 / DC3D) | Verified (10 tests + cross-validated) |
-| `tri` | Triangular dislocation FS/HS displacements and strains | Verified (12 tests + cross-validated) |
-| `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) | Verified (7 tests) |
-| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators (structured + KNN) | Redesigned (27 + 32 tests) |
-| `fault` | `Fault` class: planar/file/seg/mesh creation, forward modeling, vertices, moment, I/O | Redesigned (60 tests) |
-| `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types | New (47 tests) |
-| `invert` | One-call inversion: WLS, NNLS, bounded LS, constrained QP; regularization (Laplacian/damping/stress-kernel); ABIC/CV/L-curve/ABIC-curve hyperparameter tuning; per-component selection; per-dataset diagnostics (hat matrix), model covariance/resolution/uncertainty | New (126 tests) |
-| `plot` | Visualization: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty | New (120 tests) |
-| `cache` | Hash-based disk caching for Green's matrices and stress kernels | New (29 tests) |
-| `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine | Migrated (19 tests) |
-| `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 grids | New (70 tests, requires optional deps) |
+| Module | What it provides |
+|--------|-----------------|
+| `okada85` | Surface displacements, tilts, strains (Okada 1985) |
+| `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
+| `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
+| `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
+| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
+| `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
+| `invert` | Inversion: solvers, regularization, hyperparameter tuning, model assessment |
+| `plot` | Visualization: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty |
+| `cache` | Hash-based disk caching for Green's matrices and stress kernels |
+| `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
+| `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 (optional deps) |
 
-## Modules Not Yet Migrated (`related/shakeout_v2/`)
+See `docs/` for per-module API reference with examples.
 
-| Module | Purpose |
-|--------|---------|
-| `euler_calc.py` | Euler pole fitting and velocity predictions |
-| `moment_tensor.py` | Moment tensor computation from strike/dip/rake |
-| `fault_plots.py` | `FaultPlot3D`/`FaultPlot2D` visualization classes |
-| `shakeout.py` | Utilities for Okada modeling with geographic coordinates |
-| `shakeout_mcmc.py` | MCMC Bayesian inversion for fault parameters |
-
-## Tutorial Notebooks (`related/shakeout_v2/notebooks/`)
-
-A progressive series building from basic statistics to full geodetic inversion:
-
-| # | Topic | Key concepts |
-|---|-------|-------------|
-| 00 | Setup & data overview | Environment, synthetic GNSS data, d=Gm notation |
-| 01 | Least squares from mean | Sample mean as least-squares solution |
-| 02 | Line fitting | Design matrix, uncertainty propagation |
-| 03 | Okada forward model | Single-fault displacement, map-view plotting |
-| 04 | Fault discretization | Multi-patch G matrix, unregularized inversion |
-| 05 | Regularization | Ridge, Laplacian smoothing, non-negative constraints |
-| 06 | Choosing lambda | L-curve curvature, ABIC |
-| 07 | Weighted least squares | Block-diagonal covariance, multiple datasets, correlated noise |
-| 07b | GNSS + InSAR noise | Correlated InSAR noise handling |
-| 08 | Nonlinear inversion | scipy.optimize, MCMC with emcee |
-
-## Matlab Inversion Framework (`related/stress-shadows/`)
-
-The primary source for the inverse-modeling architecture being ported to Python:
-
-- **Objects**: `Jointinv` (driver), `Jointinv_Source`/`Jointinv_Dataset` (abstract bases), `Static_Halfspace_Fault_Source`, `Backslip_Translation_Source`, `Static_GPS_Dataset`, `Static_LOS_Dataset`, `Static_Coral_Dataset`
-- **Functions**: Regularization (`compute_laplacian.m`), hyperparameters (`abic_alphabeta.m`, `kfold_cv_jointinv.m`), coordinate transforms (`latlon_to_xy_polyconic.m`), stress kernels (`unicycle_stress_kernel.m`), plotting, I/O
-- **Unicycle**: Green's functions (Okada85/92, Nikkhoo15, Meade07), geometry classes (patch, triangle, receiver), ODE solvers for earthquake-cycle modeling, rheology
-
-## Priority & Roadmap
-
-See `PLAN.md` for the detailed development plan.
-
-High-level priorities:
-1. ~~Finalize and test existing Green's function implementations (okada85, okada92, tdcalc)~~ **DONE**
-2. ~~Design the `geodef` package structure and migrate existing code~~ **DONE**
-3. ~~Implement core library: Fault/Data/Greens/Cache abstractions (Phase 3)~~ **DONE** (3.1–3.4, 352 tests passing)
-   - ~~3.1 `Fault` class~~ **DONE** — factory classmethods, forward modeling, vertices, moment, seg format I/O
-   - ~~3.2 `DataSet` classes~~ **DONE** — GNSS (3-comp or horizontal-only), InSAR (LOS), Vertical; file I/O, covariance
-   - ~~3.3 `greens` assembly~~ **DONE** — polymorphic G matrix, okada+tri engines, projection, stacking helpers
-   - ~~3.4 `cache` module~~ **DONE** — SHA-256 hash-based `.npz` caching for greens() and stress_kernel()
-4. ~~Implement inverse framework: regularization, solvers, hyperparameters~~ **DONE** (4.1–4.4)
-   - ~~4.1 `invert` module~~ **DONE** — WLS/NNLS/bounded LS solvers, Laplacian/damping/stress-kernel regularization, smoothing_target
-   - ~~4.2 Regularization~~ **DONE** — Laplacian, damping, stress-kernel, custom matrix; smoothing_target for backslip
-   - ~~4.3 Solvers~~ **DONE** — WLS, NNLS, bounded LS, constrained QP (SLSQP with inequality constraints)
-   - ~~4.4 Hyperparameter tuning~~ **DONE** — ABIC (Fukuda & Johnson 2008), K-fold CV, L-curve with corner finding
-5. ~~Uncertainty & model assessment~~ **DONE** (5.1–5.3, 478 tests passing)
-   - ~~5.1 Model covariance & resolution~~ **DONE** — `model_covariance()`, `model_resolution()`, `model_uncertainty()`
-   - ~~5.2 Fit statistics~~ **DONE** — per-dataset diagnostics via hat matrix, chi2/reduced_chi2/WRMS/DOF
-   - ~~5.3 Moment & magnitude~~ **DONE**
-6. ~~Visualization (`geodef.plot`)~~ **DONE** — slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty (120 tests)
-7. ~~Mesh generation (`geodef.mesh`)~~ **DONE** — from_trace, from_polygon, from_points, from_slab2; Fault.from_mesh() (70 tests)
-8. I/O additions — GMT export, extended data/fault formats
-9. Tutorial notebooks — scaffolded tutorials + worked examples with real data
-10. Future extensions — earthquake cycles, volume strain, cartopy, Euler poles, MCMC
+---
 
 ## Important Rules
 
-- **Read `PYTHON.md` before editing any code.** It contains mandatory style guidelines, tooling requirements, and coding standards.
+- **Read `PYTHON.md` before editing any code.** Mandatory style guidelines, tooling requirements, and coding standards.
 - Use red/green TDD. Write tests first, then write code to pass the tests.
-- Use `uv` for package management. Use `pytest` for testing.
+- Use `uv` for package management. Use `pytest` for testing. Install with `uv pip install -e .`.
 - All new functions must have type hints, docstrings, and tests.
 - Use NumPy vectorization — avoid Python loops over observation points or fault patches.
-- Coordinate convention: the library uses a local Cartesian (x=East, y=North, z=Up) frame unless otherwise noted. Green's functions may use internal conventions (e.g. Okada uses x=strike, y=updip) — always convert at the interface boundary.
+- Coordinate convention: local Cartesian (x=East, y=North, z=Up). Green's functions may use internal conventions — always convert at the interface.
+- Slip columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
+
+---
 
 ## Testing
 
-Run tests with:
 ```bash
 uv run pytest
 ```
 
-**669 tests passing** across 15 test files:
-
-| File | Tests | What it covers |
-|------|-------|---------------|
-| `tests/test_okada85.py` | 45 | 9 reference cases x 3 outputs (disp/tilt/strain), geometry, symmetry, far-field, vectorization |
-| `tests/test_okada92.py` | 13 | Shape, dip variations, slip components, depth variation, linearity, input validation |
-| `tests/test_tdcalc.py` | 12 | 4 Matlab reference configs x 2 (disp + strain), zero-slip, linearity, far-field, FS vs HS |
-| `tests/test_cross_validation.py` | 43 | Okada85 vs DC3D, Okada85 vs Okada92 wrapper, tdcalc vs Okada85, tdcalc vs DC3D at depth |
-| `tests/test_package.py` | 25 | Package imports, module accessibility, okada dispatcher, data class imports, API smoke tests |
-| `tests/test_transforms.py` | 20 | Round-trip conversions, reference values, edge cases, vectorization, custom ellipsoids |
-| `tests/test_greens.py` | 27 | Laplacian: structured (shape/nullspace/stencils/simple) + KNN unstructured (shape/nullspace/symmetry/sparsity/distance-weighting/irregular mesh/validation) |
-| `tests/test_fault.py` | 60 | Fault construction, planar factory, properties, forward modeling, moment/magnitude, laplacian (structured + KNN), file I/O (center + seg), vertices, stress kernel, cross-validation |
-| `tests/test_data.py` | 47 | DataSet base, GNSS (3-comp + horizontal), InSAR (LOS projection), Vertical, covariance, file I/O |
-| `tests/test_greens_integration.py` | 32 | Green's matrix assembly, single/joint datasets, okada+tri engines, projection, stacking, resolution |
-| `tests/test_cache.py` | 29 | Hash determinism, config API, cached_compute, cache info, greens() caching, stress_kernel depth fix + caching |
-| `tests/test_invert.py` | 126 | WLS/NNLS/bounded LS/constrained QP solvers, Laplacian/damping/stress-kernel/custom regularization, smoothing_target, ABIC/CV/L-curve/ABIC-curve hyperparameter tuning, joint datasets, fit statistics, component selection, validation, per-dataset diagnostics, model covariance/resolution/uncertainty |
-| `tests/test_plot.py` | 120 | All plot types (slip, vectors, insar, fit, fault3d, map, resolution, uncertainty), rect+tri faults, kwargs passthrough, vertical colorbar, scale arrow loc, surface trace, 3D zorder, map values/slip_vector, L-curve/ABIC annotate refactor |
-| `tests/test_mesh.py` | 70 | Mesh dataclass, construction, properties, vertices_enu, strike/dip computation, I/O round-trip, from_trace, from_polygon, from_slab2, from_points, Fault.from_mesh integration |
-
-Reference data: `tests/reference_data/` contains 4 `.npz` files extracted from Matlab tdcalc.
-
-## References
-
-- Okada, Y., 1985. Surface deformation due to shear and tensile faults in a half-space. BSSA.
-- Okada, Y., 1992. Internal deformation due to shear and tensile faults in a half-space. BSSA.
-- Nikkhoo, M., & Walter, T.R., 2015. Triangular dislocation: an analytical, artefact-free solution. GJI.
-- Lindsey, E.O. et al., 2021. Slip rate deficit and earthquake potential on shallow megathrusts. Nature Geoscience.
+**669 tests passing** across 15 test files covering all modules. Reference data in `tests/reference_data/` — Matlab-generated `.npz` files for cross-validation of Green's function engines.
