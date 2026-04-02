@@ -59,10 +59,38 @@ See `docs/` for per-module API reference with examples.
 
 ---
 
+## Git Workflow
+
+**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave the test suite passing and represent a coherent, independently revertable change.
+
+```bash
+# Run tests before committing
+uv run pytest
+
+# Stage specific files (never `git add -A` blindly)
+git add src/geodef/module.py tests/test_module.py
+
+# Commit with a descriptive message
+git commit -m "Short summary
+
+Longer explanation of why the change was made.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+```
+
+Commit granularity guidelines:
+- New class or module → one commit
+- Refactor of existing code → one commit (separate from feature additions)
+- New tests → can be bundled with the code they test, or a follow-up commit
+- Bug fix → one commit, referencing what was broken
+- Do **not** bundle unrelated changes in a single commit
+
+---
+
 ## Testing
 
 ```bash
 uv run pytest
 ```
 
-**669 tests passing** across 15 test files covering all modules. Reference data in `tests/reference_data/` — Matlab-generated `.npz` files for cross-validation of Green's function engines.
+**769 tests passing** across 16 test files covering all modules. Reference data in `tests/reference_data/` — Matlab-generated `.npz` files for cross-validation of Green's function engines.
