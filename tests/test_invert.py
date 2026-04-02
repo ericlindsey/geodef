@@ -65,7 +65,7 @@ def _make_gnss(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return GNSS(
-        lat, lon,
+        lon, lat,
         ve=ue, vn=un, vu=uz,
         se=np.full(n, sigma), sn=np.full(n, sigma), su=np.full(n, sigma),
     )
@@ -81,7 +81,7 @@ def _make_insar(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     look_u = np.full(n, 0.92)
     los = look_e * ue + look_n * un + look_u * uz
     return InSAR(
-        lat, lon,
+        lon, lat,
         los=los, sigma=np.full(n, sigma),
         look_e=look_e, look_n=look_n, look_u=look_u,
     )
@@ -93,7 +93,7 @@ def _make_vertical(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     _, _, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return Vertical(
-        lat, lon,
+        lon, lat,
         displacement=uz, sigma=np.full(n, sigma),
     )
 
@@ -325,7 +325,7 @@ class TestRegularization:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lat, lon,
+            lon, lat,
             ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
             se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
         )
@@ -650,7 +650,7 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lat, lon,
+            lon, lat,
             ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
             se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
         )
@@ -705,7 +705,7 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lat, lon,
+            lon, lat,
             ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
             se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
         )
@@ -851,7 +851,7 @@ class TestABICCurve:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lat, lon,
+            lon, lat,
             ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
             se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
         )

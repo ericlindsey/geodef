@@ -39,32 +39,32 @@ class DataSet(ABC):
 
     def __init__(
         self,
-        lat: np.ndarray,
         lon: np.ndarray,
+        lat: np.ndarray,
         *,
         covariance: np.ndarray | None = None,
     ) -> None:
-        lat = _make_readonly(np.asarray(lat, dtype=float))
         lon = _make_readonly(np.asarray(lon, dtype=float))
+        lat = _make_readonly(np.asarray(lat, dtype=float))
 
         n = lat.shape[0]
         if lat.ndim != 1 or lon.shape != (n,):
-            raise ValueError("lat and lon must be 1-D arrays of the same length")
+            raise ValueError("lon and lat must be 1-D arrays of the same length")
 
-        self._lat = lat
         self._lon = lon
+        self._lat = lat
         self._covariance_explicit = covariance
         self._covariance_cache: np.ndarray | None = None
-
-    @property
-    def lat(self) -> np.ndarray:
-        """Observation point latitudes, shape (n_stations,)."""
-        return self._lat
 
     @property
     def lon(self) -> np.ndarray:
         """Observation point longitudes, shape (n_stations,)."""
         return self._lon
+
+    @property
+    def lat(self) -> np.ndarray:
+        """Observation point latitudes, shape (n_stations,)."""
+        return self._lat
 
     @property
     def n_stations(self) -> int:
@@ -141,8 +141,8 @@ class GNSS(DataSet):
     Pass ``vu=None, su=None`` for horizontal-only.
 
     Args:
-        lat: Station latitudes, shape (n_stations,).
         lon: Station longitudes, shape (n_stations,).
+        lat: Station latitudes, shape (n_stations,).
         ve: East component values, shape (n_stations,).
         vn: North component values, shape (n_stations,).
         vu: Up component values, shape (n_stations,), or None for horizontal-only.
@@ -156,8 +156,8 @@ class GNSS(DataSet):
 
     def __init__(
         self,
-        lat: np.ndarray,
         lon: np.ndarray,
+        lat: np.ndarray,
         ve: np.ndarray,
         vn: np.ndarray,
         vu: np.ndarray | None,
@@ -167,7 +167,7 @@ class GNSS(DataSet):
         *,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lat, lon, covariance=covariance)
+        super().__init__(lon, lat, covariance=covariance)
 
         ve = np.asarray(ve, dtype=float)
         vn = np.asarray(vn, dtype=float)
@@ -266,12 +266,10 @@ class GNSS(DataSet):
     def save(self, fname: str | Path, *, format: str = "dat") -> None:
         """Save GNSS data to a whitespace-delimited file.
 
-        Always writes 9 columns (``lon lat hgt uE uN uZ sigE sigN sigZ``) so
+        Always writes 8 columns (``lon lat uE uN uZ sigE sigN sigZ``) so
         the file can always be read back with ``load()``.  For horizontal-only
         instances, ``uZ`` and ``sigZ`` are written as ``0.0`` / ``1.0``
         placeholders; reload with ``components='en'`` to discard them.
-        Height (``hgt``) is written as zeros because the class does not store
-        elevation.
 
         Args:
             fname: Output file path.
@@ -282,16 +280,16 @@ class GNSS(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        hgt = np.zeros(self.n_stations)
+
         vu = self._vu if self._vu is not None else np.zeros(self.n_stations)
         su = self._su if self._su is not None else np.ones(self.n_stations)
         data = np.column_stack([
-            self._lon, self._lat, hgt,
+            self._lon, self._lat,
             self._ve, self._vn, vu,
             self._se, self._sn, su,
         ])
         np.savetxt(Path(fname), data,
-                   header="lon lat hgt uE uN uZ sigE sigN sigZ",
+                   header="lon lat uE uN uZ sigE sigN sigZ",
                    fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
@@ -320,7 +318,7 @@ class GNSS(DataSet):
     ) -> "GNSS":
         """Load GNSS data from a whitespace-delimited .dat file.
 
-        Expected columns: ``lon lat hgt uE uN uZ sigE sigN sigZ``
+        Expected columns: ``lon lat uE uN uZ sigE sigN sigZ``
 
         Lines starting with ``#`` are treated as comments.
 
@@ -340,13 +338,13 @@ class GNSS(DataSet):
 
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
-        ve, vn, vu = raw[:, 3], raw[:, 4], raw[:, 5]
-        se, sn, su = raw[:, 6], raw[:, 7], raw[:, 8]
+        ve, vn, vu = raw[:, 2], raw[:, 3], raw[:, 4]
+        se, sn, su = raw[:, 5], raw[:, 6], raw[:, 7]
 
         if components == "en":
             vu, su = None, None
 
-        return cls(lat, lon, ve, vn, vu, se, sn, su)
+        return cls(lon, lat, ve, vn, vu, se, sn, su)
 
 
 class InSAR(DataSet):
@@ -356,8 +354,8 @@ class InSAR(DataSet):
     defining the satellite-to-ground direction.
 
     Args:
-        lat: Pixel latitudes, shape (n_stations,).
         lon: Pixel longitudes, shape (n_stations,).
+        lat: Pixel latitudes, shape (n_stations,).
         los: LOS displacement values, shape (n_stations,).
         sigma: 1-sigma uncertainties, shape (n_stations,).
         look_e: East component of look vector, shape (n_stations,).
@@ -370,8 +368,8 @@ class InSAR(DataSet):
 
     def __init__(
         self,
-        lat: np.ndarray,
         lon: np.ndarray,
+        lat: np.ndarray,
         los: np.ndarray,
         sigma: np.ndarray,
         look_e: np.ndarray,
@@ -380,7 +378,7 @@ class InSAR(DataSet):
         *,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lat, lon, covariance=covariance)
+        super().__init__(lon, lat, covariance=covariance)
 
         los = np.asarray(los, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -436,8 +434,7 @@ class InSAR(DataSet):
     def save(self, fname: str | Path, *, format: str = "dat") -> None:
         """Save InSAR data to a whitespace-delimited file.
 
-        Writes the same column layout expected by ``load()``.  Height is
-        written as zeros.
+        Writes the same column layout expected by ``load()``.
 
         Args:
             fname: Output file path.
@@ -448,14 +445,13 @@ class InSAR(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        hgt = np.zeros(self.n_stations)
         data = np.column_stack([
-            self._lon, self._lat, hgt,
+            self._lon, self._lat,
             self._los, self._sigma,
             self._look_e, self._look_n, self._look_u,
         ])
         np.savetxt(Path(fname), data,
-                   header="lon lat hgt uLOS sigLOS losE losN losU",
+                   header="lon lat uLOS sigLOS losE losN losU",
                    fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
@@ -477,7 +473,7 @@ class InSAR(DataSet):
     ) -> "InSAR":
         """Load InSAR data from a whitespace-delimited .dat file.
 
-        Expected columns: ``lon lat hgt uLOS sigLOS losE losN losU``
+        Expected columns: ``lon lat uLOS sigLOS losE losN losU``
 
         Lines starting with ``#`` are treated as comments.
 
@@ -496,10 +492,10 @@ class InSAR(DataSet):
 
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
-        los, sigma = raw[:, 3], raw[:, 4]
-        look_e, look_n, look_u = raw[:, 5], raw[:, 6], raw[:, 7]
+        los, sigma = raw[:, 2], raw[:, 3]
+        look_e, look_n, look_u = raw[:, 4], raw[:, 5], raw[:, 6]
 
-        return cls(lat, lon, los, sigma, look_e, look_n, look_u)
+        return cls(lon, lat, los, sigma, look_e, look_n, look_u)
 
 
 class Vertical(DataSet):
@@ -509,8 +505,8 @@ class Vertical(DataSet):
     that measures only the vertical component.
 
     Args:
-        lat: Observation latitudes, shape (n_stations,).
         lon: Observation longitudes, shape (n_stations,).
+        lat: Observation latitudes, shape (n_stations,).
         displacement: Vertical displacement values, shape (n_stations,).
         sigma: 1-sigma uncertainties, shape (n_stations,).
         covariance: Optional full covariance matrix, shape (n_obs, n_obs).
@@ -520,14 +516,14 @@ class Vertical(DataSet):
 
     def __init__(
         self,
-        lat: np.ndarray,
         lon: np.ndarray,
+        lat: np.ndarray,
         displacement: np.ndarray,
         sigma: np.ndarray,
         *,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lat, lon, covariance=covariance)
+        super().__init__(lon, lat, covariance=covariance)
 
         displacement = np.asarray(displacement, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -577,8 +573,7 @@ class Vertical(DataSet):
     def save(self, fname: str | Path, *, format: str = "dat") -> None:
         """Save vertical data to a whitespace-delimited file.
 
-        Writes the same column layout expected by ``load()``.  Height is
-        written as zeros.
+        Writes the same column layout expected by ``load()``.
 
         Args:
             fname: Output file path.
@@ -589,13 +584,12 @@ class Vertical(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        hgt = np.zeros(self.n_stations)
         data = np.column_stack([
-            self._lon, self._lat, hgt,
+            self._lon, self._lat,
             self._displacement, self._sigma,
         ])
         np.savetxt(Path(fname), data,
-                   header="lon lat hgt uZ sigZ",
+                   header="lon lat uZ sigZ",
                    fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
@@ -616,7 +610,7 @@ class Vertical(DataSet):
     ) -> "Vertical":
         """Load vertical data from a whitespace-delimited .dat file.
 
-        Expected columns: ``lon lat hgt uZ sigZ``
+        Expected columns: ``lon lat uZ sigZ``
 
         Lines starting with ``#`` are treated as comments.
 
@@ -635,6 +629,6 @@ class Vertical(DataSet):
 
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
-        displacement, sigma = raw[:, 3], raw[:, 4]
+        displacement, sigma = raw[:, 2], raw[:, 3]
 
-        return cls(lat, lon, displacement, sigma)
+        return cls(lon, lat, displacement, sigma)

@@ -80,7 +80,7 @@ def gnss_3comp():
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
     su = np.full(n, 0.002)
-    return GNSS(lat, lon, ve, vn, vu, se, sn, su)
+    return GNSS(lon, lat, ve, vn, vu, se, sn, su)
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def gnss_horiz():
     vn = rng.normal(0, 0.01, n)
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
-    return GNSS(lat, lon, ve, vn, None, se, sn, None)
+    return GNSS(lon, lat, ve, vn, None, se, sn, None)
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def insar_data():
     look_e = np.full(n, -0.1)
     look_n = np.full(n, 0.08)
     look_u = np.full(n, 0.99)
-    return InSAR(lat, lon, los, sigma, look_e, look_n, look_u)
+    return InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
 
 
 @pytest.fixture
@@ -122,7 +122,7 @@ def vertical_data():
     lon = rng.uniform(-0.1, 0.1, n)
     obs = rng.normal(0, 0.02, n)
     sigma = np.full(n, 0.005)
-    return Vertical(lat, lon, obs, sigma)
+    return Vertical(lon, lat, obs, sigma)
 
 
 @pytest.fixture(autouse=True)

@@ -54,7 +54,7 @@ def gnss_4station(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return GNSS(
-        lat, lon,
+        lon, lat,
         ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
         se=np.ones(n), sn=np.ones(n), su=np.ones(n),
     )
@@ -66,7 +66,7 @@ def gnss_horizontal(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return GNSS(
-        lat, lon,
+        lon, lat,
         ve=np.zeros(n), vn=np.zeros(n), vu=None,
         se=np.ones(n), sn=np.ones(n), su=None,
     )
@@ -78,7 +78,7 @@ def insar_4pixel(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return InSAR(
-        lat, lon,
+        lon, lat,
         los=np.zeros(n), sigma=np.ones(n),
         look_e=np.full(n, 0.38),
         look_n=np.full(n, -0.09),
@@ -91,7 +91,7 @@ def vertical_4pt(obs_points):
     """4-point Vertical dataset."""
     lat, lon = obs_points
     n = len(lat)
-    return Vertical(lat, lon, displacement=np.zeros(n), sigma=np.ones(n))
+    return Vertical(lon, lat, displacement=np.zeros(n), sigma=np.ones(n))
 
 
 # ======================================================================
@@ -150,7 +150,7 @@ class TestConsistencyWithDisplacement:
     def test_gnss_forward_model(self, single_patch, obs_points):
         lat, lon = obs_points
         gnss = GNSS(
-            lat, lon,
+            lon, lat,
             ve=np.zeros(4), vn=np.zeros(4), vu=np.zeros(4),
             se=np.ones(4), sn=np.ones(4), su=np.ones(4),
         )
@@ -168,7 +168,7 @@ class TestConsistencyWithDisplacement:
         lat, lon = obs_points
         n = len(lat)
         insar = InSAR(
-            lat, lon,
+            lon, lat,
             los=np.zeros(n), sigma=np.ones(n),
             look_e=np.full(n, 0.38),
             look_n=np.full(n, -0.09),
@@ -187,7 +187,7 @@ class TestConsistencyWithDisplacement:
     def test_vertical_forward_model(self, single_patch, obs_points):
         lat, lon = obs_points
         n = len(lat)
-        vert = Vertical(lat, lon, displacement=np.zeros(n), sigma=np.ones(n))
+        vert = Vertical(lon, lat, displacement=np.zeros(n), sigma=np.ones(n))
 
         G = greens(single_patch, vert)
         slip_s, slip_d = 0.0, 2.0
@@ -203,7 +203,7 @@ class TestConsistencyWithDisplacement:
         lat, lon = obs_points
         n = len(lat)
         gnss = GNSS(
-            lat, lon,
+            lon, lat,
             ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
             se=np.ones(n), sn=np.ones(n), su=np.ones(n),
         )
@@ -319,7 +319,7 @@ class TestProjectGreens:
     def test_vertical_extracts_uz(self, single_patch, obs_points):
         lat, lon = obs_points
         n = len(lat)
-        vert = Vertical(lat, lon, displacement=np.zeros(n), sigma=np.ones(n))
+        vert = Vertical(lon, lat, displacement=np.zeros(n), sigma=np.ones(n))
         G_raw = single_patch.greens_matrix(lat, lon)
         G_proj = _project_greens(vert, G_raw)
 
@@ -406,7 +406,7 @@ class TestTriEngine:
         obs_lon = np.array([100.1, 99.9])
         n = len(obs_lat)
         gnss = GNSS(
-            obs_lat, obs_lon,
+            obs_lon, obs_lat,
             ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
             se=np.ones(n), sn=np.ones(n), su=np.ones(n),
         )

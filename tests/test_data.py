@@ -28,7 +28,7 @@ def gnss_3station():
     se = np.array([0.1, 0.2, 0.3])
     sn = np.array([0.1, 0.2, 0.3])
     su = np.array([0.5, 0.5, 0.5])
-    return GNSS(lat, lon, ve, vn, vu, se, sn, su)
+    return GNSS(lon, lat, ve, vn, vu, se, sn, su)
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def gnss_horizontal():
     vn = np.array([0.5, 1.5])
     se = np.array([0.1, 0.2])
     sn = np.array([0.1, 0.2])
-    return GNSS(lat, lon, ve, vn, None, se, sn, None)
+    return GNSS(lon, lat, ve, vn, None, se, sn, None)
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def insar_5pixel():
     look_e = np.full(5, 0.38)
     look_n = np.full(5, -0.09)
     look_u = np.full(5, 0.92)
-    return InSAR(lat, lon, los, sigma, look_e, look_n, look_u)
+    return InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def vertical_4pt():
     lon = np.full(4, 100.0)
     disp = np.array([0.01, 0.02, 0.015, 0.005])
     sigma = np.full(4, 0.003)
-    return Vertical(lat, lon, disp, sigma)
+    return Vertical(lon, lat, disp, sigma)
 
 
 # ======================================================================
@@ -141,8 +141,8 @@ class TestGNSSConstruction:
     def test_mismatched_lengths_raises(self):
         with pytest.raises(ValueError, match="same length"):
             GNSS(
-                np.array([0.0, 1.0]),
-                np.array([100.0]),  # wrong length
+                np.array([100.0, 101.0]),
+                np.array([0.0]),  # wrong length
                 np.array([1.0, 2.0]),
                 np.array([0.5, 1.5]),
                 np.array([-0.1, -0.2]),
@@ -154,8 +154,8 @@ class TestGNSSConstruction:
     def test_ve_vn_mismatch_raises(self):
         with pytest.raises(ValueError, match="same length"):
             GNSS(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([1.0, 2.0]),  # wrong length
                 np.array([0.5]),
                 np.array([-0.1]),
@@ -167,8 +167,8 @@ class TestGNSSConstruction:
     def test_negative_sigma_raises(self):
         with pytest.raises(ValueError, match="positive"):
             GNSS(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([1.0]),
                 np.array([0.5]),
                 np.array([-0.1]),
@@ -181,8 +181,8 @@ class TestGNSSConstruction:
         """If vu is None, su must also be None."""
         with pytest.raises(ValueError, match="both.*None"):
             GNSS(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([1.0]),
                 np.array([0.5]),
                 None,  # vu=None
@@ -194,8 +194,8 @@ class TestGNSSConstruction:
     def test_scalar_inputs_broadcast(self):
         """Single-station GNSS from scalar values."""
         g = GNSS(
-            np.array([0.0]),
             np.array([100.0]),
+            np.array([0.0]),
             np.array([1.0]),
             np.array([0.5]),
             np.array([-0.1]),
@@ -267,8 +267,8 @@ class TestInSARConstruction:
     def test_mismatched_look_vector_raises(self):
         with pytest.raises(ValueError, match="same length"):
             InSAR(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([0.01]),
                 np.array([0.005]),
                 np.array([0.38, 0.38]),  # wrong length
@@ -279,8 +279,8 @@ class TestInSARConstruction:
     def test_negative_sigma_raises(self):
         with pytest.raises(ValueError, match="positive"):
             InSAR(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([0.01]),
                 np.array([-0.005]),  # negative
                 np.array([0.38]),
@@ -308,8 +308,8 @@ class TestInSARProject:
     def test_project_pure_vertical(self):
         """Pure vertical look vector should return uz."""
         insar = InSAR(
-            np.array([0.0]),
             np.array([100.0]),
+            np.array([0.0]),
             np.array([0.01]),
             np.array([0.005]),
             np.array([0.0]),
@@ -354,8 +354,8 @@ class TestVerticalConstruction:
     def test_mismatched_raises(self):
         with pytest.raises(ValueError, match="same length"):
             Vertical(
-                np.array([0.0, 1.0]),
-                np.array([100.0]),  # wrong length
+                np.array([100.0, 101.0]),
+                np.array([0.0]),  # wrong length
                 np.array([0.01, 0.02]),
                 np.array([0.003, 0.003]),
             )
@@ -408,14 +408,14 @@ class TestCovariance:
         disp = np.array([0.01, 0.02])
         sigma = np.array([0.003, 0.003])
         cov = np.array([[9e-6, 1e-6], [1e-6, 9e-6]])
-        v = Vertical(lat, lon, disp, sigma, covariance=cov)
+        v = Vertical(lon, lat, disp, sigma, covariance=cov)
         np.testing.assert_array_equal(v.covariance, cov)
 
     def test_covariance_wrong_shape_raises(self):
         with pytest.raises(ValueError, match="shape"):
             Vertical(
-                np.array([0.0]),
                 np.array([100.0]),
+                np.array([0.0]),
                 np.array([0.01]),
                 np.array([0.003]),
                 covariance=np.eye(5),  # wrong shape for 1 obs
@@ -439,9 +439,9 @@ class TestGNSSLoad:
         """Load a .dat file with standard columns."""
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat hgt uE uN uZ sigE sigN sigZ\n"
-            "100.0 0.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
-            "101.0 1.0 0.0 2.0 1.5 -0.2 0.2 0.2 0.5\n"
+            "# lon lat uE uN uZ sigE sigN sigZ\n"
+            "100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
+            "101.0 1.0 2.0 1.5 -0.2 0.2 0.2 0.5\n"
         )
         g = GNSS.load(dat_file)
         assert g.n_stations == 2
@@ -453,8 +453,8 @@ class TestGNSSLoad:
         """Load .dat file and select only horizontal components."""
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat hgt uE uN uZ sigE sigN sigZ\n"
-            "100.0 0.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
+            "# lon lat uE uN uZ sigE sigN sigZ\n"
+            "100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
         )
         g = GNSS.load(dat_file, components="en")
         assert g.n_obs == 2
@@ -475,9 +475,9 @@ class TestInSARLoad:
     def test_load_dat_format(self, tmp_path):
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat hgt uLOS sigLOS losE losN losU\n"
-            "100.0 0.0 0.0 0.01 0.005 0.38 -0.09 0.92\n"
-            "100.0 1.0 0.0 0.02 0.005 0.38 -0.09 0.92\n"
+            "# lon lat uLOS sigLOS losE losN losU\n"
+            "100.0 0.0 0.01 0.005 0.38 -0.09 0.92\n"
+            "100.0 1.0 0.02 0.005 0.38 -0.09 0.92\n"
         )
         d = InSAR.load(dat_file)
         assert d.n_stations == 2
@@ -499,9 +499,9 @@ class TestVerticalLoad:
     def test_load_dat_format(self, tmp_path):
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat hgt uZ sigZ\n"
-            "100.0 0.0 0.0 0.01 0.003\n"
-            "100.0 1.0 0.0 0.02 0.003\n"
+            "# lon lat uZ sigZ\n"
+            "100.0 0.0 0.01 0.003\n"
+            "100.0 1.0 0.02 0.003\n"
         )
         d = Vertical.load(dat_file)
         assert d.n_stations == 2

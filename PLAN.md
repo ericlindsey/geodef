@@ -70,6 +70,7 @@ Worked research-level examples with real data go in `examples/` (see existing no
 - **`invert()` per-component bounds** — `bounds` currently applies the same limits to both slip components. Add support for per-component specification, e.g. `bounds=[(0, None), (-1, 1)]` for non-negative strike-slip and bounded dip-slip.
 - **`Fault.from_triangles()` with explicit connectivity** — currently derives triangles from ENU vertex coordinates only. Add an optional `triangles` parameter (index array, shape `(M, 3)`) so users can preserve a specific patch ordering when importing an existing slip model.
 - **`GNSS` E-N correlation** — add optional `rho` parameter (scalar or per-station array) for the E-N correlation coefficient. Most datasets have `rho=0` but some processed solutions do not, and it affects the full covariance matrix used in inversion.
+- **`GNSS` and `Vertical` site names** — add optional `name` parameter (string) to GNSS and Vertical data classes.
 
 ### 10.2 Geographic Projection & Cartopy Plotting
 - `projection='geographic'` option on all plot functions
