@@ -7,6 +7,7 @@ Automatic hyperparameter tuning via ABIC or cross-validation.
 """
 
 import dataclasses
+import functools
 from pathlib import Path
 
 import numpy as np
@@ -234,8 +235,8 @@ class LCurveResult:
 
     Attributes:
         smoothing_values: Array of lambda values swept.
-        misfits: Data misfit norm at each lambda.
-        model_norms: Regularized model norm at each lambda.
+        misfits: Data misfit norm ||Gm - d|| at each lambda.
+        model_norms: Regularized model norm ||Lm|| at each lambda.
         optimal: Lambda at the maximum-curvature corner.
     """
 
@@ -304,8 +305,8 @@ class ABICCurveResult:
     Attributes:
         smoothing_values: Array of lambda values swept.
         abic_values: ABIC value at each lambda (lower is better).
-        misfits: Data misfit norm at each lambda.
-        model_norms: Regularized model norm at each lambda.
+        misfits: Data misfit norm ||Gm - d|| at each lambda.
+        model_norms: Regularized model norm ||Lm|| at each lambda.
         optimal: Lambda at the minimum ABIC.
     """
 
@@ -368,6 +369,520 @@ class ABICCurveResult:
         return ax
 
 
+# ======================================================================
+# LinearSystem: persistent prepared system with cached matrix products
+# ======================================================================
+
+class LinearSystem:
+    """Prepared linear system for fault slip inversion.
+
+    Encapsulates the Green's matrix, data vector, weight matrix, and
+    smoothing matrix for a given fault-dataset pair.  Expensive derived
+    products (G^T W G, L^T L, G^T W d) are computed on first access and
+    cached, so they are shared across ``invert``, ``lcurve``,
+    ``abic_curve``, and the post-inversion analysis methods.
+
+    Use this class directly when performing multiple analyses on the same
+    fault and datasets (e.g. comparing L-curve and ABIC, then running
+    diagnostics after inversion).  The module-level convenience functions
+    (``invert``, ``lcurve``, etc.) create a ``LinearSystem`` internally
+    and are fully backward-compatible.
+
+    Args:
+        fault: Fault geometry.
+        datasets: One or more geodetic datasets.
+        smoothing: Regularization type — ``'laplacian'``, ``'damping'``,
+            ``'stresskernel'``, a custom matrix, or ``None``.
+        components: Slip components to solve for: ``'both'`` (default),
+            ``'strike'``, or ``'dip'``.
+
+    Examples:
+        >>> sys = LinearSystem(fault, [gnss, insar], smoothing='laplacian')
+        >>> lc = sys.lcurve()
+        >>> result = sys.invert(smoothing_strength=lc.optimal)
+        >>> diag = sys.dataset_diagnostics(result)
+    """
+
+    def __init__(
+        self,
+        fault: Fault,
+        datasets: DataSet | list[DataSet],
+        smoothing: str | np.ndarray | None = None,
+        components: str = "both",
+    ) -> None:
+        if isinstance(datasets, DataSet):
+            datasets = [datasets]
+        for ds in datasets:
+            if not isinstance(ds, DataSet):
+                raise TypeError(
+                    f"datasets must contain DataSet instances, got {type(ds).__name__}"
+                )
+        if components not in _VALID_COMPONENTS:
+            raise ValueError(
+                f"components must be one of {_VALID_COMPONENTS}, got {components!r}"
+            )
+
+        self.fault = fault
+        self.datasets = datasets
+        self.smoothing = smoothing
+        self.components = components
+
+        n_patches = fault.n_patches
+        n_components = 2 if components == "both" else 1
+        self._n_patches = n_patches
+        self._n_params = n_components * n_patches
+
+        G_full = greens(fault, datasets)
+        self.d = stack_obs(datasets)
+        self.W = stack_weights(datasets)
+        self.G = _select_columns(G_full, n_patches, components)
+        self.G_w, self.d_w = _apply_weights(self.G, self.d, self.W)
+        self.L: np.ndarray | None = (
+            _build_smoothing_matrix(fault, smoothing, self._n_params, n_components)
+            if smoothing is not None else None
+        )
+
+    @functools.cached_property
+    def GtWG(self) -> np.ndarray:
+        """G^T W G — normal equations matrix (without regularization)."""
+        return self.G_w.T @ self.G_w
+
+    @functools.cached_property
+    def LtL(self) -> np.ndarray:
+        """L^T L — regularization normal equations matrix.
+
+        Raises:
+            AttributeError: If the system was constructed without smoothing.
+        """
+        if self.L is None:
+            raise AttributeError(
+                "LtL is not available: LinearSystem has no smoothing matrix"
+            )
+        return self.L.T @ self.L
+
+    @functools.cached_property
+    def Gtwd(self) -> np.ndarray:
+        """G^T W d — normal equations right-hand side."""
+        return self.G_w.T @ self.d_w
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _abic_value(
+        self, smoothing_strength: float,
+    ) -> tuple[float, float, float]:
+        """ABIC, misfit norm, and model norm at a given smoothing strength.
+
+        Uses cached GtWG, LtL, and Gtwd.  ``eig_LtL`` (lambda-independent)
+        is computed on the first call and cached in ``self.__dict__``.
+
+        The ABIC formula (Fukuda & Johnson 2008, 2010) requires the weighted
+        misfit ``r^T W r`` internally.  The returned ``misfit_norm`` is the
+        unweighted ``||Gm - d||`` for consistent plotting against lcurve.
+
+        Args:
+            smoothing_strength: Regularization weight lambda.
+
+        Returns:
+            (abic, misfit_norm, model_norm) where misfit_norm = ||Gm - d||
+            and model_norm = ||Lm||.
+        """
+        alpha2 = smoothing_strength
+        n_data = len(self.d)
+
+        H = self.GtWG + alpha2 * self.LtL
+        m = np.linalg.solve(H, self.Gtwd)
+
+        residuals = self.d - self.G @ m
+        misfit_weighted = float(residuals @ self.W @ residuals)
+        penalty = alpha2 * float(m @ self.LtL @ m)
+        total = max(misfit_weighted + penalty, 1e-300)
+        abic1 = n_data * np.log(total)
+
+        # eig_LtL is lambda-independent — compute once and cache
+        eig_LtL: np.ndarray | None = self.__dict__.get("_eig_LtL")
+        if eig_LtL is None:
+            eig_LtL = np.linalg.eigvalsh(self.LtL)
+            self.__dict__["_eig_LtL"] = eig_LtL
+
+        eig_prior = alpha2 * np.abs(eig_LtL)
+        eig_prior = eig_prior[eig_prior > 0]
+        abic2 = float(np.sum(np.log(eig_prior)))
+
+        eig_post = np.abs(np.linalg.eigvalsh(H))
+        eig_post = eig_post[eig_post > 0]
+        abic3 = float(np.sum(np.log(eig_post)))
+
+        abic = abic1 - abic2 + abic3
+        misfit_norm = float(np.sqrt(residuals @ residuals))
+        model_norm = float(np.sqrt((self.L @ m) @ (self.L @ m)))
+        return abic, misfit_norm, model_norm
+
+    def _optimal_abic(self) -> float:
+        """Find optimal smoothing strength by minimizing ABIC.
+
+        Returns:
+            Optimal lambda.
+        """
+        if self.L is None:
+            raise ValueError("ABIC requires a smoothing matrix")
+
+        def objective(log10_lam: float) -> float:
+            return self._abic_value(10.0 ** log10_lam)[0]
+
+        result = scipy.optimize.minimize_scalar(
+            objective, bounds=(-6, 10), method="bounded",
+        )
+        return 10.0 ** result.x
+
+    def _optimal_cv(
+        self,
+        bounds: tuple[float | None, float | None] | None,
+        method: str | None,
+        cv_folds: int,
+    ) -> float:
+        """Find optimal smoothing strength by K-fold cross-validation.
+
+        Args:
+            bounds: Per-component slip bounds.
+            method: Solver method.
+            cv_folds: Number of folds.
+
+        Returns:
+            Optimal lambda.
+        """
+        if self.L is None:
+            raise ValueError("Cross-validation requires a smoothing matrix")
+
+        n_obs = self.G_w.shape[0]
+        solve_method = method if method is not None else _auto_select_method(bounds)
+
+        rng = np.random.default_rng(0)
+        perm = rng.permutation(n_obs)
+        fold_sizes = np.full(cv_folds, n_obs // cv_folds)
+        fold_sizes[:n_obs % cv_folds] += 1
+        folds = np.split(perm, np.cumsum(fold_sizes[:-1]))
+
+        lambdas = np.geomspace(1e-4, 1e8, 50)
+        cv_errors = np.zeros(len(lambdas))
+
+        for i, lam in enumerate(lambdas):
+            fold_errors = 0.0
+            for fold in folds:
+                mask = np.ones(n_obs, dtype=bool)
+                mask[fold] = False
+                G_aug = np.vstack([self.G_w[mask], np.sqrt(lam) * self.L])
+                d_aug = np.concatenate([self.d_w[mask], np.zeros(self.L.shape[0])])
+                m = _solve(G_aug, d_aug, bounds, solve_method, None)
+                pred_test = self.G_w[fold] @ m
+                fold_errors += float(np.sum((self.d_w[fold] - pred_test) ** 2))
+            cv_errors[i] = fold_errors / n_obs
+
+        return float(lambdas[np.argmin(cv_errors)])
+
+    def _hat_diagonal(self, smoothing_strength: float | None) -> np.ndarray:
+        """Diagonal of the hat matrix H = G_w (G_w^T G_w + λ L^T L)^{-1} G_w^T.
+
+        Args:
+            smoothing_strength: Regularization weight, or None.
+
+        Returns:
+            Leverage vector, shape (M,).
+        """
+        H = self.GtWG.copy()
+        if self.L is not None and smoothing_strength is not None and smoothing_strength > 0:
+            H += smoothing_strength * self.LtL
+        A = np.linalg.solve(H.T, self.G_w.T).T
+        return np.sum(A * self.G_w, axis=1)
+
+    # ------------------------------------------------------------------
+    # Public methods
+    # ------------------------------------------------------------------
+
+    def invert(
+        self,
+        smoothing_strength: float | str = 0.0,
+        bounds: tuple[float | None, float | None] | None = None,
+        method: str | None = None,
+        smoothing_target: np.ndarray | None = None,
+        constraints: tuple[np.ndarray, np.ndarray] | None = None,
+        cv_folds: int = 5,
+    ) -> InversionResult:
+        """Invert for fault slip using this prepared system.
+
+        Args:
+            smoothing_strength: Scalar regularization weight, or
+                ``'abic'`` / ``'cv'`` for automatic tuning.
+            bounds: Per-component slip bounds ``(lower, upper)``.
+            method: Solver — ``'wls'``, ``'nnls'``, ``'bounded_ls'``,
+                or ``'constrained'``. Auto-selected from bounds if None.
+            smoothing_target: Reference model, shape (n_params,).
+                Regularizes toward this target instead of zero.
+            constraints: Inequality constraints ``(C, d_ineq)`` such
+                that ``C @ m <= d_ineq``.
+            cv_folds: Number of folds for cross-validation (default 5).
+
+        Returns:
+            InversionResult with slip, residuals, and fit statistics.
+
+        Raises:
+            ValueError: For invalid arguments.
+        """
+        _validate_args(
+            self.datasets, self.components, self.smoothing, smoothing_strength,
+            bounds, method, smoothing_target, self._n_params,
+        )
+
+        if isinstance(smoothing_strength, str):
+            if smoothing_strength == "abic":
+                smoothing_strength = self._optimal_abic()
+            elif smoothing_strength == "cv":
+                smoothing_strength = self._optimal_cv(bounds, method, cv_folds)
+
+        if self.L is not None and smoothing_strength > 0:
+            d_reg = _build_reg_rhs(self.L, smoothing_strength, smoothing_target)
+            G_aug = np.vstack([self.G_w, np.sqrt(smoothing_strength) * self.L])
+            d_aug = np.concatenate([self.d_w, d_reg])
+            reg_strength: float | None = smoothing_strength
+        else:
+            G_aug = self.G_w
+            d_aug = self.d_w
+            reg_strength = None if smoothing_strength == 0.0 else smoothing_strength
+
+        if method is None:
+            method = _auto_select_method(bounds)
+
+        m = _solve(G_aug, d_aug, bounds, method, constraints)
+
+        predicted = self.G @ m
+        residuals = self.d - predicted
+        chi2 = _compute_chi2(residuals, self.W, self._n_params)
+        rms = float(np.sqrt(np.mean(residuals ** 2)))
+
+        if self.components == "both":
+            slip = np.column_stack([m[:self._n_patches], m[self._n_patches:]])
+            slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
+        else:
+            slip = m.reshape(-1, 1)
+            slip_mag = np.abs(m)
+        moment = self.fault.moment(slip_mag)
+        mw = moment_to_magnitude(moment)
+
+        return InversionResult(
+            slip=slip,
+            slip_vector=m,
+            residuals=residuals,
+            predicted=predicted,
+            chi2=chi2,
+            rms=rms,
+            moment=moment,
+            Mw=mw,
+            smoothing=self.smoothing if reg_strength is not None else None,
+            smoothing_strength=reg_strength,
+            components=self.components,
+        )
+
+    def lcurve(
+        self,
+        smoothing_range: tuple[float, float] = (1e-2, 1e6),
+        n: int = 50,
+        bounds: tuple[float | None, float | None] | None = None,
+        method: str | None = None,
+    ) -> LCurveResult:
+        """Sweep smoothing strength and compute the L-curve.
+
+        For unconstrained (``wls``) solves, GtWG, LtL, and Gtwd are used
+        directly so each iteration is a single linear solve with no matrix
+        assembly.  For constrained solves the augmented system is used.
+
+        Misfits are the unweighted norm ``||Gm - d||``.
+
+        Args:
+            smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+            n: Number of lambda values to evaluate.
+            bounds: Per-component slip bounds.
+            method: Solver method.
+
+        Returns:
+            LCurveResult with sweep arrays and optimal lambda.
+
+        Raises:
+            ValueError: If the system has no smoothing matrix.
+        """
+        if self.L is None:
+            raise ValueError("lcurve requires a smoothing matrix")
+
+        lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
+        misfits = np.empty(n)
+        model_norms = np.empty(n)
+
+        solve_method = method if method is not None else _auto_select_method(bounds)
+
+        if solve_method == "wls":
+            for i, lam in enumerate(lambdas):
+                H = self.GtWG + lam * self.LtL
+                m = np.linalg.solve(H, self.Gtwd)
+                residuals = self.d - self.G @ m
+                misfits[i] = float(np.sqrt(residuals @ residuals))
+                model_norms[i] = float(np.sqrt((self.L @ m) @ (self.L @ m)))
+        else:
+            for i, lam in enumerate(lambdas):
+                G_aug = np.vstack([self.G_w, np.sqrt(lam) * self.L])
+                d_aug = np.concatenate([self.d_w, np.zeros(self.L.shape[0])])
+                m = _solve(G_aug, d_aug, bounds, solve_method, None)
+                residuals = self.d - self.G @ m
+                misfits[i] = float(np.sqrt(residuals @ residuals))
+                model_norms[i] = float(np.sqrt((self.L @ m) @ (self.L @ m)))
+
+        optimal = _lcurve_corner(lambdas, misfits, model_norms)
+        return LCurveResult(
+            smoothing_values=lambdas,
+            misfits=misfits,
+            model_norms=model_norms,
+            optimal=optimal,
+        )
+
+    def abic_curve(
+        self,
+        smoothing_range: tuple[float, float] = (1e-2, 1e6),
+        n: int = 50,
+    ) -> ABICCurveResult:
+        """Sweep smoothing strength and compute the ABIC at each value.
+
+        GtWG, LtL, Gtwd, and eig_LtL are all computed once and reused
+        across all iterations.  Misfits are the unweighted norm ``||Gm - d||``,
+        consistent with ``lcurve``.
+
+        Args:
+            smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+            n: Number of lambda values to evaluate.
+
+        Returns:
+            ABICCurveResult with sweep arrays and optimal lambda.
+
+        Raises:
+            ValueError: If the system has no smoothing matrix.
+        """
+        if self.L is None:
+            raise ValueError("abic_curve requires a smoothing matrix")
+
+        lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
+        abic_values = np.empty(n)
+        misfits = np.empty(n)
+        model_norms = np.empty(n)
+
+        for i, lam in enumerate(lambdas):
+            abic_values[i], misfits[i], model_norms[i] = self._abic_value(lam)
+
+        optimal = float(lambdas[np.argmin(abic_values)])
+        return ABICCurveResult(
+            smoothing_values=lambdas,
+            abic_values=abic_values,
+            misfits=misfits,
+            model_norms=model_norms,
+            optimal=optimal,
+        )
+
+    def dataset_diagnostics(
+        self, result: InversionResult,
+    ) -> list[DatasetDiagnostics]:
+        """Compute per-dataset fit diagnostics using the hat matrix.
+
+        Args:
+            result: Output from ``invert()``.
+
+        Returns:
+            List of ``DatasetDiagnostics``, one per dataset.
+        """
+        lev = self._hat_diagonal(result.smoothing_strength)
+        residuals = result.residuals
+
+        diags = []
+        offset = 0
+        for ds in self.datasets:
+            n = ds.n_obs
+            idx = slice(offset, offset + n)
+            r_k = residuals[idx]
+            W_k = self.W[idx, idx]
+
+            chi2_k = float(r_k @ W_k @ r_k)
+            lev_k = float(np.sum(lev[idx]))
+            dof_k = n - lev_k
+            reduced_chi2_k = chi2_k / dof_k if dof_k > 0 else float("nan")
+            wrms_k = float(np.sqrt(chi2_k / n))
+            rms_k = float(np.sqrt(np.mean(r_k ** 2)))
+
+            diags.append(DatasetDiagnostics(
+                chi2=chi2_k,
+                reduced_chi2=reduced_chi2_k,
+                wrms=wrms_k,
+                rms=rms_k,
+                n_obs=n,
+                dof=dof_k,
+                leverage=lev_k,
+            ))
+            offset += n
+
+        return diags
+
+    def model_covariance(self, result: InversionResult) -> np.ndarray:
+        """Compute the model covariance matrix.
+
+        For the unregularized case::
+
+            Cm = (G^T W G)^{-1}
+
+        For the regularized case (Tarantola, 2005)::
+
+            H_inv = (G^T W G + lambda L^T L)^{-1}
+            Cm = H_inv @ G^T W G @ H_inv
+
+        Args:
+            result: Output from ``invert()``.
+
+        Returns:
+            Model covariance matrix, shape (n_params, n_params).
+        """
+        if self.L is not None and result.smoothing_strength is not None:
+            H = self.GtWG + result.smoothing_strength * self.LtL
+            H_inv = np.linalg.inv(H)
+            return H_inv @ self.GtWG @ H_inv
+        return np.linalg.inv(self.GtWG)
+
+    def model_resolution(self, result: InversionResult) -> np.ndarray:
+        """Compute the model resolution matrix.
+
+        ``R = (G^T W G + lambda L^T L)^{-1} G^T W G``
+
+        Args:
+            result: Output from ``invert()``.
+
+        Returns:
+            Resolution matrix, shape (n_params, n_params).
+        """
+        if self.L is not None and result.smoothing_strength is not None:
+            H = self.GtWG + result.smoothing_strength * self.LtL
+            return np.linalg.solve(H, self.GtWG)
+        return np.linalg.solve(self.GtWG, self.GtWG)
+
+    def model_uncertainty(self, result: InversionResult) -> np.ndarray:
+        """Compute per-parameter 1-sigma uncertainty from model covariance.
+
+        Args:
+            result: Output from ``invert()``.
+
+        Returns:
+            Uncertainty array, shape (n_params,).
+        """
+        Cm = self.model_covariance(result)
+        return np.sqrt(np.maximum(np.diag(Cm), 0.0))
+
+
+# ======================================================================
+# Module-level convenience functions (backward-compatible wrappers)
+# ======================================================================
+
 def invert(
     fault: Fault,
     datasets: DataSet | list[DataSet],
@@ -410,90 +925,9 @@ def invert(
     Raises:
         ValueError: For invalid arguments.
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-
-    n_patches = fault.n_patches
-    n_components = 2 if components == "both" else 1
-    n_params = n_components * n_patches
-
-    _validate_args(
-        datasets, components, smoothing, smoothing_strength, bounds, method,
-        smoothing_target, n_params,
-    )
-
-    # Assemble full data system (always 2N columns from greens)
-    G_full = greens(fault, datasets)
-    d = stack_obs(datasets)
-    W = stack_weights(datasets)
-
-    # Select columns for requested component(s)
-    G = _select_columns(G_full, n_patches, components)
-
-    # Weight the system: G_w, d_w such that ||G_w m - d_w||^2 = (Gm-d)^T W (Gm-d)
-    G_w, d_w = _apply_weights(G, d, W)
-
-    # Build smoothing matrix (needed for auto-tuning and fixed regularization)
-    L: np.ndarray | None = None
-    if smoothing is not None:
-        L = _build_smoothing_matrix(fault, smoothing, n_params, n_components)
-
-    # Resolve automatic smoothing_strength
-    if isinstance(smoothing_strength, str):
-        if smoothing_strength == "abic":
-            smoothing_strength = _find_abic_optimal(G, d, W, L, n_params)
-        elif smoothing_strength == "cv":
-            smoothing_strength = _find_cv_optimal(
-                G_w, d_w, L, bounds, method, cv_folds, n_params,
-            )
-
-    # Build and append regularization
-    if L is not None and smoothing_strength > 0:
-        d_reg = _build_reg_rhs(L, smoothing_strength, smoothing_target)
-        G_aug = np.vstack([G_w, np.sqrt(smoothing_strength) * L])
-        d_aug = np.concatenate([d_w, d_reg])
-        reg_strength: float | None = smoothing_strength
-    else:
-        G_aug = G_w
-        d_aug = d_w
-        reg_strength = None if smoothing_strength == 0.0 else smoothing_strength
-
-    # Auto-select solver
-    if method is None:
-        method = _auto_select_method(bounds)
-
-    # Solve
-    m = _solve(G_aug, d_aug, bounds, method, constraints)
-
-    # Compute fit statistics on unweighted data
-    predicted = G @ m
-    residuals = d - predicted
-    chi2 = _compute_chi2(residuals, W, n_params)
-    rms = float(np.sqrt(np.mean(residuals ** 2)))
-
-    # Reshape slip and compute moment
-    if components == "both":
-        slip = np.column_stack([m[:n_patches], m[n_patches:]])
-        slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
-    else:
-        slip = m.reshape(-1, 1)
-        slip_mag = np.abs(m)
-    moment = fault.moment(slip_mag)
-    mw = moment_to_magnitude(moment)
-
-    return InversionResult(
-        slip=slip,
-        slip_vector=m,
-        residuals=residuals,
-        predicted=predicted,
-        chi2=chi2,
-        rms=rms,
-        moment=moment,
-        Mw=mw,
-        smoothing=smoothing if reg_strength is not None else None,
-        smoothing_strength=reg_strength,
-        components=components,
-    )
+    sys = LinearSystem(fault, datasets, smoothing, components)
+    return sys.invert(smoothing_strength, bounds, method, smoothing_target,
+                      constraints, cv_folds)
 
 
 def compute_abic(
@@ -521,25 +955,21 @@ def compute_abic(
     alpha2 = smoothing_strength
     n_data = len(d)
 
-    # Solve the regularized system for the best-fit model
     GtWG = G.T @ W @ G
     LtL = L.T @ L
     H = GtWG + alpha2 * LtL
     m = np.linalg.solve(H, G.T @ W @ d)
 
-    # Term 1: N * log(misfit + regularization penalty)
     residuals = d - G @ m
     misfit = float(residuals @ W @ residuals)
     penalty = alpha2 * float(m @ LtL @ m)
     total = max(misfit + penalty, 1e-300)
     abic1 = n_data * np.log(total)
 
-    # Term 2: sum of log eigenvalues of alpha^2 * L^T L (prior)
     eig_prior = alpha2 * np.abs(np.linalg.eigvalsh(LtL))
     eig_prior = eig_prior[eig_prior > 0]
     abic2 = np.sum(np.log(eig_prior))
 
-    # Term 3: sum of log eigenvalues of G^T W G + alpha^2 L^T L (posterior)
     eig_post = np.abs(np.linalg.eigvalsh(H))
     eig_post = eig_post[eig_post > 0]
     abic3 = np.sum(np.log(eig_post))
@@ -572,42 +1002,8 @@ def lcurve(
     Returns:
         LCurveResult with sweep arrays and optimal lambda.
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-
-    n_patches = fault.n_patches
-    n_components = 2 if components == "both" else 1
-    n_params = n_components * n_patches
-
-    G_full = greens(fault, datasets)
-    d = stack_obs(datasets)
-    W = stack_weights(datasets)
-    G = _select_columns(G_full, n_patches, components)
-    G_w, d_w = _apply_weights(G, d, W)
-    L = _build_smoothing_matrix(fault, smoothing, n_params, n_components)
-
-    lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
-    misfits = np.empty(n)
-    model_norms = np.empty(n)
-
-    solve_method = method if method is not None else _auto_select_method(bounds)
-
-    for i, lam in enumerate(lambdas):
-        G_aug = np.vstack([G_w, np.sqrt(lam) * L])
-        d_aug = np.concatenate([d_w, np.zeros(L.shape[0])])
-        m = _solve(G_aug, d_aug, bounds, solve_method, None)
-        residuals = d - G @ m
-        misfits[i] = np.sqrt(float(residuals @ residuals))
-        model_norms[i] = np.sqrt(float((L @ m) @ (L @ m)))
-
-    optimal = _lcurve_corner(lambdas, misfits, model_norms)
-
-    return LCurveResult(
-        smoothing_values=lambdas,
-        misfits=misfits,
-        model_norms=model_norms,
-        optimal=optimal,
-    )
+    sys = LinearSystem(fault, datasets, smoothing, components)
+    return sys.lcurve(smoothing_range, n, bounds, method)
 
 
 def abic_curve(
@@ -634,51 +1030,9 @@ def abic_curve(
     Returns:
         ABICCurveResult with sweep arrays and optimal lambda.
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
+    sys = LinearSystem(fault, datasets, smoothing, components)
+    return sys.abic_curve(smoothing_range, n)
 
-    n_patches = fault.n_patches
-    n_components = 2 if components == "both" else 1
-    n_params = n_components * n_patches
-
-    G_full = greens(fault, datasets)
-    d = stack_obs(datasets)
-    W = stack_weights(datasets)
-    G = _select_columns(G_full, n_patches, components)
-    L = _build_smoothing_matrix(fault, smoothing, n_params, n_components)
-
-    lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
-    abic_values = np.empty(n)
-    misfits = np.empty(n)
-    model_norms = np.empty(n)
-
-    # Precompute for efficiency
-    GtWG = G.T @ W @ G
-    LtL = L.T @ L
-    Gtwd = G.T @ W @ d
-
-    for i, lam in enumerate(lambdas):
-        H = GtWG + lam * LtL
-        m = np.linalg.solve(H, Gtwd)
-        residuals = d - G @ m
-        misfits[i] = np.sqrt(float(residuals @ residuals))
-        model_norms[i] = np.sqrt(float((L @ m) @ (L @ m)))
-        abic_values[i] = compute_abic(G, d, W, L, lam)
-
-    optimal = float(lambdas[np.argmin(abic_values)])
-
-    return ABICCurveResult(
-        smoothing_values=lambdas,
-        abic_values=abic_values,
-        misfits=misfits,
-        model_norms=model_norms,
-        optimal=optimal,
-    )
-
-
-# ======================================================================
-# Per-dataset diagnostics and model assessment (Phase 5)
-# ======================================================================
 
 def dataset_diagnostics(
     result: InversionResult,
@@ -699,40 +1053,8 @@ def dataset_diagnostics(
     Returns:
         List of ``DatasetDiagnostics``, one per dataset.
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-
-    G, W, L = _rebuild_system(result, fault, datasets)
-    lev = _hat_diagonal(G, W, L, result.smoothing_strength)
-    residuals = result.residuals
-
-    diags = []
-    offset = 0
-    for ds in datasets:
-        n = ds.n_obs
-        idx = slice(offset, offset + n)
-        r_k = residuals[idx]
-        W_k = W[idx, idx]
-
-        chi2_k = float(r_k @ W_k @ r_k)
-        lev_k = float(np.sum(lev[idx]))
-        dof_k = n - lev_k
-        reduced_chi2_k = chi2_k / dof_k if dof_k > 0 else float("nan")
-        wrms_k = float(np.sqrt(chi2_k / n))
-        rms_k = float(np.sqrt(np.mean(r_k ** 2)))
-
-        diags.append(DatasetDiagnostics(
-            chi2=chi2_k,
-            reduced_chi2=reduced_chi2_k,
-            wrms=wrms_k,
-            rms=rms_k,
-            n_obs=n,
-            dof=dof_k,
-            leverage=lev_k,
-        ))
-        offset += n
-
-    return diags
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    return sys.dataset_diagnostics(result)
 
 
 def model_covariance(
@@ -759,19 +1081,8 @@ def model_covariance(
     Returns:
         Model covariance matrix, shape (n_params, n_params).
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-
-    G, W, L = _rebuild_system(result, fault, datasets)
-    GtWG = G.T @ W @ G
-
-    if L is not None and result.smoothing_strength is not None:
-        LtL = L.T @ L
-        H = GtWG + result.smoothing_strength * LtL
-        H_inv = np.linalg.inv(H)
-        return H_inv @ GtWG @ H_inv
-
-    return np.linalg.inv(GtWG)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    return sys.model_covariance(result)
 
 
 def model_resolution(
@@ -795,17 +1106,8 @@ def model_resolution(
     Returns:
         Resolution matrix, shape (n_params, n_params).
     """
-    if isinstance(datasets, DataSet):
-        datasets = [datasets]
-
-    G, W, L = _rebuild_system(result, fault, datasets)
-    GtWG = G.T @ W @ G
-
-    if L is not None and result.smoothing_strength is not None:
-        H = GtWG + result.smoothing_strength * (L.T @ L)
-        return np.linalg.solve(H, GtWG)
-
-    return np.linalg.solve(GtWG, GtWG)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    return sys.model_resolution(result)
 
 
 def model_uncertainty(
@@ -825,65 +1127,12 @@ def model_uncertainty(
     Returns:
         Uncertainty array, shape (n_params,).
     """
-    Cm = model_covariance(result, fault, datasets)
-    return np.sqrt(np.maximum(np.diag(Cm), 0.0))
-
-
-def _rebuild_system(
-    result: InversionResult,
-    fault: Fault,
-    datasets: list[DataSet],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-    """Reconstruct G, W, L from a result and its inputs.
-
-    Returns:
-        (G, W, L) where G is the component-selected Green's matrix,
-        W is the weight matrix, and L is the smoothing matrix (or None).
-    """
-    n_patches = fault.n_patches
-    n_components = 2 if result.components == "both" else 1
-    n_params = n_components * n_patches
-
-    G_full = greens(fault, datasets)
-    W = stack_weights(datasets)
-    G = _select_columns(G_full, n_patches, result.components)
-
-    L: np.ndarray | None = None
-    if result.smoothing is not None:
-        L = _build_smoothing_matrix(fault, result.smoothing, n_params, n_components)
-
-    return G, W, L
-
-
-def _hat_diagonal(
-    G: np.ndarray,
-    W: np.ndarray,
-    L: np.ndarray | None,
-    smoothing_strength: float | None,
-) -> np.ndarray:
-    """Compute the diagonal of the (regularized) hat matrix.
-
-    ``H = G_w (G_w^T G_w + lambda L^T L)^{-1} G_w^T``
-
-    where G_w = W^{1/2} G is the whitened design matrix.
-
-    Returns:
-        Leverage vector, shape (M,).
-    """
-    G_w, _ = _apply_weights(G, np.zeros(G.shape[0]), W)
-
-    GwGw = G_w.T @ G_w
-    if L is not None and smoothing_strength is not None and smoothing_strength > 0:
-        GwGw = GwGw + smoothing_strength * (L.T @ L)
-
-    # H = G_w @ inv(GwGw) @ G_w^T, but we only need diag(H)
-    # diag(H) = row-wise sum of (G_w @ inv(GwGw)) * G_w
-    A = np.linalg.solve(GwGw.T, G_w.T).T  # = G_w @ inv(GwGw)
-    return np.sum(A * G_w, axis=1)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    return sys.model_uncertainty(result)
 
 
 # ======================================================================
-# Internal helpers
+# Private helpers
 # ======================================================================
 
 def _validate_args(
@@ -926,7 +1175,6 @@ def _validate_args(
             f"got {smoothing.shape[1]}"
         )
 
-    # Validate auto-tuning requires smoothing
     if isinstance(smoothing_strength, str):
         if smoothing_strength not in _VALID_STRENGTH_STRINGS:
             raise ValueError(
@@ -1067,6 +1315,11 @@ def _solve(
         Solution vector m, shape (n_params,).
     """
     if method == "wls":
+        m_rows, n_cols = G.shape
+        if m_rows > n_cols:
+            # Overdetermined: normal equations are faster than lstsq (SVD).
+            return np.linalg.solve(G.T @ G, G.T @ d)
+        # Underdetermined or square: lstsq gives the minimum-norm solution.
         m, _, _, _ = np.linalg.lstsq(G, d, rcond=None)
         return m
 
@@ -1117,7 +1370,6 @@ def _solve_constrained(
     def gradient(m: np.ndarray) -> np.ndarray:
         return GtG @ m - Gtd
 
-    # Build scipy bounds
     if bounds is not None:
         lower = -np.inf if bounds[0] is None else bounds[0]
         upper = np.inf if bounds[1] is None else bounds[1]
@@ -1125,7 +1377,6 @@ def _solve_constrained(
     else:
         scipy_bounds = None
 
-    # Build scipy constraints
     scipy_constraints = []
     if constraints is not None:
         C, d_ineq = constraints
@@ -1135,7 +1386,6 @@ def _solve_constrained(
             "jac": lambda m, C=C: -C,
         })
 
-    # Initial guess: unconstrained least-squares (clipped to bounds)
     m0, _, _, _ = np.linalg.lstsq(G, d, rcond=None)
     if bounds is not None:
         lower_val = -np.inf if bounds[0] is None else bounds[0]
@@ -1164,88 +1414,6 @@ def _compute_chi2(
     return float(weighted_ssr / dof)
 
 
-def _find_abic_optimal(
-    G: np.ndarray,
-    d: np.ndarray,
-    W: np.ndarray,
-    L: np.ndarray | None,
-    n_params: int,
-) -> float:
-    """Find optimal smoothing_strength by minimizing ABIC.
-
-    Searches in log10 space using bounded scalar optimization.
-
-    Returns:
-        Optimal smoothing_strength (lambda).
-    """
-    if L is None:
-        raise ValueError("ABIC requires a smoothing matrix")
-
-    def objective(log10_lam: float) -> float:
-        lam = 10.0 ** log10_lam
-        return compute_abic(G, d, W, L, lam)
-
-    result = scipy.optimize.minimize_scalar(
-        objective, bounds=(-6, 10), method="bounded",
-    )
-    return 10.0 ** result.x
-
-
-def _find_cv_optimal(
-    G_w: np.ndarray,
-    d_w: np.ndarray,
-    L: np.ndarray | None,
-    bounds: tuple[float | None, float | None] | None,
-    method: str | None,
-    cv_folds: int,
-    n_params: int,
-) -> float:
-    """Find optimal smoothing_strength by K-fold cross-validation.
-
-    For each candidate lambda, partitions data rows into K folds,
-    trains on K-1 folds, evaluates prediction error on the held-out
-    fold, and selects the lambda with minimum mean prediction error.
-
-    Returns:
-        Optimal smoothing_strength (lambda).
-    """
-    if L is None:
-        raise ValueError("Cross-validation requires a smoothing matrix")
-
-    n_obs = G_w.shape[0]
-    solve_method = method if method is not None else _auto_select_method(bounds)
-
-    # Create K random disjoint folds
-    rng = np.random.default_rng(0)
-    perm = rng.permutation(n_obs)
-    fold_sizes = np.full(cv_folds, n_obs // cv_folds)
-    fold_sizes[:n_obs % cv_folds] += 1
-    folds = np.split(perm, np.cumsum(fold_sizes[:-1]))
-
-    lambdas = np.geomspace(1e-4, 1e8, 50)
-    cv_errors = np.zeros(len(lambdas))
-
-    for i, lam in enumerate(lambdas):
-        fold_errors = 0.0
-        for fold in folds:
-            mask = np.ones(n_obs, dtype=bool)
-            mask[fold] = False
-            G_train = G_w[mask]
-            d_train = d_w[mask]
-            G_test = G_w[fold]
-            d_test = d_w[fold]
-
-            G_aug = np.vstack([G_train, np.sqrt(lam) * L])
-            d_aug = np.concatenate([d_train, np.zeros(L.shape[0])])
-            m = _solve(G_aug, d_aug, bounds, solve_method, None)
-            pred_test = G_test @ m
-            fold_errors += float(np.sum((d_test - pred_test) ** 2))
-
-        cv_errors[i] = fold_errors / n_obs
-
-    return float(lambdas[np.argmin(cv_errors)])
-
-
 def _lcurve_corner(
     lambdas: np.ndarray,
     misfits: np.ndarray,
@@ -1262,14 +1430,12 @@ def _lcurve_corner(
     x = np.log(np.maximum(misfits, 1e-300))
     y = np.log(np.maximum(model_norms, 1e-300))
 
-    # Parametric curvature: kappa = (x'y'' - y'x'') / (x'^2 + y'^2)^(3/2)
     dx = np.gradient(x)
     dy = np.gradient(y)
     ddx = np.gradient(dx)
     ddy = np.gradient(dy)
     curvature = (dx * ddy - dy * ddx) / (dx**2 + dy**2) ** 1.5
 
-    # Exclude endpoints (unreliable gradient estimates)
     curvature[0] = -np.inf
     curvature[-1] = -np.inf
 

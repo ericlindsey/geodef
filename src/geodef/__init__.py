@@ -11,6 +11,7 @@ from geodef.invert import (
     DatasetDiagnostics,
     InversionResult,
     LCurveResult,
+    LinearSystem,
     abic_curve,
     compute_abic,
     dataset_diagnostics,
