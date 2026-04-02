@@ -30,8 +30,8 @@ uv.lock
 # Claude Code
 .claude/
 
-# Compiled binaries
-geometry/okada/dc3d
+# Original Green's function sources (not part of the package)
+geometry/
 
 # Related reference code
 related/
