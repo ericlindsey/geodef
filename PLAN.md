@@ -15,15 +15,16 @@ get started quickly while remaining capable for research.
 
 GeoDef's core library is functional and well covered by runtime tests. The
 fixed-direction inversion API work has been stabilized, documented, tested, and
-pushed to `origin/main`. A current-state `.md` documentation refresh and agent
-policy update have also been completed. The remaining work is mostly notebook
-refresh, tooling cleanup, teaching material, and targeted extensions.
+pushed to `origin/main`. A current-state `.md` documentation refresh, agent
+policy update, tutorial/example split, and tutorial notebook execution checks
+have also been completed. The remaining work is mostly further teaching
+material, tooling cleanup, and targeted extensions.
 
 ### Verification Snapshot
 
 | Command | Result | Notes |
 |---------|--------|-------|
-| `uv run pytest -q` | 803 passed, 1 skipped, 804 collected | Runtime suite is green; 222 warnings |
+| `uv run pytest -q` | 807 passed, 1 skipped, 808 collected | Runtime suite is green; tutorial notebooks execute; 222 warnings |
 | `uv run ruff check` | 512 errors | Mostly import order, line length, unused imports, notebooks/tests |
 | `uv run mypy src/geodef` | 130 errors in 9 files | Missing stubs plus optional-array and matplotlib typing issues |
 
@@ -63,7 +64,8 @@ basis, and Gorkha example updates.
 | Visualization | Slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty plots, including one-component slip vectors |
 | Mesh generation | `Mesh`, trace/polygon/points/slab2.0 generation, `Fault.from_mesh()` |
 | Docs | Per-module API reference exists in `docs/`; current-state `.md` refresh completed 2026-05-20 |
-| Examples | Four general notebooks plus a real-data Gorkha earthquake example |
+| Tutorials | Introductory notebooks 01-04 live in `tutorials/` and execute under pytest |
+| Examples | Real-data/project examples live in `examples/`, currently the Gorkha earthquake workflow |
 
 Current package modules:
 
@@ -77,16 +79,17 @@ Current package modules:
 ### 1. Refresh Broader User-Facing Docs and Examples
 
 Priority: high. The current `.md` docs have been refreshed for obvious API
-drift, stale counts, onboarding rules, and AI-attribution policy. Remaining
-work is focused on executable examples and tutorial structure.
+drift, stale counts, onboarding rules, and AI-attribution policy. The
+introductory notebooks now live in `tutorials/`, while real-data workflows stay
+under `examples/`. Tutorial notebooks are executed by `tests/test_tutorials.py`.
+Remaining work is focused on expanding the tutorial sequence and deciding how
+much automated coverage real-data examples should receive.
 
-- Re-run or at least smoke-test notebooks that appear in the main examples
-  table, especially after deciding the tutorial path.
-- Decide whether the progressive tutorial series should live in `tutorials/`
-  or whether the existing `examples/01-04` notebooks should be treated as the
-  tutorial path.
-- Add lightweight notebook execution checks if examples are intended to remain
-  first-class documentation.
+- Decide whether Gorkha should get a lightweight smoke test or remain a manual
+  real-data example because it is heavier and data-dependent.
+- Add tutorials 05-10 from the teaching-material sequence below.
+- Keep `README.md`, `tutorials/README.md`, and `examples/README.md` aligned as
+  notebooks are added or moved.
 
 ### 2. Restore Tooling Health
 

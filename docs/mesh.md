@@ -115,4 +115,4 @@ Or in one step (bypassing the explicit `Mesh` object):
 fault = geodef.Fault.load("cascadia", format="ned")
 ```
 
-See `examples/04_mesh_generation.ipynb` for a full demo.
+See `tutorials/04_mesh_generation.ipynb` for a full demo.

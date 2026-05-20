@@ -19,6 +19,8 @@ packages = ["src/geodef"]
 [dependency-groups]
 dev = [
     "pytest",
+    "nbclient",
+    "nbformat",
     "ruff",
     "mypy",
     "ipykernel",

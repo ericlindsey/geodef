@@ -54,14 +54,24 @@ fixed_azimuth = geodef.invert(fault, gnss,
                               components='azimuth', slip_azimuth=15.0)
 ```
 
-## Examples
+## Tutorials
 
 | Notebook | What it covers |
 |----------|---------------|
-| `examples/01_forward_model.ipynb` | Fault creation, Green's matrix, GNSS + InSAR forward prediction |
-| `examples/02_caching.ipynb` | Hash-based caching for fast reuse of Green's matrices |
-| `examples/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution |
-| `examples/04_mesh_generation.ipynb` | Triangular mesh creation from trace, polygon, slab2.0 grids |
+| `tutorials/01_forward_model.ipynb` | Fault creation, Green's matrix, GNSS + InSAR forward prediction |
+| `tutorials/02_caching.ipynb` | Hash-based caching for fast reuse of Green's matrices |
+| `tutorials/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution |
+| `tutorials/04_mesh_generation.ipynb` | Triangular mesh creation from trace, polygon, slab2.0 grids |
+
+Tutorial notebooks are executed by the pytest suite so they stay aligned with
+the runtime API.
+
+## Examples
+
+Project and real-data examples live in `examples/`.
+
+| Notebook | What it covers |
+|----------|---------------|
 | `examples/gorkha_earthquake/model_gorkha.ipynb` | Real-data Gorkha earthquake inversion with GNSS, InSAR, smoothing, and fixed-azimuth slip |
 
 ## Module reference
@@ -83,7 +93,7 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest -q   # 803 passed, 1 skipped, 804 collected as of 2026-05-20
+uv run pytest -q   # 807 passed, 1 skipped, 808 collected as of 2026-05-20
 ```
 
 ## AI co-authorship

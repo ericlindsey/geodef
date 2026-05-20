@@ -21,8 +21,9 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 804 tests collected across 15 files
-├── examples/              # Worked example notebooks (01–04)
+├── tests/                 # 808 tests collected across 16 files
+├── tutorials/             # Introductory notebooks executed by pytest
+├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
 └── related/               # Reference code: shakeout_v2/, stress-shadows/, and docs
@@ -105,6 +106,6 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**803 tests passing, 1 skipped, 804 collected** across 15 test files covering
+**807 tests passing, 1 skipped, 808 collected** across 16 test files covering
 all modules. Reference data in `tests/reference_data/` — Matlab-generated
 `.npz` files for cross-validation of Green's function engines.
