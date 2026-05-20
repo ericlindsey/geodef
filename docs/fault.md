@@ -66,6 +66,8 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
 | `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` |
 | `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` (lazy, cached) |
+| `strike` | `(N,)` | Patch strike angles in degrees clockwise from north |
+| `dip` | `(N,)` | Patch dip angles in degrees from horizontal |
 | `areas` | `(N,)` | Patch areas in m² |
 | `laplacian` | `(N, N)` | Finite-difference (structured) or KNN Laplacian (unstructured); lazy, cached |
 | `vertices_2d` | list of `(nc, 2)` | Per-patch corners in local km `[east, north]` |

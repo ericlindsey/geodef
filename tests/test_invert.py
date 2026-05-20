@@ -382,6 +382,30 @@ class TestRegularization:
                         smoothing='stresskernel', smoothing_strength=1e-6)
         assert result.slip.shape == (12, 2)
 
+    @pytest.mark.parametrize(
+        ("components", "kwargs"),
+        [
+            ("strike", {}),
+            ("dip", {}),
+            ("rake", {"rake": 30.0}),
+            ("azimuth", {"slip_azimuth": 320.0}),
+        ],
+    )
+    def test_stress_kernel_projects_single_parameter_modes(
+        self, fault_4x3, obs_points, components, kwargs,
+    ):
+        """Stress-kernel smoothing should match the active slip basis."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(
+            fault_4x3,
+            gnss,
+            smoothing='stresskernel',
+            smoothing_strength=1e-6,
+            components=components,
+            **kwargs,
+        )
+        assert result.slip.shape == (12, 1)
+
 
 # ======================================================================
 # Smoothing target (regularize toward non-zero reference)
@@ -1375,3 +1399,267 @@ class TestInversionResultIO:
         assert len(data_lines) == fault.n_patches
         cols = len(data_lines[0].split())
         assert cols >= 7  # lon lat depth strike dip ss ds
+
+
+# ======================================================================
+# Fixed-rake inversion
+# ======================================================================
+
+class TestComponentsRake:
+    """Test fixed-rake inversions (components='rake')."""
+
+    def test_slip_shape(self, fault_4x3, obs_points):
+        rake = 30.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        assert result.slip.shape == (12, 1)
+
+    def test_slip_vector_shape(self, fault_4x3, obs_points):
+        rake = 30.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        assert result.slip_vector.shape == (12,)
+
+    def test_components_field(self, fault_4x3, obs_points):
+        rake = 45.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        assert result.components == "rake"
+
+    def test_rake_field(self, fault_4x3, obs_points):
+        rake = 45.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        assert result.rake == pytest.approx(rake)
+
+    def test_rake_none_for_other_components(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss)
+        assert result.rake is None
+
+    def test_recovers_amplitude(self, fault_4x3, obs_points):
+        """Inversion should recover the scalar slip amplitude at fixed rake."""
+        rake = 30.0
+        r = np.deg2rad(rake)
+        amp = np.ones(12)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          amp * np.cos(r), amp * np.sin(r))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        np.testing.assert_allclose(result.slip[:, 0], amp, atol=0.1)
+
+    def test_rake_0_matches_strike(self, fault_4x3, obs_points):
+        """rake=0 should produce same G as components='strike'."""
+        slip_ss = np.ones(12)
+        slip_ds = np.zeros(12)
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result_rake = invert(fault_4x3, gnss, components="rake", rake=0.0)
+        result_ss = invert(fault_4x3, gnss, components="strike")
+        np.testing.assert_allclose(result_rake.slip_vector,
+                                   result_ss.slip_vector, atol=1e-10)
+
+    def test_rake_90_matches_dip(self, fault_4x3, obs_points):
+        """rake=90 should produce same G as components='dip'."""
+        slip_ss = np.zeros(12)
+        slip_ds = np.ones(12)
+        gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
+        result_rake = invert(fault_4x3, gnss, components="rake", rake=90.0)
+        result_ds = invert(fault_4x3, gnss, components="dip")
+        np.testing.assert_allclose(result_rake.slip_vector,
+                                   result_ds.slip_vector, atol=1e-10)
+
+    def test_missing_rake_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="rake"):
+            invert(fault_4x3, gnss, components="rake")
+
+    def test_rake_without_components_rake_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="rake"):
+            invert(fault_4x3, gnss, components="both", rake=45.0)
+
+    def test_moment_from_amplitude(self, fault_4x3, obs_points):
+        rake = 30.0
+        r = np.deg2rad(rake)
+        amp = np.ones(12)
+        gnss = _make_gnss(fault_4x3, obs_points, amp * np.cos(r), amp * np.sin(r))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        expected = fault_4x3.moment(np.abs(result.slip_vector))
+        np.testing.assert_allclose(result.moment, expected, rtol=1e-6)
+
+    def test_smoothing_laplacian(self, fault_4x3, obs_points):
+        rake = 45.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake,
+                        smoothing="laplacian", smoothing_strength=100.0)
+        assert result.slip.shape == (12, 1)
+
+    def test_save_load_roundtrip(self, fault_4x3, obs_points, tmp_path):
+        rake = 30.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        fpath = tmp_path / "rake_result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        assert loaded.components == "rake"
+        assert loaded.rake == pytest.approx(rake)
+        np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
+
+    def test_save_table_column_name(self, fault_4x3, obs_points, tmp_path):
+        rake = 45.0
+        r = np.deg2rad(rake)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+        fpath = tmp_path / "rake_result.dat"
+        result.save_table(fpath, fault_4x3)
+        text = fpath.read_text()
+        assert "slip_amplitude_m" in text
+
+    def test_save_table_dip_column_name(self, fault_4x3, obs_points, tmp_path):
+        """Dip-only inversion should use 'slip_dip_m', not 'slip_strike_m'."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
+        result = invert(fault_4x3, gnss, components="dip")
+        fpath = tmp_path / "dip_result.dat"
+        result.save_table(fpath, fault_4x3)
+        text = fpath.read_text()
+        assert "slip_dip_m" in text
+        assert "slip_strike_m" not in text
+
+
+# ======================================================================
+# Fixed slip-azimuth inversion
+# ======================================================================
+
+class TestComponentsAzimuth:
+    """Test fixed geographic slip-azimuth inversions (components='azimuth').
+
+    slip_azimuth fixes the geographic bearing of slip (degrees CW from
+    North). Each patch's effective local rake = slip_azimuth - strike_i,
+    so this correctly handles curved meshes with varying strike.
+    """
+
+    def test_slip_shape(self, fault_4x3, obs_points):
+        az = fault_4x3.strike[0]   # azimuth == strike → pure strike-slip
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        assert result.slip.shape == (12, 1)
+
+    def test_slip_vector_shape(self, fault_4x3, obs_points):
+        az = fault_4x3.strike[0]
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        assert result.slip_vector.shape == (12,)
+
+    def test_components_field(self, fault_4x3, obs_points):
+        az = fault_4x3.strike[0]
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        assert result.components == "azimuth"
+
+    def test_slip_azimuth_field(self, fault_4x3, obs_points):
+        az = 45.0
+        r = np.deg2rad(az - fault_4x3.strike[0])
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        assert result.slip_azimuth == pytest.approx(az)
+
+    def test_slip_azimuth_none_for_other_components(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss)
+        assert result.slip_azimuth is None
+
+    def test_azimuth_equals_strike_matches_strike_only(self, fault_4x3, obs_points):
+        """slip_azimuth == fault strike → same G as components='strike'."""
+        az = float(fault_4x3.strike[0])  # planar fault: uniform strike
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        result_ss = invert(fault_4x3, gnss, components="strike")
+        np.testing.assert_allclose(result_az.slip_vector,
+                                   result_ss.slip_vector, atol=1e-10)
+
+    def test_azimuth_equals_strike_plus_90_matches_dip(self, fault_4x3, obs_points):
+        """slip_azimuth == fault strike + 90° → same G as components='dip'."""
+        az = float(fault_4x3.strike[0]) + 90.0
+        gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
+        result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        result_ds = invert(fault_4x3, gnss, components="dip")
+        np.testing.assert_allclose(result_az.slip_vector,
+                                   result_ds.slip_vector, atol=1e-10)
+
+    def test_azimuth_per_patch_varies_on_curved_mesh(self, obs_points):
+        """On a fault with non-uniform strike, azimuth produces per-patch
+        local rake. Use an L-shaped fault: one N-S patch (strike~0°) and
+        one E-W patch (strike~90°), sharing a corner node."""
+        from geodef.mesh import Mesh
+        # Patch 1: N-S vertical fault — all at lon=100.0 → strike ~0°
+        # Patch 2: E-W vertical fault — all at lat=0.0  → strike ~90°
+        # Node 0 at corner, node 3 at depth (shared anchor)
+        lon   = np.array([100.0, 100.0, 100.1, 100.0])
+        lat   = np.array([0.0,   0.1,   0.0,   0.0])
+        depth = np.array([5e3,   5e3,   5e3,   15e3])
+        triangles = np.array([[0, 1, 3], [0, 2, 3]])
+        mesh = Mesh(lon=lon, lat=lat, depth=depth, triangles=triangles)
+        fault = Fault.from_mesh(mesh)
+        # The two patches should have strikes differing by ~90°
+        strike_diff = abs(float(fault.strike[0]) - float(fault.strike[1]))
+        assert strike_diff > 30.0 or abs(strike_diff - 360.0) > 30.0
+        lat_pts, lon_pts = obs_points
+        gnss = _make_gnss(fault, (lat_pts, lon_pts), np.ones(2), np.zeros(2))
+        result = invert(fault, gnss, components="azimuth",
+                        slip_azimuth=float(fault.strike.mean()))
+        assert result.slip.shape == (fault.n_patches, 1)
+
+    def test_recovers_amplitude(self, fault_4x3, obs_points):
+        az = 45.0
+        r = np.deg2rad(az - fault_4x3.strike[0])
+        amp = np.ones(12)
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          amp * np.cos(r), amp * np.sin(r))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        np.testing.assert_allclose(result.slip[:, 0], amp, atol=0.1)
+
+    def test_missing_slip_azimuth_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="slip_azimuth"):
+            invert(fault_4x3, gnss, components="azimuth")
+
+    def test_slip_azimuth_without_components_azimuth_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="slip_azimuth"):
+            invert(fault_4x3, gnss, components="both", slip_azimuth=45.0)
+
+    def test_save_load_roundtrip(self, fault_4x3, obs_points, tmp_path):
+        az = 45.0
+        r = np.deg2rad(az - fault_4x3.strike[0])
+        gnss = _make_gnss(fault_4x3, obs_points,
+                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        fpath = tmp_path / "az_result.npz"
+        result.save(fpath)
+        loaded = InversionResult.load(fpath)
+        assert loaded.components == "azimuth"
+        assert loaded.slip_azimuth == pytest.approx(az)
+        assert loaded.rake is None
+        np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
+
+    def test_save_table_column_name(self, fault_4x3, obs_points, tmp_path):
+        az = float(fault_4x3.strike[0])
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
+        fpath = tmp_path / "az_result.dat"
+        result.save_table(fpath, fault_4x3)
+        text = fpath.read_text()
+        assert "slip_amplitude_m" in text

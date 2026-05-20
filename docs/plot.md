@@ -17,7 +17,7 @@ geodef.plot.slip(fault, result.slip_vector)
 
 geodef.plot.slip(fault, result.slip_vector,
     ax=ax,
-    component='dip',          # 'strike', 'dip', 'magnitude' (default)
+    components='dip',         # 'strike', 'dip', 'magnitude' (default)
     cmap='RdBu_r',
     vmin=-2, vmax=2,
     edgecolor='gray', linewidth=0.5,   # → PatchCollection/**kwargs
@@ -26,6 +26,10 @@ geodef.plot.slip(fault, result.slip_vector,
     title='Coseismic slip',
 )
 ```
+
+For one-parameter inversion results such as `components='rake'` or
+`components='azimuth'`, `result.slip_vector` has length `N`; `plot.slip()`
+plots that amplitude directly and ignores the `components` selector.
 
 ---
 
@@ -133,6 +137,7 @@ geodef.plot.fault3d(fault,
 geodef.plot.map(fault,
     datasets=[gnss, insar],
     slip_vector=result.slip_vector,
+    components='magnitude',
     cmap='YlOrRd',
     colorbar_label='Slip (m)',
     show_trace=True,

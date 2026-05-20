@@ -85,10 +85,10 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
     ref_lon = fault._ref_lon
 
     if fault.engine == "okada":
-        sin_dip = np.sin(np.radians(fault._dip))
-        cos_dip = np.cos(np.radians(fault._dip))
-        sin_str = np.sin(np.radians(fault._strike))
-        cos_str = np.cos(np.radians(fault._strike))
+        sin_dip = np.sin(np.radians(fault.dip))
+        cos_dip = np.cos(np.radians(fault.dip))
+        sin_str = np.sin(np.radians(fault.strike))
+        cos_str = np.cos(np.radians(fault.strike))
 
         half_L = fault._length / 2
         half_W = fault._width / 2
@@ -147,10 +147,10 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
     ref_lon = fault._ref_lon
 
     if fault.engine == "okada":
-        sin_dip = np.sin(np.radians(fault._dip))
-        cos_dip = np.cos(np.radians(fault._dip))
-        sin_str = np.sin(np.radians(fault._strike))
-        cos_str = np.cos(np.radians(fault._strike))
+        sin_dip = np.sin(np.radians(fault.dip))
+        cos_dip = np.cos(np.radians(fault.dip))
+        sin_str = np.sin(np.radians(fault.strike))
+        cos_str = np.cos(np.radians(fault.strike))
 
         half_L = fault._length / 2
         half_W = fault._width / 2
@@ -208,10 +208,16 @@ def _get_slip_component(
 ) -> np.ndarray:
     """Extract a scalar per patch from a blocked slip vector.
 
+    If *slip* has length N (single-component vector), it is returned as-is.
+    If *slip* has length 2*N (both components), *component* selects which to
+    extract.
+
     Args:
-        slip: Blocked slip vector ``[ss_0..ss_N, ds_0..ds_N]``, length 2*N.
+        slip: Either a single-component vector of length N, or a blocked
+            ``[ss_0..ss_N, ds_0..ds_N]`` vector of length 2*N.
         n_patches: Number of fault patches (N).
-        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``.
+        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``. Only
+            used when *slip* has length 2*N.
 
     Returns:
         Array of shape (N,).
@@ -219,10 +225,12 @@ def _get_slip_component(
     Raises:
         ValueError: If *component* is invalid or *slip* has wrong length.
     """
+    if slip.shape[0] == n_patches:
+        return slip
     if slip.shape[0] != 2 * n_patches:
         raise ValueError(
             f"slip length {slip.shape[0]} does not match "
-            f"2 * n_patches = {2 * n_patches}"
+            f"n_patches = {n_patches} or 2 * n_patches = {2 * n_patches}"
         )
     ss = slip[:n_patches]
     ds = slip[n_patches:]
@@ -438,7 +446,7 @@ def slip(
     slip_vector: np.ndarray,
     *,
     ax: matplotlib.axes.Axes | None = None,
-    component: str = "magnitude",
+    components: str = "magnitude",
     cmap: str = "viridis",
     vmin: float | None = None,
     vmax: float | None = None,
@@ -452,10 +460,12 @@ def slip(
 
     Args:
         fault: Fault geometry (rectangular or triangular).
-        slip_vector: Blocked slip ``[ss_0..ss_N, ds_0..ds_N]``, length 2*N.
+        slip_vector: Slip vector, either length N (single component) or
+            length 2*N (blocked ``[ss_0..ss_N, ds_0..ds_N]``).
         ax: Axes to plot on. Creates a new figure if ``None``.
-        component: Which slip component to display. One of ``'strike'``,
-            ``'dip'``, or ``'magnitude'`` (default).
+        components: Which component to display when *slip_vector* has length
+            2*N. One of ``'strike'``, ``'dip'``, or ``'magnitude'``
+            (default). Ignored for single-component vectors.
         cmap: Matplotlib colormap name.
         vmin: Minimum color limit.
         vmax: Maximum color limit.
@@ -469,14 +479,14 @@ def slip(
     Returns:
         The axes used for plotting.
     """
-    values = _get_slip_component(slip_vector, fault.n_patches, component)
+    values = _get_slip_component(slip_vector, fault.n_patches, components)
     if colorbar_label is None:
         labels = {
             "strike": "Strike-slip (m)",
             "dip": "Dip-slip (m)",
             "magnitude": "Slip magnitude (m)",
         }
-        colorbar_label = labels.get(component, "Slip (m)")
+        colorbar_label = labels.get(components, "Slip (m)")
     return _plot_patch_scalar(
         fault, values,
         ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
@@ -1109,7 +1119,7 @@ def map(
     datasets: DataSet | list[DataSet] | None = None,
     values: np.ndarray | None = None,
     slip_vector: np.ndarray | None = None,
-    component: str = "magnitude",
+    components: str = "magnitude",
     ax: matplotlib.axes.Axes | None = None,
     cmap: str = "viridis",
     vmin: float | None = None,
@@ -1125,8 +1135,9 @@ def map(
     """2-D map view of fault geometry and optional station locations.
 
     Patches can be colored by a per-patch scalar using either ``values``
-    (a length-*n_patches* array) or ``slip_vector`` (a blocked
-    ``[ss | ds]`` vector, which is decomposed via ``component``).
+    (a length-*n_patches* array) or ``slip_vector`` (either one amplitude
+    per patch, or a blocked ``[ss | ds]`` vector decomposed via
+    ``components``).
     When neither is provided, patches are drawn with a uniform fill.
 
     Args:
@@ -1135,11 +1146,13 @@ def map(
             overlaid on the map.
         values: Per-patch scalar array (length *n_patches*) to color
             the patches by. Mutually exclusive with ``slip_vector``.
-        slip_vector: Blocked ``[ss | ds]`` slip vector (length
-            *2 × n_patches*). Decomposed via ``component``.
-        component: Which slip component to extract when using
+        slip_vector: Slip vector, either length *n_patches* or blocked
+            ``[ss | ds]`` length *2 × n_patches*. Decomposed via
+            ``components`` when blocked.
+        components: Which slip component to extract when using
             ``slip_vector``. One of ``'magnitude'``, ``'strike'``,
-            ``'dip'`` (default ``'magnitude'``).
+            ``'dip'`` (default ``'magnitude'``). Ignored for
+            single-amplitude vectors.
         ax: Axes to plot on. Creates a new figure if ``None``.
         cmap: Colormap name (used when ``values`` or ``slip_vector``
             is provided).
@@ -1170,7 +1183,7 @@ def map(
         color_values = np.asarray(values)
     elif slip_vector is not None:
         color_values = _get_slip_component(
-            slip_vector, fault.n_patches, component
+            slip_vector, fault.n_patches, components
         )
 
     if show_patches:

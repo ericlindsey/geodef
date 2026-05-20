@@ -198,6 +198,12 @@ class TestGetSlipComponent:
         with pytest.raises(ValueError, match="component"):
             _get_slip_component(slip_magnitude, rect_fault.n_patches, "invalid")
 
+    def test_single_component(self, rect_fault):
+        from geodef.plot import _get_slip_component
+        n = rect_fault.n_patches
+        vals = _get_slip_component(np.ones(n) * 2.0, n, "magnitude")
+        np.testing.assert_allclose(vals, 2.0)
+
     def test_wrong_slip_length(self, rect_fault):
         from geodef.plot import _get_slip_component
         with pytest.raises(ValueError, match="length"):
@@ -276,12 +282,17 @@ class TestPlotSlip:
         assert isinstance(ax, plt.Axes)
         assert len(ax.collections) >= 1
 
-    def test_component_strike(self, rect_fault, slip_magnitude):
-        ax = geodef.plot.slip(rect_fault, slip_magnitude, component="strike")
+    def test_components_strike(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip(rect_fault, slip_magnitude, components="strike")
         assert isinstance(ax, plt.Axes)
 
-    def test_component_dip(self, rect_fault, slip_magnitude):
-        ax = geodef.plot.slip(rect_fault, slip_magnitude, component="dip")
+    def test_components_dip(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip(rect_fault, slip_magnitude, components="dip")
+        assert isinstance(ax, plt.Axes)
+
+    def test_single_component_vector(self, rect_fault):
+        n = rect_fault.n_patches
+        ax = geodef.plot.slip(rect_fault, np.ones(n) * 1.5)
         assert isinstance(ax, plt.Axes)
 
     def test_existing_axes(self, rect_fault, slip_magnitude):
@@ -802,7 +813,7 @@ class TestPlotMap:
     def test_map_with_slip_vector(self, rect_fault, slip_magnitude):
         """Map should accept slip_vector and decompose it."""
         ax = geodef.plot.map(rect_fault, slip_vector=slip_magnitude,
-                              component="magnitude",
+                              components="magnitude",
                               colorbar_label="Slip (m)")
         assert isinstance(ax, plt.Axes)
 

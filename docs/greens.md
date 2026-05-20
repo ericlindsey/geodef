@@ -27,7 +27,11 @@ G_strike = G[:, :N]   # strike-slip columns only
 G_dip    = G[:, N:]   # dip-slip columns only
 ```
 
-> **Planned:** a `components='both'|'strike'|'dip'` argument will be added to `greens()` for consistency with `invert()`. See `PLAN.md` §10.1.
+`geodef.invert()` applies this column selection internally when
+`components='strike'` or `components='dip'`. For one-parameter rake or
+geographic-azimuth inversions, it projects the two blocked column sets into the
+active slip basis before solving. The same projection is also applied to
+stress-kernel regularization.
 
 ### `stack_obs(datasets) → np.ndarray`
 

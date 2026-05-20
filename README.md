@@ -41,6 +41,11 @@ result = geodef.invert(fault, [gnss, insar],
 
 print(f"Mw = {result.Mw:.2f}, reduced chi2 = {result.chi2:.2f}")
 geodef.plot.slip(fault, result.slip_vector)
+
+# Optional fixed slip directions
+fixed_rake = geodef.invert(fault, gnss, components='rake', rake=90.0)
+fixed_azimuth = geodef.invert(fault, gnss,
+                              components='azimuth', slip_azimuth=15.0)
 ```
 
 ## Examples
@@ -71,7 +76,7 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest   # 669 tests
+uv run pytest   # 804 tests collected
 ```
 
 ## References

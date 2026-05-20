@@ -86,8 +86,8 @@ class Fault:
         self._lat = lat
         self._lon = lon
         self._depth = depth
-        self._strike = strike
-        self._dip = dip
+        self.strike = strike
+        self.dip = dip
         self._length = length
         self._width = width
         self._vertices = vertices
@@ -95,7 +95,7 @@ class Fault:
         self._engine = engine
 
         # Make arrays read-only
-        for arr in (self._lat, self._lon, self._depth, self._strike, self._dip):
+        for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
             arr.flags.writeable = False
         if self._length is not None:
             self._length.flags.writeable = False
@@ -632,13 +632,13 @@ class Fault:
                 return _greens.displacement_greens(
                     obs_lat, obs_lon,
                     self._lat, self._lon, self._depth,
-                    self._strike, self._dip, self._length, self._width,
+                    self.strike, self.dip, self._length, self._width,
                 )
             elif kind == "strain":
                 return _greens.strain_greens(
                     obs_lat, obs_lon,
                     self._lat, self._lon, self._depth,
-                    self._strike, self._dip, self._length, self._width,
+                    self.strike, self.dip, self._length, self._width,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -861,8 +861,8 @@ class Fault:
             self._depth,
             self._length,
             self._width,
-            self._strike,
-            self._dip,
+            self.strike,
+            self.dip,
         ))
         np.savetxt(fname, outdata, fmt="%10.5f")
 
@@ -883,10 +883,10 @@ class Fault:
         )
 
         # Compute upper-left corner of each patch
-        sin_str = np.sin(np.radians(self._strike))
-        cos_str = np.cos(np.radians(self._strike))
-        sin_dip = np.sin(np.radians(self._dip))
-        cos_dip = np.cos(np.radians(self._dip))
+        sin_str = np.sin(np.radians(self.strike))
+        cos_str = np.cos(np.radians(self.strike))
+        sin_dip = np.sin(np.radians(self.dip))
+        cos_dip = np.cos(np.radians(self.dip))
 
         corner_north = north - (self._length / 2) * cos_str - (self._width / 2) * (-cos_dip * sin_str)
         corner_east = east - (self._length / 2) * sin_str - (self._width / 2) * (cos_dip * cos_str)
@@ -900,8 +900,8 @@ class Fault:
         x3 = float(np.min(corner_depth))
 
         # Total length and width of the segment
-        strike_val = float(self._strike[0])
-        dip_val = float(self._dip[0])
+        strike_val = float(self.strike[0])
+        dip_val = float(self.dip[0])
 
         # Project all corners onto strike/dip directions to get total extent
         str_rad = np.radians(strike_val)
@@ -1068,10 +1068,10 @@ class Fault:
             raise NotImplementedError("vertices_3d is only implemented for rectangular faults")
 
         n = self.n_patches
-        sin_dip = np.sin(np.radians(self._dip))
-        cos_dip = np.cos(np.radians(self._dip))
-        sin_str = np.sin(np.radians(self._strike))
-        cos_str = np.cos(np.radians(self._strike))
+        sin_dip = np.sin(np.radians(self.dip))
+        cos_dip = np.cos(np.radians(self.dip))
+        sin_str = np.sin(np.radians(self.strike))
+        cos_str = np.cos(np.radians(self.strike))
 
         half_L = self._length / 2
         half_W = self._width / 2
@@ -1129,8 +1129,8 @@ def _build_stress_key(fault: Fault, mu: float) -> dict:
         "fault_lat": fault._lat,
         "fault_lon": fault._lon,
         "fault_depth": fault._depth,
-        "fault_strike": fault._strike,
-        "fault_dip": fault._dip,
+        "fault_strike": fault.strike,
+        "fault_dip": fault.dip,
         "engine": fault.engine,
     }
     if fault._length is not None:

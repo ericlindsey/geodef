@@ -310,7 +310,7 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
-        assert fault._dip[0] == pytest.approx(90.0, abs=2.0)
+        assert fault.dip[0] == pytest.approx(90.0, abs=2.0)
 
     def test_centers_geographic(self):
         from geodef.fault import Fault
@@ -384,10 +384,10 @@ class TestFaultFromMesh:
         from geodef.fault import Fault
 
         fault = Fault.from_mesh(simple_mesh)
-        assert np.all(fault._dip >= 0)
-        assert np.all(fault._dip <= 90)
-        assert np.all(fault._strike >= 0)
-        assert np.all(fault._strike < 360)
+        assert np.all(fault.dip >= 0)
+        assert np.all(fault.dip <= 90)
+        assert np.all(fault.strike >= 0)
+        assert np.all(fault.strike < 360)
 
     def test_centers_within_mesh(self, simple_mesh):
         from geodef.fault import Fault
@@ -400,7 +400,7 @@ class TestFaultFromMesh:
         from geodef.fault import Fault
 
         fault = Fault.from_mesh(horizontal_mesh)
-        npt.assert_allclose(fault._dip, 0.0, atol=1.0)
+        npt.assert_allclose(fault.dip, 0.0, atol=1.0)
 
     def test_forward_modeling_works(self, simple_mesh):
         """Smoke test: mesh → fault → displacement doesn't error."""

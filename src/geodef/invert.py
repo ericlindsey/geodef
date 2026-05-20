@@ -21,7 +21,7 @@ from geodef.greens import greens, stack_obs, stack_weights
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
 _VALID_STRENGTH_STRINGS = {"abic", "cv"}
-_VALID_COMPONENTS = {"both", "strike", "dip"}
+_VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -31,7 +31,8 @@ class InversionResult:
     Attributes:
         slip: Slip per patch, shape (N, n_components). Columns ordered
             as [strike-slip, dip-slip] for ``components='both'``, or
-            a single column for ``'strike'`` or ``'dip'``.
+            a single column for ``'strike'``, ``'dip'``, ``'rake'``, or
+            ``'azimuth'``.
         slip_vector: Blocked solution vector, shape (n_components * N,).
         residuals: Observation minus prediction, shape (M,).
         predicted: Forward-modeled observations, shape (M,).
@@ -41,7 +42,17 @@ class InversionResult:
         Mw: Moment magnitude.
         smoothing: Regularization type used, or None if unregularized.
         smoothing_strength: Regularization weight used, or None if unregularized.
-        components: Which slip components were solved for.
+        components: Which slip components were solved for. One of
+            ``'both'``, ``'strike'``, ``'dip'``, ``'rake'``, or
+            ``'azimuth'``.
+        rake: Fixed rake angle in degrees (in each patch's local
+            strike-dip frame) when ``components='rake'``, else ``None``.
+            Only physically meaningful for planar faults with uniform
+            strike; use ``slip_azimuth`` for curved meshes.
+        slip_azimuth: Fixed geographic slip azimuth in degrees CW from
+            North when ``components='azimuth'``, else ``None``. Each
+            patch's effective local rake is ``slip_azimuth - strike_i``,
+            so this correctly handles faults with varying strike.
     """
 
     slip: np.ndarray
@@ -55,6 +66,8 @@ class InversionResult:
     smoothing: str | np.ndarray | None
     smoothing_strength: float | None
     components: str
+    rake: float | None = None
+    slip_azimuth: float | None = None
 
     # ------------------------------------------------------------------
     # I/O
@@ -88,6 +101,16 @@ class InversionResult:
             if self.smoothing_strength is None
             else np.array([self.smoothing_strength])
         )
+        rake_arr = (
+            np.array([float("nan")])
+            if self.rake is None
+            else np.array([self.rake])
+        )
+        slip_azimuth_arr = (
+            np.array([float("nan")])
+            if self.slip_azimuth is None
+            else np.array([self.slip_azimuth])
+        )
 
         arrays: dict = {
             "slip": self.slip,
@@ -101,6 +124,8 @@ class InversionResult:
             "smoothing_str": np.array([smoothing_str]),
             "smoothing_strength": strength,
             "components": np.array([self.components]),
+            "rake": rake_arr,
+            "slip_azimuth": slip_azimuth_arr,
         }
         if smoothing_arr is not None:
             arrays["smoothing_arr"] = smoothing_arr
@@ -130,6 +155,16 @@ class InversionResult:
         raw_strength = float(data["smoothing_strength"][0])
         strength: float | None = None if np.isnan(raw_strength) else raw_strength
 
+        raw_rake = float(data["rake"][0]) if "rake" in data else float("nan")
+        rake: float | None = None if np.isnan(raw_rake) else raw_rake
+
+        raw_az = (
+            float(data["slip_azimuth"][0])
+            if "slip_azimuth" in data
+            else float("nan")
+        )
+        slip_azimuth: float | None = None if np.isnan(raw_az) else raw_az
+
         return cls(
             slip=data["slip"],
             slip_vector=data["slip_vector"],
@@ -142,6 +177,8 @@ class InversionResult:
             smoothing=smoothing,
             smoothing_strength=strength,
             components=str(data["components"][0]),
+            rake=rake,
+            slip_azimuth=slip_azimuth,
         )
 
     def save_table(self, fname: str | Path, fault: "Fault") -> None:
@@ -158,7 +195,6 @@ class InversionResult:
             fname: Output file path.
         """
         slip_2d = self.slip if self.slip.ndim == 2 else self.slip[:, np.newaxis]
-        n_comp = slip_2d.shape[1]
 
         smoothing_desc = (
             "none"
@@ -179,25 +215,35 @@ class InversionResult:
             f"moment: {self.moment:.6g} N-m",
             f"Mw: {self.Mw:.4f}",
         ]
+        if self.rake is not None:
+            header_lines.append(f"rake_deg: {self.rake:.6g}")
+        if self.slip_azimuth is not None:
+            header_lines.append(f"slip_azimuth_deg: {self.slip_azimuth:.6g}")
 
         if fault.engine == "okada":
             col_names = "lon lat depth_m strike dip length_m width_m"
             geom = np.column_stack([
                 fault._lon, fault._lat, fault._depth,
-                fault._strike, fault._dip,
+                fault.strike, fault.dip,
                 fault._length, fault._width,
             ])
         else:
             col_names = "lon lat depth_m strike dip area_m2"
             geom = np.column_stack([
                 fault._lon, fault._lat, fault._depth,
-                fault._strike, fault._dip,
+                fault.strike, fault.dip,
                 fault.areas,
             ])
 
-        slip_cols = "  ".join(
-            ["slip_strike_m", "slip_dip_m"][:n_comp]
-        )
+        if self.components == "both":
+            slip_col_names = ["slip_strike_m", "slip_dip_m"]
+        elif self.components == "strike":
+            slip_col_names = ["slip_strike_m"]
+        elif self.components == "dip":
+            slip_col_names = ["slip_dip_m"]
+        else:  # rake or azimuth
+            slip_col_names = ["slip_amplitude_m"]
+        slip_cols = "  ".join(slip_col_names)
         header_lines.append(f"{col_names}  {slip_cols}")
 
         data = np.column_stack([geom, slip_2d])
@@ -409,6 +455,8 @@ class LinearSystem:
         datasets: DataSet | list[DataSet],
         smoothing: str | np.ndarray | None = None,
         components: str = "both",
+        rake: float | None = None,
+        slip_azimuth: float | None = None,
     ) -> None:
         if isinstance(datasets, DataSet):
             datasets = [datasets]
@@ -421,11 +469,27 @@ class LinearSystem:
             raise ValueError(
                 f"components must be one of {_VALID_COMPONENTS}, got {components!r}"
             )
+        if components == "rake" and rake is None:
+            raise ValueError("components='rake' requires a rake angle in degrees")
+        if rake is not None and components != "rake":
+            raise ValueError(
+                f"rake angle is only used with components='rake', "
+                f"got components={components!r}"
+            )
+        if components == "azimuth" and slip_azimuth is None:
+            raise ValueError("components='azimuth' requires a slip_azimuth in degrees")
+        if slip_azimuth is not None and components != "azimuth":
+            raise ValueError(
+                f"slip_azimuth is only used with components='azimuth', "
+                f"got components={components!r}"
+            )
 
         self.fault = fault
         self.datasets = datasets
         self.smoothing = smoothing
         self.components = components
+        self.rake = rake
+        self.slip_azimuth = slip_azimuth
 
         n_patches = fault.n_patches
         n_components = 2 if components == "both" else 1
@@ -435,10 +499,21 @@ class LinearSystem:
         G_full = greens(fault, datasets)
         self.d = stack_obs(datasets)
         self.W = stack_weights(datasets)
-        self.G = _select_columns(G_full, n_patches, components)
+        self.G = _select_columns(
+            G_full, n_patches, components, rake,
+            fault_strike=fault.strike, slip_azimuth=slip_azimuth,
+        )
         self.G_w, self.d_w = _apply_weights(self.G, self.d, self.W)
         self.L: np.ndarray | None = (
-            _build_smoothing_matrix(fault, smoothing, self._n_params, n_components)
+            _build_smoothing_matrix(
+                fault,
+                smoothing,
+                self._n_params,
+                n_components,
+                components,
+                rake,
+                slip_azimuth,
+            )
             if smoothing is not None else None
         )
 
@@ -632,6 +707,7 @@ class LinearSystem:
         _validate_args(
             self.datasets, self.components, self.smoothing, smoothing_strength,
             bounds, method, smoothing_target, self._n_params,
+            self.rake, self.slip_azimuth,
         )
 
         if isinstance(smoothing_strength, str):
@@ -681,6 +757,8 @@ class LinearSystem:
             smoothing=self.smoothing if reg_strength is not None else None,
             smoothing_strength=reg_strength,
             components=self.components,
+            rake=self.rake,
+            slip_azimuth=self.slip_azimuth,
         )
 
     def lcurve(
@@ -892,6 +970,8 @@ def invert(
     method: str | None = None,
     smoothing_target: np.ndarray | None = None,
     components: str = "both",
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
     constraints: tuple[np.ndarray, np.ndarray] | None = None,
     cv_folds: int = 5,
 ) -> InversionResult:
@@ -913,8 +993,16 @@ def invert(
             of zero: minimizes ``||L(m - m_ref)||^2``. Only valid when
             smoothing is set.
         components: Which slip components to solve for. One of
-            ``'both'`` (strike + dip, default), ``'strike'``, or
-            ``'dip'``.
+            ``'both'`` (default), ``'strike'``, ``'dip'``, ``'rake'``,
+            or ``'azimuth'``.
+        rake: Fixed rake angle in degrees (same for all patches, in each
+            patch's local strike-dip frame), required when
+            ``components='rake'``. Only physically meaningful for planar
+            faults; use ``slip_azimuth`` for curved meshes.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            required when ``components='azimuth'``. Each patch's
+            effective local rake is ``slip_azimuth - strike_i``,
+            so this correctly handles faults with varying strike.
         constraints: Inequality constraints ``(C, d_ineq)`` such that
             ``C @ m <= d_ineq``. Only used with ``method='constrained'``.
         cv_folds: Number of folds for cross-validation (default 5).
@@ -925,7 +1013,7 @@ def invert(
     Raises:
         ValueError: For invalid arguments.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components)
+    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
     return sys.invert(smoothing_strength, bounds, method, smoothing_target,
                       constraints, cv_folds)
 
@@ -986,6 +1074,8 @@ def lcurve(
     bounds: tuple[float | None, float | None] | None = None,
     method: str | None = None,
     components: str = "both",
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
 ) -> LCurveResult:
     """Sweep smoothing strength and compute the L-curve.
 
@@ -998,11 +1088,15 @@ def lcurve(
         bounds: Per-component slip bounds.
         method: Solver method.
         components: Which slip components to solve for.
+        rake: Fixed rake angle in degrees, required when
+            ``components='rake'``.
+        slip_azimuth: Geographic slip azimuth in degrees, required when
+            ``components='azimuth'``.
 
     Returns:
         LCurveResult with sweep arrays and optimal lambda.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components)
+    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
     return sys.lcurve(smoothing_range, n, bounds, method)
 
 
@@ -1013,6 +1107,8 @@ def abic_curve(
     smoothing_range: tuple[float, float] = (1e-2, 1e6),
     n: int = 50,
     components: str = "both",
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
 ) -> ABICCurveResult:
     """Sweep smoothing strength and compute the ABIC at each value.
 
@@ -1026,11 +1122,15 @@ def abic_curve(
         smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
         n: Number of lambda values to evaluate.
         components: Which slip components to solve for.
+        rake: Fixed rake angle in degrees, required when
+            ``components='rake'``.
+        slip_azimuth: Geographic slip azimuth in degrees, required when
+            ``components='azimuth'``.
 
     Returns:
         ABICCurveResult with sweep arrays and optimal lambda.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components)
+    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
     return sys.abic_curve(smoothing_range, n)
 
 
@@ -1053,7 +1153,8 @@ def dataset_diagnostics(
     Returns:
         List of ``DatasetDiagnostics``, one per dataset.
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
+                       result.rake, result.slip_azimuth)
     return sys.dataset_diagnostics(result)
 
 
@@ -1081,7 +1182,8 @@ def model_covariance(
     Returns:
         Model covariance matrix, shape (n_params, n_params).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
+                       result.rake, result.slip_azimuth)
     return sys.model_covariance(result)
 
 
@@ -1106,7 +1208,8 @@ def model_resolution(
     Returns:
         Resolution matrix, shape (n_params, n_params).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
+                       result.rake, result.slip_azimuth)
     return sys.model_resolution(result)
 
 
@@ -1127,7 +1230,8 @@ def model_uncertainty(
     Returns:
         Uncertainty array, shape (n_params,).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components)
+    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
+                       result.rake, result.slip_azimuth)
     return sys.model_uncertainty(result)
 
 
@@ -1144,6 +1248,8 @@ def _validate_args(
     method: str | None,
     smoothing_target: np.ndarray | None,
     n_params: int,
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
 ) -> None:
     """Validate invert() arguments."""
     for ds in datasets:
@@ -1156,6 +1262,21 @@ def _validate_args(
         raise ValueError(
             f"components must be one of {_VALID_COMPONENTS}, "
             f"got {components!r}"
+        )
+
+    if components == "rake" and rake is None:
+        raise ValueError("components='rake' requires a rake angle in degrees")
+    if rake is not None and components != "rake":
+        raise ValueError(
+            f"rake angle is only used with components='rake', "
+            f"got components={components!r}"
+        )
+    if components == "azimuth" and slip_azimuth is None:
+        raise ValueError("components='azimuth' requires a slip_azimuth in degrees")
+    if slip_azimuth is not None and components != "azimuth":
+        raise ValueError(
+            f"slip_azimuth is only used with components='azimuth', "
+            f"got components={components!r}"
         )
 
     if method is not None and method not in _VALID_METHODS:
@@ -1201,14 +1322,26 @@ def _validate_args(
 
 
 def _select_columns(
-    G_full: np.ndarray, n_patches: int, components: str,
+    G_full: np.ndarray,
+    n_patches: int,
+    components: str,
+    rake: float | None = None,
+    fault_strike: np.ndarray | None = None,
+    slip_azimuth: float | None = None,
 ) -> np.ndarray:
     """Select G matrix columns for the requested slip component(s).
 
     Args:
         G_full: Full Green's matrix, shape (M, 2*N).
         n_patches: Number of fault patches N.
-        components: ``'both'``, ``'strike'``, or ``'dip'``.
+        components: ``'both'``, ``'strike'``, ``'dip'``, ``'rake'``, or
+            ``'azimuth'``.
+        rake: Fixed rake angle in degrees (same for all patches), used
+            when ``components='rake'``.
+        fault_strike: Per-patch strike angles in degrees, shape (N,).
+            Required when ``components='azimuth'``.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            used when ``components='azimuth'``.
 
     Returns:
         G matrix with columns for the requested components.
@@ -1217,7 +1350,22 @@ def _select_columns(
         return G_full
     if components == "strike":
         return G_full[:, :n_patches]
-    return G_full[:, n_patches:]
+    if components == "dip":
+        return G_full[:, n_patches:]
+    if components == "rake":
+        if rake is None:
+            raise ValueError("components='rake' requires a rake angle in degrees")
+        theta = np.deg2rad(rake)  # scalar
+    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
+        if fault_strike is None or slip_azimuth is None:
+            raise ValueError(
+                "components='azimuth' requires fault_strike and slip_azimuth"
+            )
+        theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
+    return (
+        G_full[:, :n_patches] * np.cos(theta)
+        + G_full[:, n_patches:] * np.sin(theta)
+    )
 
 
 def _apply_weights(
@@ -1245,6 +1393,9 @@ def _build_smoothing_matrix(
     smoothing: str | np.ndarray,
     n_params: int,
     n_components: int,
+    components: str,
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
 ) -> np.ndarray:
     """Build the regularization matrix L.
 
@@ -1253,6 +1404,10 @@ def _build_smoothing_matrix(
         smoothing: Smoothing type or custom matrix.
         n_params: Number of model parameters (n_components * n_patches).
         n_components: Number of slip components (1 or 2).
+        components: Active slip parameterization.
+        rake: Fixed rake angle, used when ``components='rake'``.
+        slip_azimuth: Fixed geographic slip azimuth, used when
+            ``components='azimuth'``.
 
     Returns:
         Regularization matrix with n_params columns.
@@ -1270,7 +1425,15 @@ def _build_smoothing_matrix(
         return scipy.linalg.block_diag(L_patch, L_patch)
 
     if smoothing == "stresskernel":
-        return fault.stress_kernel()
+        K = fault.stress_kernel()
+        return _select_columns(
+            K,
+            fault.n_patches,
+            components,
+            rake,
+            fault_strike=fault.strike,
+            slip_azimuth=slip_azimuth,
+        )
 
     raise ValueError(f"Unknown smoothing type: {smoothing!r}")
 

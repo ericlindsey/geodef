@@ -136,8 +136,8 @@ class TestPlanar:
         np.testing.assert_allclose(simple_fault._width, 10e3)
 
     def test_uniform_strike_dip(self, simple_fault):
-        np.testing.assert_allclose(simple_fault._strike, 320.0)
-        np.testing.assert_allclose(simple_fault._dip, 15.0)
+        np.testing.assert_allclose(simple_fault.strike, 320.0)
+        np.testing.assert_allclose(simple_fault.dip, 15.0)
 
     def test_depth_varies_with_dip(self):
         """Patches should span a depth range consistent with dip."""
@@ -383,8 +383,8 @@ class TestFileIO:
         np.testing.assert_allclose(loaded._lat, simple_fault._lat, atol=1e-4)
         np.testing.assert_allclose(loaded._lon, simple_fault._lon, atol=1e-4)
         np.testing.assert_allclose(loaded._depth, simple_fault._depth, atol=1e-1)
-        np.testing.assert_allclose(loaded._strike, simple_fault._strike, atol=1e-4)
-        np.testing.assert_allclose(loaded._dip, simple_fault._dip, atol=1e-4)
+        np.testing.assert_allclose(loaded.strike, simple_fault.strike, atol=1e-4)
+        np.testing.assert_allclose(loaded.dip, simple_fault.dip, atol=1e-4)
         np.testing.assert_allclose(loaded._length, simple_fault._length, atol=1e-1)
         np.testing.assert_allclose(loaded._width, simple_fault._width, atol=1e-1)
         assert loaded.n_patches == simple_fault.n_patches
@@ -599,15 +599,15 @@ class TestSegIO:
         assert f.n_patches == 875
         assert f.grid_shape == (35, 25)
         assert f.engine == "okada"
-        np.testing.assert_allclose(f._strike, 0.0)
-        np.testing.assert_allclose(f._dip, 10.0)
+        np.testing.assert_allclose(f.strike, 0.0)
+        np.testing.assert_allclose(f.dip, 10.0)
 
     def test_load_2d_ramp(self):
         """Load the 2D ramp test file."""
         fname = "related/stress-shadows/2d_models/test_data_2d/ramp_2d.seg"
         f = Fault.load(fname, format="seg")
         assert f.n_patches > 0
-        np.testing.assert_allclose(f._dip, 10.0)
+        np.testing.assert_allclose(f.dip, 10.0)
         # All patches should have the same width (qW=1)
         np.testing.assert_allclose(f._width, f._width[0])
 
@@ -635,8 +635,8 @@ class TestSegIO:
         loaded = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=100.0)
 
         assert loaded.n_patches == fault.n_patches
-        np.testing.assert_allclose(loaded._strike, fault._strike, atol=1e-4)
-        np.testing.assert_allclose(loaded._dip, fault._dip, atol=1e-4)
+        np.testing.assert_allclose(loaded.strike, fault.strike, atol=1e-4)
+        np.testing.assert_allclose(loaded.dip, fault.dip, atol=1e-4)
         np.testing.assert_allclose(loaded._length, fault._length, atol=1.0)
         np.testing.assert_allclose(loaded._width, fault._width, atol=1.0)
         # Depths match (flt2flt orders shallow-to-deep, planar() deep-to-shallow,
