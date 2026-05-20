@@ -14,33 +14,28 @@ get started quickly while remaining capable for research.
 ## Current State - 2026-05-20
 
 GeoDef's core library is functional and well covered by runtime tests. The
-remaining work is mostly stabilization of local API work, documentation and
+fixed-direction inversion API work has been stabilized, documented, tested, and
+pushed to `origin/main`. The remaining work is mostly broader documentation and
 notebook refresh, tooling cleanup, and then targeted extensions.
 
 ### Verification Snapshot
 
 | Command | Result | Notes |
 |---------|--------|-------|
-| `uv run pytest` | 799 passed, 1 skipped, 800 collected | Runtime suite is green; 222 warnings |
-| `uv run ruff check` | 515 errors | Mostly import order, line length, unused imports, notebooks/tests |
-| `uv run mypy src/geodef` | 140 errors in 9 files | Missing stubs plus optional-array and matplotlib typing issues |
+| `uv run pytest -q` | 803 passed, 1 skipped, 804 collected | Runtime suite is green; 222 warnings |
+| `uv run ruff check` | 512 errors | Mostly import order, line length, unused imports, notebooks/tests |
+| `uv run mypy src/geodef` | 130 errors in 9 files | Missing stubs plus optional-array and matplotlib typing issues |
 
 ### Local Working Tree
 
-At this review, the branch is `main` tracking `origin/main` with uncommitted
-work already present. Treat these as in-progress user changes, not cleanup
-targets:
+At this review, `main` is synced with `origin/main`. The only known local
+working-tree item is untracked `AGENTS.md`; treat it as local/user context, not
+as part of the development plan unless it is intentionally added later.
 
-- Modified package files: `fault.py`, `greens.py`, `invert.py`, `plot.py`
-- Modified tests: `test_fault.py`, `test_invert.py`, `test_mesh.py`,
-  `test_plot.py`
-- Modified example: `examples/gorkha_earthquake/model_gorkha.ipynb`
-- Untracked: `AGENTS.md`
-
-The local diff appears to add public `Fault.strike`/`Fault.dip`, fixed-rake and
-fixed-geographic-azimuth inversion modes, one-component slip plotting, and
-Gorkha example updates. The runtime tests pass with these changes, but docs and
-tooling are not yet caught up.
+The recently completed stabilization commit added public `Fault.strike` and
+`Fault.dip`, fixed-rake and fixed-geographic-azimuth inversion modes,
+one-component slip plotting, stress-kernel projection into the active slip
+basis, and Gorkha example updates.
 
 ---
 
@@ -52,8 +47,9 @@ tooling are not yet caught up.
 | Library structure | `src/` package layout, public `geodef` API, hatchling build config |
 | Fault and data model | `Fault`, `GNSS`, `InSAR`, `Vertical`, Green's matrix assembly, caching, I/O |
 | Inversion framework | WLS, NNLS, bounded LS, constrained QP, smoothing/damping/stress-kernel regularization, ABIC/CV/L-curve tuning |
+| Fixed-direction inversion | `components="rake"` and `components="azimuth"` project Green's matrices and stress kernels into the selected one-parameter slip basis |
 | Assessment | Covariance, resolution, uncertainty, per-dataset diagnostics, moment and magnitude |
-| Visualization | Slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty plots |
+| Visualization | Slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty plots, including one-component slip vectors |
 | Mesh generation | `Mesh`, trace/polygon/points/slab2.0 generation, `Fault.from_mesh()` |
 | Docs | Per-module API reference exists in `docs/` |
 | Examples | Four general notebooks plus a real-data Gorkha earthquake example |
@@ -67,40 +63,21 @@ Current package modules:
 
 ## Immediate Next Steps
 
-### 1. Stabilize Current Local WIP
-
-Priority: high. This is the most important next logical unit because the code
-already exists locally and passes tests.
-
-- Decide whether to keep the new inversion API names:
-  `components="rake"` with `rake=...`, and `components="azimuth"` with
-  `slip_azimuth=...`.
-- Finish documentation for those modes in `docs/invert.md`, `README.md`, and
-  the Gorkha notebook.
-- Decide whether `plot.slip()` should keep the old `component=` keyword as a
-  backward-compatible alias after the local change to `components=`.
-- Add or update tests for any chosen backward compatibility behavior.
-- Run `uv run pytest` and commit only this coherent unit once docs and tests
-  match the API.
-
-### 2. Refresh User-Facing Docs and Examples
+### 1. Refresh Broader User-Facing Docs and Examples
 
 Priority: high. The docs are usable but now stale in several places.
 
-- Update `README.md` test count from 669 to the current 800 collected tests.
-- Update `docs/plot.md` for one-component slip vectors and the
-  `components=`/`component=` decision.
-- Update `docs/fault.md` for public `Fault.strike` and `Fault.dip` if the WIP
-  lands.
-- Update `docs/greens.md` once Green's matrix component selection is either
-  implemented or explicitly deferred.
+- Review remaining docs for stale counts, API names, and examples unrelated to
+  the fixed-direction inversion work.
 - Re-run or at least smoke-test notebooks that appear in the main examples
-  table.
+  table, especially after deciding the tutorial path.
 - Decide whether the progressive tutorial series should live in `tutorials/`
   or whether the existing `examples/01-04` notebooks should be treated as the
   tutorial path.
+- Add lightweight notebook execution checks if examples are intended to remain
+  first-class documentation.
 
-### 3. Restore Tooling Health
+### 2. Restore Tooling Health
 
 Priority: medium-high. Tests are green, but the project standards say Ruff and
 mypy should pass before release-quality handoff.
@@ -116,14 +93,14 @@ mypy should pass before release-quality handoff.
   `np.row_stack` deprecation in `tri.py`, transform divide warnings, and the
   optional slab/mesh binary-compatibility warning.
 
-### 4. Finish Small API Improvements
+### 3. Finish Small API Improvements
 
 Priority: medium. These are good short development tasks after the WIP is
 stabilized.
 
-- **`greens.greens()` component selection**: add `components=` for custom
-  workflows. If fixed-rake/azimuth lands, share the same column-selection logic
-  with `invert()` so behavior is consistent.
+- **`greens.greens()` component selection**: add public `components=` support
+  for custom workflows outside `invert()`, reusing the same column-selection
+  semantics as the stabilized inversion path.
 - **Bounds semantics**: formalize scalar, per-component, and per-parameter
   bounds. Ensure `bounded_ls` and `constrained` handle arrays consistently and
   update docs/tests.
@@ -134,7 +111,7 @@ stabilized.
 - **Site names**: add optional `name` arrays to `GNSS` and `Vertical`, including
   save/load behavior.
 
-### 5. Build Teaching Material
+### 4. Build Teaching Material
 
 Priority: medium. This is the main remaining student-facing deliverable.
 
