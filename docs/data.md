@@ -1,6 +1,11 @@
 # `geodef.data` — Geodetic data types
 
-Three concrete data classes (`GNSS`, `InSAR`, `Vertical`) all inherit from `DataSet`. They define how displacements are projected into observation space and provide common infrastructure for coordinates, uncertainties, and covariance.
+Three concrete data classes (`GNSS`, `InSAR`, `Vertical`) all inherit from
+`DataSet`. They define how displacements are projected into observation space
+and provide common infrastructure for coordinates, uncertainties, and
+covariance.
+
+Constructor and file column order is consistently longitude, then latitude.
 
 ---
 
@@ -12,10 +17,10 @@ Three-component (E, N, U) or horizontal-only (E, N) displacement/velocity data.
 from geodef import GNSS
 
 # Construct directly
-gnss = GNSS(lat, lon, ve, vn, vu, se, sn, su)          # full 3-component
-gnss = GNSS(lat, lon, ve, vn, None, se, sn, None)       # horizontal-only
+gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su)          # full 3-component
+gnss = GNSS(lon, lat, ve, vn, None, se, sn, None)      # horizontal-only
 
-# Load from file (columns: lon lat hgt uE uN uZ sigE sigN sigZ)
+# Load from file (columns: lon lat uE uN uZ sigE sigN sigZ)
 gnss = GNSS.load("stations.dat")
 gnss = GNSS.load("stations.dat", components="en")       # horizontal-only
 
@@ -24,7 +29,8 @@ gnss.save("out.dat")
 gnss.to_gmt("out_gmt.dat")   # lon lat uE uN sigE sigN (for psvelo)
 ```
 
-**Properties:** `lat`, `lon`, `ve`, `vn`, `vu`, `se`, `sn`, `su`, `obs`, `sigma`, `covariance`, `n_stations`, `n_obs`, `components` (`'enu'` or `'en'`)
+**Properties:** `lat`, `lon`, `obs`, `sigma`, `covariance`, `n_stations`,
+`n_obs`, `components` (`'enu'` or `'en'`)
 
 ---
 
@@ -35,9 +41,9 @@ Line-of-sight displacement with per-pixel look vectors.
 ```python
 from geodef import InSAR
 
-insar = InSAR(lat, lon, los, sigma, look_e, look_n, look_u)
+insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
 
-# Load from file (columns: lon lat hgt uLOS sigLOS losE losN losU)
+# Load from file (columns: lon lat uLOS sigLOS losE losN losU)
 insar = InSAR.load("ascending.dat")
 
 insar.save("out.dat")
@@ -55,9 +61,9 @@ Single-component vertical displacement (coral uplift, tide gauges, etc.).
 ```python
 from geodef import Vertical
 
-vert = Vertical(lat, lon, displacement, sigma)
+vert = Vertical(lon, lat, displacement, sigma)
 
-# Load from file (columns: lon lat hgt uZ sigZ)
+# Load from file (columns: lon lat uZ sigZ)
 vert = Vertical.load("coral.dat")
 
 vert.save("out.dat")
@@ -83,27 +89,20 @@ All data classes share:
 
 ### Setting a full covariance matrix
 
-A common workflow is to load data first, compute a full covariance from the noise model, then reconstruct with the covariance:
+A common workflow is to compute a full covariance from the noise model and pass
+it when constructing the dataset:
 
 ```python
-insar = InSAR.load("ascending.dat")
-
 # Compute full covariance (e.g. from empirical semivariogram)
-Cdata = compute_full_covariance(insar.lat, insar.lon, ...)  # (n_obs, n_obs)
-
-# Reconstruct with covariance
-insar = InSAR(insar.lat, insar.lon, insar.obs, insar.sigma,
-              insar._look_e, insar._look_n, insar._look_u,
-              covariance=Cdata)
+Cdata = compute_full_covariance(lat, lon, ...)  # (n_obs, n_obs)
+insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
 ```
 
-Or pass `covariance=` directly at construction time if building from arrays:
+`load()` reads diagonal-uncertainty files. If a loaded dataset needs a full
+covariance, reconstruct it from the source arrays and pass `covariance=`.
 
-```python
-insar = InSAR(lat, lon, los, sigma, look_e, look_n, look_u, covariance=Cdata)
-```
-
-The covariance is used automatically by `geodef.invert()` and `stack_weights()`.
+The covariance is used automatically by `geodef.invert()` and
+`geodef.stack_weights()`.
 
 ---
 

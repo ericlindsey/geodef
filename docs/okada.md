@@ -38,15 +38,15 @@ Coordinates are in local Cartesian (east, north) relative to the fault centroid.
 
 Observation points must be at the surface (z = 0).
 
-### `okada85.displacement(e, n, depth, strike, dip, length, width, rake, slip, opening, nu=0.25)`
+### `okada85.displacement(e, n, depth, strike, dip, length, width, rake, slip, open, nu=0.25)`
 
 Returns `(ue, un, uz)` arrays.
 
-### `okada85.tilt(e, n, depth, strike, dip, length, width, rake, slip, opening, nu=0.25)`
+### `okada85.tilt(e, n, depth, strike, dip, length, width, rake, slip, open, nu=0.25)`
 
 Returns `(duz_de, duz_dn)` — surface tilt components.
 
-### `okada85.strain(e, n, depth, strike, dip, length, width, rake, slip, opening, nu=0.25)`
+### `okada85.strain(e, n, depth, strike, dip, length, width, rake, slip, open, nu=0.25)`
 
 Returns `(enn, ene, een, eee)` — horizontal strain tensor components.
 

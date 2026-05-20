@@ -38,7 +38,7 @@ fault = Fault.from_mesh(mesh)
 
 Create a triangular fault directly from ENU vertex coordinates. `vertices` has shape `(N, 3, 3)`.
 
-### `Fault.load(fname, format=None, ref_lat=0.0, ref_lon=0.0)`
+### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0)`
 
 Load from a text file. Supported formats:
 
@@ -47,7 +47,7 @@ Load from a text file. Supported formats:
 | `"center"` (default) | Whitespace-delimited: `id dipid strikeid lon lat depth L W strike dip` |
 | `"topleft"` | Same columns but position is the top-left corner |
 | `"seg"` | Unicycle segment format (local Cartesian; requires `ref_lat`/`ref_lon`) |
-| `"ned"` | Unicycle `.ned`+`.tri` triangular mesh pair |
+| `"ned"` | Unicycle `.ned` + `.tri` triangular mesh pair |
 
 ```python
 fault = Fault.load("fault_model.txt")
@@ -70,8 +70,9 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `dip` | `(N,)` | Patch dip angles in degrees from horizontal |
 | `areas` | `(N,)` | Patch areas in m² |
 | `laplacian` | `(N, N)` | Finite-difference (structured) or KNN Laplacian (unstructured); lazy, cached |
-| `vertices_2d` | list of `(nc, 2)` | Per-patch corners in local km `[east, north]` |
-| `vertices_3d` | list of `(nc, 3)` | Per-patch corners in local km `[east, north, depth]` |
+| `vertices_2d` | `(N, 4, 2)` | Rectangular patch corners as `[lon, lat]` |
+| `vertices_3d` | `(N, 4, 3)` | Rectangular patch corners as `[lon, lat, depth_km]` |
+| `patch_outlines` | `(N, 5, 2)` | Closed rectangular patch outlines as `[lon, lat]` |
 
 All geometry arrays are read-only after construction.
 
@@ -79,16 +80,17 @@ All geometry arrays are read-only after construction.
 
 ## Forward modeling
 
-### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip, nu=0.25)`
+### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
 
-Compute surface displacements for a uniform slip distribution.
+Compute surface displacements for a slip distribution. `slip_strike` and
+`slip_dip` may be scalars broadcast to every patch or arrays with shape `(N,)`.
 
 ```python
 ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=1.0)
 # ue, un, uz each have shape (n_obs,)
 ```
 
-### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", nu=0.25)`
+### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
 
 Build the raw Green's matrix.
 
@@ -98,14 +100,16 @@ G = fault.greens_matrix(obs_lat, obs_lon)
 # Columns [:N] = strike-slip, [N:] = dip-slip
 ```
 
-`kind='strain'` returns shape `(4*n_obs, 2*N)` for rectangular, `(6*n_obs, 2*N)` for triangular.
+`kind='strain'` returns shape `(4*n_obs, 2*N)` for rectangular faults and
+`(6*n_obs, 2*N)` for triangular faults. Pass `obs_depth` in meters, positive
+down, for internal strain points; otherwise observations are at the surface.
 
 ---
 
 ## Moment and magnitude
 
 ```python
-M0 = fault.moment(slip, mu=30e9)      # slip shape (N,) or (N,2); returns N·m
+M0 = fault.moment(slip, mu=30e9)      # slip magnitude shape (N,); returns N·m
 Mw = fault.magnitude(slip, mu=30e9)  # moment magnitude
 
 # Module-level utilities
@@ -119,10 +123,12 @@ M0 = magnitude_to_moment(7.0)   # → 1.41e19
 ## Stress kernel
 
 ```python
-K = fault.stress_kernel(mu=30e9)  # shape (4*N, 2*N)
+K = fault.stress_kernel(mu=30e9)
 ```
 
-Strain Green's functions evaluated at the fault's own patch centers, scaled by shear modulus.
+Strain Green's functions evaluated at the fault's own patch centers, scaled by
+shear modulus. Rectangular faults return shape `(4*N, 2*N)` and triangular
+faults return shape `(6*N, 2*N)`.
 
 ---
 
@@ -140,6 +146,7 @@ idx = fault.patch_index(strike_idx=3, dip_idx=1)
 ```python
 fault.save("output.txt", format="center")
 fault.save("output.seg", format="seg", ref_lat=0.0, ref_lon=100.0)
+fault.save("triangular_fault", format="ned")  # writes .ned + .tri
 ```
 
 ---

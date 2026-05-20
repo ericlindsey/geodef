@@ -146,6 +146,10 @@ geodef.plot.map(fault,
 )
 ```
 
+As with `plot.slip()`, a length-`N` one-parameter slip vector is plotted as
+an amplitude directly; `components` only selects from blocked length-`2N`
+strike/dip slip vectors.
+
 ---
 
 ## Composing plots

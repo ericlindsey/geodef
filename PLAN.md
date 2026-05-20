@@ -15,8 +15,9 @@ get started quickly while remaining capable for research.
 
 GeoDef's core library is functional and well covered by runtime tests. The
 fixed-direction inversion API work has been stabilized, documented, tested, and
-pushed to `origin/main`. The remaining work is mostly broader documentation and
-notebook refresh, tooling cleanup, and then targeted extensions.
+pushed to `origin/main`. A current-state `.md` documentation refresh and agent
+policy update have also been completed. The remaining work is mostly notebook
+refresh, tooling cleanup, teaching material, and targeted extensions.
 
 ### Verification Snapshot
 
@@ -28,14 +29,24 @@ notebook refresh, tooling cleanup, and then targeted extensions.
 
 ### Local Working Tree
 
-At this review, `main` is synced with `origin/main`. The only known local
-working-tree item is untracked `AGENTS.md`; treat it as local/user context, not
-as part of the development plan unless it is intentionally added later.
+No planned local API WIP remains from the fixed-direction inversion work.
+`AGENTS.md` is now treated as a first-class onboarding file alongside
+`CLAUDE.md`.
 
 The recently completed stabilization commit added public `Fault.strike` and
 `Fault.dip`, fixed-rake and fixed-geographic-azimuth inversion modes,
 one-component slip plotting, stress-kernel projection into the active slip
 basis, and Gorkha example updates.
+
+### Maintenance Policies
+
+- When executing a step listed in this plan, update `PLAN.md` in the same
+  logical unit so the roadmap remains current.
+- Keep docs `.md` files up to date alongside minor code changes. If a large
+  docs rewrite is needed, add it as its own plan step.
+- Do not add `Co-Authored-By` trailers to commit messages. AI co-authorship is
+  tracked in `README.md`, and the model list there plus `CLAUDE.md`/`AGENTS.md`
+  should be updated when a new AI model materially contributes.
 
 ---
 
@@ -51,7 +62,7 @@ basis, and Gorkha example updates.
 | Assessment | Covariance, resolution, uncertainty, per-dataset diagnostics, moment and magnitude |
 | Visualization | Slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty plots, including one-component slip vectors |
 | Mesh generation | `Mesh`, trace/polygon/points/slab2.0 generation, `Fault.from_mesh()` |
-| Docs | Per-module API reference exists in `docs/` |
+| Docs | Per-module API reference exists in `docs/`; current-state `.md` refresh completed 2026-05-20 |
 | Examples | Four general notebooks plus a real-data Gorkha earthquake example |
 
 Current package modules:
@@ -65,10 +76,10 @@ Current package modules:
 
 ### 1. Refresh Broader User-Facing Docs and Examples
 
-Priority: high. The docs are usable but now stale in several places.
+Priority: high. The current `.md` docs have been refreshed for obvious API
+drift, stale counts, onboarding rules, and AI-attribution policy. Remaining
+work is focused on executable examples and tutorial structure.
 
-- Review remaining docs for stale counts, API names, and examples unrelated to
-  the fixed-direction inversion work.
 - Re-run or at least smoke-test notebooks that appear in the main examples
   table, especially after deciding the tutorial path.
 - Decide whether the progressive tutorial series should live in `tutorials/`

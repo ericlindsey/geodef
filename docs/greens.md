@@ -61,7 +61,7 @@ W = geodef.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 
 ```python
 from geodef.greens import build_laplacian_2d
-L = build_laplacian_2d(n_length=10, n_width=5)   # shape (50, 50)
+L = build_laplacian_2d(10, 5)   # shape (50, 50)
 ```
 
 ### `build_laplacian_knn(coords, k=4) → scipy.sparse.csc_matrix`

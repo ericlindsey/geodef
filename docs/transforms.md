@@ -1,12 +1,14 @@
 # `geodef.transforms` — Coordinate transforms
 
-Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z), and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids can be passed as `ellps=`.
+Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z),
+and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids
+can be passed as `ellps=`.
 
 ---
 
 ## Geographic ↔ ECEF
 
-### `geod2ecef(lat, lon, alt, ellps=WGS84) → (X, Y, Z)`
+### `geod2ecef(lat, lon, alt, ellps=WGS84, crs=None) → (X, Y, Z)`
 
 Convert geodetic coordinates (degrees, meters) to ECEF (meters).
 
@@ -15,9 +17,11 @@ from geodef.transforms import geod2ecef
 X, Y, Z = geod2ecef(lat=37.0, lon=-122.0, alt=0.0)
 ```
 
-### `ecef2geod(X, Y, Z, ellps=WGS84) → (lat, lon, alt)`
+### `ecef2geod(X, Y, Z, ellps=WGS84, crs=None) → (lat, lon, alt)`
 
 Convert ECEF to geodetic.
+
+Passing `crs=` delegates to `pyproj` and requires that optional dependency.
 
 ---
 
@@ -62,7 +66,8 @@ Convert ENU covariance to ECEF. Returns block-diagonal `(3n, 3n)` covariance mat
 
 ### `translate_flat(lat, lon, alt, eoffset, noffset, uoffset) → (lat, lon, alt)`
 
-Offset coordinates by a small East/North/Up displacement. Uses flat-earth approximation — valid for distances up to ~100 km.
+Offset coordinates by a small East/North/Up displacement. Uses a flat-earth
+approximation and ignores curvature-induced vertical change.
 
 ```python
 from geodef.transforms import translate_flat

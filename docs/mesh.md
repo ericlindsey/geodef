@@ -1,8 +1,11 @@
 # `geodef.mesh` — Triangular mesh generation
 
-Provides the `Mesh` dataclass and four factory functions for creating triangular fault meshes.
+Provides the `Mesh` dataclass and four factory functions for creating
+triangular fault meshes.
 
-**Optional dependencies:** `meshpy` (meshing) and `netCDF4` (slab2.0 grids). Install with `pip install meshpy netCDF4`.
+**Optional dependencies:** `meshpy` (meshing) and `netCDF4` (slab2.0 grids).
+Install them into the active environment when needed, for example:
+`uv pip install meshpy netCDF4`.
 
 ---
 
@@ -35,7 +38,7 @@ mesh = Mesh.load("out", coord_order="lonlat")
 
 ## Factory functions
 
-### `from_slab2(fname, bounds, target_length=50.0, depth_growth=1.0, max_depth=None, ...)`
+### `from_slab2(fname, bounds, *, target_length=50.0, depth_growth=1.0, max_depth=None, surface_trace=None, ...)`
 
 Generate a mesh from a slab2.0 NetCDF depth grid.
 
@@ -47,10 +50,11 @@ mesh = from_slab2("cas_slab2_dep.grd",
     target_length=30.0,          # target edge length in km (default 50 km)
     depth_growth=2.0,            # edge length ratio deep/shallow (1.0 = uniform)
     max_depth=100.0,             # clip slab at this depth in km (None = no clip)
+    surface_trace=None,          # optional (trace_lon, trace_lat) arrays
 )
 ```
 
-### `from_trace(trace_lon, trace_lat, max_depth, dip, dip_direction, target_length)`
+### `from_trace(trace_lon, trace_lat, max_depth, dip, *, dip_direction=None, n_downdip=20, target_length=None, max_area=None, ...)`
 
 Generate a mesh from a surface trace and constant dip.
 
@@ -61,13 +65,14 @@ mesh = from_trace(trace_lon, trace_lat,
     max_depth=30.0,          # maximum fault depth in km
     dip=15.0,                # degrees
     dip_direction=180.0,     # azimuth of dip direction (degrees)
+    n_downdip=20,            # down-dip profile resolution
     target_length=10_000.0,  # target edge length in meters
 )
 ```
 
 `dip` can also be a callable `dip(depth_m) -> degrees` for listric faults.
 
-### `from_polygon(lon, lat, depth, target_length)`
+### `from_polygon(lon, lat, depth=None, *, depth_func=None, target_length=None, max_area=None, ...)`
 
 Generate a mesh from a 3-D boundary polygon.
 
@@ -79,7 +84,9 @@ mesh = from_polygon(bound_lon, bound_lat, bound_depth,  # depth in meters
 )
 ```
 
-### `from_points(lon, lat, depth, target_length)`
+For 2-D polygons, omit `depth` and pass `depth_func(lon, lat) -> depth_m`.
+
+### `from_points(lon, lat, depth, *, boundary=None, target_length=None, max_area=None, ...)`
 
 Generate a mesh from scattered 3-D points (convex hull boundary by default).
 

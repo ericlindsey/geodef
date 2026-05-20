@@ -1,6 +1,12 @@
 # GeoDef
 
-A Python library for forward and inverse modeling of fault slip in elastic half-spaces. Targets coseismic (earthquake) and interseismic (coupling) applications.
+A Python library for forward and inverse modeling of fault slip in elastic
+half-spaces. Targets coseismic (earthquake) and interseismic (coupling)
+applications.
+
+Current status: the core runtime library is implemented and tested. Remaining
+work is focused on documentation, notebooks, tooling health, teaching material,
+and targeted extensions.
 
 ## Install
 
@@ -56,6 +62,7 @@ fixed_azimuth = geodef.invert(fault, gnss,
 | `examples/02_caching.ipynb` | Hash-based caching for fast reuse of Green's matrices |
 | `examples/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution |
 | `examples/04_mesh_generation.ipynb` | Triangular mesh creation from trace, polygon, slab2.0 grids |
+| `examples/gorkha_earthquake/model_gorkha.ipynb` | Real-data Gorkha earthquake inversion with GNSS, InSAR, smoothing, and fixed-azimuth slip |
 
 ## Module reference
 
@@ -76,8 +83,14 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest   # 804 tests collected
+uv run pytest -q   # 803 passed, 1 skipped, 804 collected as of 2026-05-20
 ```
+
+## AI co-authorship
+
+All code in this repository has been co-authored with Claude Opus 4.6 and
+Codex 5.5. Keep this model list current when future AI models make material
+contributions.
 
 ## References
 

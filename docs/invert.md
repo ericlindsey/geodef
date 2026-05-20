@@ -32,14 +32,15 @@ result = geodef.invert(fault, gnss,
 | `smoothing` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
 | `smoothing_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
 | `smoothing_target` | `None` | Reference model for `(m - m_ref)` regularization |
-| `bounds` | `None` | `(lower, upper)` — scalars, arrays, or `None` per side |
+| `bounds` | `None` | Scalar `(lower, upper)` bounds; use `None` for an unbounded side |
 | `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, or `'azimuth'` |
 | `rake` | `None` | Fixed local rake angle in degrees; required for `components='rake'` |
 | `slip_azimuth` | `None` | Fixed geographic slip azimuth in degrees clockwise from north; required for `components='azimuth'` |
 | `cv_folds` | `5` | Number of folds for cross-validation |
 | `constraints` | `None` | `(C, d)` for `C @ m <= d` (constrained solver only) |
 
-Auto-selection of `method`: `bounds=None` → WLS; `bounds=(0, None)` → NNLS; general bounds → `bounded_ls`.
+Auto-selection of `method`: `bounds=None` → WLS; `bounds=(0, None)` →
+NNLS; general scalar bounds → `bounded_ls`.
 
 `components='rake'` solves one slip-amplitude parameter per patch using the
 same local rake angle on every patch. `components='azimuth'` also solves one
@@ -54,7 +55,7 @@ chosen slip basis automatically.
 
 | Attribute | Shape | Description |
 |-----------|-------|-------------|
-| `slip` | `(N, 2)` or `(N, 1)` | Per-patch slip `[strike, dip]` |
+| `slip` | `(N, 2)` or `(N, 1)` | Per-patch strike/dip slip for `components='both'`, or one active amplitude per patch |
 | `slip_vector` | `(2N,)` or `(N,)` | Blocked `[ss_0..ss_N, ds_0..ds_N]`, or one amplitude per patch |
 | `predicted` | `(M,)` | Forward-modeled observations |
 | `residuals` | `(M,)` | `obs - predicted` |
@@ -62,8 +63,8 @@ chosen slip basis automatically.
 | `rms` | scalar | RMS misfit |
 | `moment` | scalar | Seismic moment in N·m |
 | `Mw` | scalar | Moment magnitude |
-| `smoothing` | str or ndarray | Regularization type used |
-| `smoothing_strength` | float | λ used |
+| `smoothing` | str, ndarray, or `None` | Regularization type used |
+| `smoothing_strength` | float or `None` | λ used, or `None` when no regularization was applied |
 | `components` | str | Slip basis used in the inversion |
 | `rake` | float or `None` | Fixed rake angle for `components='rake'` |
 | `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
@@ -72,6 +73,27 @@ chosen slip basis automatically.
 result.save("result.npz")                   # save to disk
 result.save_table("result.txt", fault)       # human-readable per-patch table
 result = InversionResult.load("result.npz") # reload
+```
+
+---
+
+## `LinearSystem`
+
+Use `LinearSystem` directly when reusing the same fault and datasets across
+multiple analyses. It precomputes and caches the projected Green's matrix,
+weights, and optional smoothing matrix.
+
+```python
+system = geodef.LinearSystem(
+    fault, [gnss, insar],
+    smoothing='laplacian',
+    components='azimuth',
+    slip_azimuth=15.0,
+)
+
+lc = system.lcurve(smoothing_range=(1e-2, 1e6))
+result = system.invert(smoothing_strength=lc.optimal, bounds=(0, None))
+diagnostics = system.dataset_diagnostics(result)
 ```
 
 ---

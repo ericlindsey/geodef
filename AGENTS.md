@@ -1,4 +1,4 @@
-# CLAUDE.md - Agent Onboarding Guide
+# AGENTS.md - Agent Onboarding Guide
 
 ## Project Overview
 
@@ -16,7 +16,7 @@ teaching material, and targeted extensions.
 
 ```
 geodef/
-├── CLAUDE.md              # This file
+├── AGENTS.md              # This file
 ├── PLAN.md                # Development roadmap
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
@@ -67,7 +67,7 @@ See `docs/` for per-module API reference with examples.
   own `PLAN.md` step.
 - Do not add `Co-Authored-By` trailers to commit messages. AI co-authorship is
   tracked once in `README.md`; update that model list, this file, and
-  `AGENTS.md` if a new AI model materially contributes.
+  `CLAUDE.md` if a new AI model materially contributes.
 
 ---
 
