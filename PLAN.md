@@ -129,6 +129,14 @@ stabilized.
 
 Priority: medium. This is the main remaining student-facing deliverable.
 
+The full design for this sequence — per-notebook goals, the math each must
+develop, the minimal code surface, plots, and exercises — now lives in
+`tutorials/OUTLINE.md`, which is the master plan for notebook design. The
+tutorials are reframed as a course in geodetic inverse methods (theory first,
+short illustrative code) rather than an API tour; the earlier
+introduction-style notebooks 01–04 (forward/caching/plotting/mesh) are retired
+and their utility content is absorbed or moved to `examples/` per that outline.
+
 Recommended progressive sequence:
 
 | # | Title | Key concepts |
@@ -146,7 +154,9 @@ Recommended progressive sequence:
 
 Each tutorial should use synthetic data, include equations or conceptual
 markdown where useful, show labeled plots inline, and end with student
-exercises.
+exercises. See `tutorials/OUTLINE.md` for the full per-notebook breakdown,
+shared conventions, visualization strategy, and the disposition of the retired
+01–04 notebooks.
 
 ---
 
