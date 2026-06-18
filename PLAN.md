@@ -122,12 +122,26 @@ stabilized.
   `triangles` index array so imported meshes can preserve patch ordering.
 - **GNSS E-N correlation**: add optional `rho` support and build the correct
   per-station covariance blocks.
+- **InSAR full covariance `C_d`**: the `InSAR` dataset currently has no good way
+  to specify a full (non-diagonal) data covariance matrix. Add a way to build
+  `C_d` from a covariance function (e.g. exponential/Gaussian with a correlation
+  length) or pass an explicit matrix, and thread it through `invert()`. **This
+  is a prerequisite for tutorial 07 (Correlated Noise and InSAR)** — that
+  notebook is blocked until this lands.
 - **Site names**: add optional `name` arrays to `GNSS` and `Vertical`, including
   save/load behavior.
 
 ### 4. Build Teaching Material
 
 Priority: medium. This is the main remaining student-facing deliverable.
+
+The full design for this sequence — per-notebook goals, the math each must
+develop, the minimal code surface, plots, and exercises — now lives in
+`tutorials/OUTLINE.md`, which is the master plan for notebook design. The
+tutorials are reframed as a course in geodetic inverse methods (theory first,
+short illustrative code) rather than an API tour; the earlier
+introduction-style notebooks 01–04 (forward/caching/plotting/mesh) are retired
+and their utility content is absorbed or moved to `examples/` per that outline.
 
 Recommended progressive sequence:
 
@@ -146,7 +160,9 @@ Recommended progressive sequence:
 
 Each tutorial should use synthetic data, include equations or conceptual
 markdown where useful, show labeled plots inline, and end with student
-exercises.
+exercises. See `tutorials/OUTLINE.md` for the full per-notebook breakdown,
+shared conventions, visualization strategy, and the disposition of the retired
+01–04 notebooks.
 
 ---
 
