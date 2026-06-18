@@ -122,6 +122,12 @@ stabilized.
   `triangles` index array so imported meshes can preserve patch ordering.
 - **GNSS E-N correlation**: add optional `rho` support and build the correct
   per-station covariance blocks.
+- **InSAR full covariance `C_d`**: the `InSAR` dataset currently has no good way
+  to specify a full (non-diagonal) data covariance matrix. Add a way to build
+  `C_d` from a covariance function (e.g. exponential/Gaussian with a correlation
+  length) or pass an explicit matrix, and thread it through `invert()`. **This
+  is a prerequisite for tutorial 07 (Correlated Noise and InSAR)** — that
+  notebook is blocked until this lands.
 - **Site names**: add optional `name` arrays to `GNSS` and `Vertical`, including
   save/load behavior.
 

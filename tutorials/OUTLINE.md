@@ -11,7 +11,7 @@ outline first if the plan changes.
 ## 1. Purpose and Audience
 
 These notebooks are a **course in geodetic inverse methods**, taught through the
-GeoDef API — not an API tour. A reader who finishes the series should understand
+GeoDef library — not a tour of its modules. A reader who finishes the series should understand
 how surface geodetic data (GNSS, InSAR) are turned into images of fault slip,
 *why* each step is done, and what the results can and cannot be trusted to say.
 GeoDef is the vehicle; the destination is the methods.
@@ -54,14 +54,14 @@ When a tutorial would balloon into a full case study, the case study moves to
 ## 2. Disposition of the Existing Notebooks (01–04)
 
 The current `01_forward_model`, `02_caching`, `03_plotting`, and
-`04_mesh_generation` notebooks date to an earlier, API-introduction framing.
+`04_mesh_generation` notebooks date to an earlier, module-introduction framing.
 They are **retired in their current form** and their content is redistributed:
 
 | Old notebook | Disposition |
 |---|---|
 | `01_forward_model` | Rebuilt as the new **Tutorial 01** with dislocation theory added; the joint GNSS+InSAR section moves forward to **Tutorial 06**. |
 | `02_caching` | Demoted to a short **sidebar/appendix in Tutorial 02** ("computing G is expensive; GeoDef caches it"). Not a standalone tutorial. |
-| `03_plotting` | Dissolved. Each plot type is introduced in the tutorial where its concept first appears (see §4). The exhaustive gallery survives as a non-tutorial reference notebook or doc, not a numbered tutorial. |
+| `03_plotting` | Dissolved. Each plot type is introduced in the tutorial where its concept first appears (see §4). The exhaustive gallery survives as its own unnumbered `reference_plots.ipynb`, not a numbered tutorial. |
 | `04_mesh_generation` | Moved out of the teaching sequence. Basic rectangular vs. triangular discretization is covered conceptually in **Tutorial 02**; real mesh building (traces, polygons, slab2.0) becomes an **`examples/` worked example**, since it is data/IO-heavy rather than a method. |
 
 Net effect: the numbered tutorials become the 10-part methods sequence below,
@@ -86,6 +86,11 @@ So notebooks stay consistent and composable:
   - `L` — regularization operator (Laplacian, identity, stress kernel).
   - `N` — number of patches; `2N` — number of slip parameters (both components).
   - `R` — model resolution matrix.
+- **No special characters in code.** Greek letters and other symbols (`λ`,
+  `χ²`, `θ`, …) are fine in markdown and equations, but **code uses plain ASCII
+  names** that students can type easily — e.g. `lambda` (or `lam` / `smoothing_
+  strength`) for the regularization weight, `chi2` for misfit, `theta` for
+  geometry parameters. Match the names GeoDef already exposes.
 - **Recurring synthetic scenario.** A single small fault is reused across
   notebooks so readers track one problem end to end. Default teaching geometry:
   a planar fault via `Fault.planar(...)` discretized coarsely (e.g. `n_length`
@@ -115,16 +120,23 @@ introduced at the moment its underlying concept is taught:
 | L-curve / ABIC curve plots | 05 | hyperparameter selection |
 | `plot.resolution`, `plot.uncertainty` | 09 | model assessment |
 
-The retired plotting gallery may live on as `tutorials/reference_plots.ipynb`
-(not numbered, not part of the methods path) or fold into `docs/plot.md`.
+The retired plotting gallery lives on as its own unnumbered
+`tutorials/reference_plots.ipynb` (not part of the numbered methods path).
 
 ---
 
 ## 5. The Ten Tutorials
 
 Each entry below specifies: **Goal**, **Concepts & Math** (what equations/theory
-must appear), **Key API** (the small code surface used), **Plots**, and
+must appear), **Key calls** (the small set of `geodef` calls used), **Plots**, and
 **Exercises**. Notebooks should follow this structure literally.
+
+> **Reuse existing material.** Some of this content already exists in another
+> repository and will be made available during the generation step for each
+> notebook. **Before writing a notebook, check whether partial material is
+> available in the `shakeout` folder** (e.g. `related/shakeout_v2/`); if it is,
+> adapt and reuse it rather than starting from scratch. If the folder or the
+> relevant material is not present, proceed from this outline.
 
 ---
 
@@ -149,7 +161,7 @@ and compute it for a single rectangular source.
 - Near-field vs. far-field: how displacement amplitude decays with distance and
   source depth.
 
-**Key API.** `Fault.planar(...)`, `fault.displacement(...)` (or
+**Key calls.** `Fault.planar(...)`, `fault.displacement(...)` (or
 `greens.greens` + a slip vector), basic `Fault` attributes (`n_patches`,
 `patch_outlines`).
 
@@ -184,7 +196,7 @@ structure as the discrete forward operator.
   expensive; GeoDef hashes inputs and caches results to disk, so repeated calls
   are instant. One short demo, then move on.
 
-**Key API.** `Fault.planar(...)` with multiple patches, `greens.greens(fault,
+**Key calls.** `Fault.planar(...)` with multiple patches, `greens.greens(fault,
 dataset)`, inspecting `G.shape`; brief `geodef.cache.info()` sidebar;
 `plot.fault3d`.
 
@@ -214,7 +226,7 @@ inversion overfit noise.
   watch the recovered slip oscillate wildly while fitting the data "too well."
   Motivates Tutorial 04.
 
-**Key API.** `geodef.invert(fault, dataset)` (default WLS),
+**Key calls.** `geodef.invert(fault, dataset)` (default WLS),
 `InversionResult` (`.slip_vector`, `.predicted`, misfit fields), `plot.fit`,
 `plot.slip`.
 
@@ -246,7 +258,7 @@ common regularization operators.
   "equations" with weight `λ`.
 - Qualitative effect of `λ`: under- vs. over-smoothing (sets up Tutorial 05).
 
-**Key API.** `geodef.invert(..., smoothing='laplacian'|'damping'|'stresskernel',
+**Key calls.** `geodef.invert(..., smoothing='laplacian'|'damping'|'stresskernel',
 smoothing_strength=λ, smoothing_target=m_ref)`; `greens` Laplacian builder
 referenced conceptually.
 
@@ -274,7 +286,7 @@ guess a good value (then check it in Tutorial 05).
   prediction error; `k`-fold mechanics.
 - When the methods agree/disagree and how to choose between them.
 
-**Key API.** `geodef.lcurve(...)`, `geodef.abic_curve(...)`,
+**Key calls.** `geodef.lcurve(...)`, `geodef.abic_curve(...)`,
 `geodef.compute_abic(...)`, and `geodef.invert(..., smoothing_strength='abic'`
 `|'cv', cv_folds=...)`; their built-in curve plots.
 
@@ -302,7 +314,7 @@ relative weighting.
 - **Relative weighting** between datasets and its effect on the solution;
   connection to the regularization hyperparameter (foreshadow multi-λ).
 
-**Key API.** `geodef.GNSS(...)`, `geodef.InSAR(...)` with look vectors,
+**Key calls.** `geodef.GNSS(...)`, `geodef.InSAR(...)` with look vectors,
 `geodef.invert(fault, [gnss, insar], ...)`, `plot.insar`, `plot.vectors`.
 
 **Plots.** GNSS vectors and InSAR LOS for the same scenario; joint-inversion
@@ -315,6 +327,10 @@ other; add a second (descending) InSAR track.
 
 ### Tutorial 07 — Correlated Noise and InSAR
 *Beyond diagonal data covariance.*
+
+> **Blocked.** The `InSAR` dataset has no good way to specify a full covariance
+> matrix `C_d` yet (see `PLAN.md` TODO and §7.4). Do not write this notebook
+> until that support lands.
 
 **Goal.** Represent and exploit spatially correlated noise, especially in
 InSAR.
@@ -329,7 +345,7 @@ InSAR.
   uncertainty.
 - Practical down-sampling of dense InSAR as a related concern (brief).
 
-**Key API.** `geodef.InSAR(...)` with a full covariance / covariance-function
+**Key calls.** `geodef.InSAR(...)` with a full covariance / covariance-function
 specification; `geodef.invert(...)` with the resulting `C_d`.
 
 **Plots.** A covariance matrix / covariance function; inversion with diagonal
@@ -357,7 +373,7 @@ slip direction.
   (`components='azimuth'`), which also encodes a sign/sense prior cleanly.
 - Trade-offs: constraints vs. smoothing; bias vs. admissibility.
 
-**Key API.** `geodef.invert(..., bounds=(0, None))` (auto-NNLS),
+**Key calls.** `geodef.invert(..., bounds=(0, None))` (auto-NNLS),
 `bounds=(lb, ub)` (bounded LS), `method='constrained', constraints=(C, d)`,
 `components='rake', rake=...`, `components='azimuth', slip_azimuth=...`.
 
@@ -388,7 +404,7 @@ derived quantities.
 - Derived quantities: scalar **moment** and **moment magnitude** from the slip
   estimate, with uncertainty.
 
-**Key API.** `geodef.model_covariance(...)`, `geodef.model_resolution(...)`,
+**Key calls.** `geodef.model_covariance(...)`, `geodef.model_resolution(...)`,
 `geodef.model_uncertainty(...)`, `geodef.dataset_diagnostics(...)`,
 `fault.moment(...)` / magnitude; `plot.resolution`, `plot.uncertainty`.
 
@@ -420,7 +436,7 @@ on top of the linear slip inversion.
   (`emcee`) for posterior uncertainty on geometry — pointer to a future
   `examples/` study.
 
-**Key API.** A small Python objective wrapping `geodef.invert(...)` inside
+**Key calls.** A small Python objective wrapping `geodef.invert(...)` inside
 `scipy.optimize.minimize` / a grid loop; reuse of earlier inversion calls.
 
 **Plots.** Misfit vs. a scanned geometry parameter (e.g. dip); recovered vs.
@@ -448,18 +464,28 @@ Before a notebook is considered done:
 
 ---
 
-## 7. Open Design Questions
+## 7. Design Decisions
 
-Resolve these as the series is built; record decisions here.
+These were open questions during planning; the decisions are now settled and
+recorded here.
 
-1. **Shared scenario delivery.** Copy the setup cell into each notebook (max
-   self-containment) vs. a tiny `tutorials/_scenario.py` helper (less
-   duplication). Current lean: copy the cell, keep notebooks standalone.
-2. **Plotting gallery.** Keep the old exhaustive gallery as an unnumbered
-   `reference_plots.ipynb`, or migrate its content into `docs/plot.md`?
-3. **Mesh generation home.** Confirm the trace/polygon/slab2.0 workflow lands as
-   an `examples/` study rather than a tutorial.
-4. **Tutorial 07 covariance API.** Confirm the exact `InSAR` covariance-function
-   entry point before writing, and align with `docs/data.md`.
-5. **Numbering during transition.** Whether to renumber files immediately or
-   stage the new notebooks alongside the old ones until the series is complete.
+1. **Shared scenario delivery — decided: copy/paste.** Every notebook is fully
+   **standalone**. Copy the setup cell into each notebook rather than importing
+   a shared helper, even at the cost of duplication.
+2. **Plotting gallery — decided: own notebook.** Keep the exhaustive plot
+   gallery as its own unnumbered `tutorials/reference_plots.ipynb`, separate
+   from the numbered methods path (it is not migrated into `docs/`).
+3. **Mesh generation home — decided: `examples/`.** The trace/polygon/slab2.0
+   meshing workflow becomes an `examples/` study, not a tutorial. However, later
+   tutorials **may generate a simple triangular mesh on the fly** in an example
+   so students see that this capability exists — without teaching the full
+   meshing workflow.
+4. **Tutorial 07 covariance support — blocked, decided to defer.** The `InSAR`
+   dataset object does **not yet have a good way to define a covariance
+   matrix** `C_d`. This is now a TODO in `PLAN.md`. **Do not write Tutorial 07
+   until that support lands.** If asked to start Tutorial 07 before then, first
+   remind that the `InSAR` `C_d` specification must be added.
+5. **Numbering during transition — decided: `old_` prefix.** Rename the existing
+   notebooks to `old_01_…`, `old_02_…`, etc. while the new series is built, and
+   **delete each `old_*` notebook once its content has been migrated** into the
+   new tutorials or `examples/`.
