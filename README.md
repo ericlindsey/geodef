@@ -93,7 +93,7 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest -q   # 805 passed, 1 skipped, 806 collected as of 2026-06-17
+uv run pytest -q   # 814 passed, 1 skipped, 815 collected as of 2026-06-17
 ```
 
 ## AI co-authorship

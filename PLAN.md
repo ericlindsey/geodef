@@ -28,7 +28,7 @@ executed under pytest, and the earlier feature notebooks are archived as
 
 | Command | Result | Notes |
 |---------|--------|-------|
-| `uv run pytest -q` | 805 passed, 1 skipped, 806 collected | Runtime suite is green; tutorial notebooks 01-02 execute; 222 warnings |
+| `uv run pytest -q` | 814 passed, 1 skipped, 815 collected | Runtime suite is green; tutorial notebooks 01-02 execute; 232 warnings |
 | `uv run ruff check` | 512 errors | Mostly import order, line length, unused imports, notebooks/tests |
 | `uv run mypy src/geodef` | 130 errors in 9 files | Missing stubs plus optional-array and matplotlib typing issues |
 

@@ -72,14 +72,18 @@ geodef.plot.vectors(gnss, fault,
     predicted=result.predicted[:gnss.n_obs],   # optional overlay
     scale=10,
     obs_color='black', pred_color='red',
-    components='horizontal',    # 'horizontal', 'vertical', 'both'
+    components='both',          # 'horizontal', 'vertical', 'both'
     legend=True,
     scale_arrow=0.5, scale_arrow_label="50 cm",
     scale_arrow_loc='lower right',
+    vertical_colorbar=True,     # colorbar for the vertical dots
 )
 ```
 
-For `components='vertical'`, data is shown as color-coded circles.
+For `components='vertical'` (and the vertical part of `'both'`), the vertical
+component is shown as color-coded circles with a colorbar; set
+`vertical_colorbar=False` to suppress it. In `'both'` mode the horizontal arrows
+are drawn *above* the vertical dots so large dots cannot hide the vectors.
 
 ---
 

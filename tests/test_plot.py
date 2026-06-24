@@ -517,6 +517,32 @@ class TestPlotVectors:
         # Only the main axes, no colorbar axes
         assert len(ax.figure.axes) == 1
 
+    def test_both_colorbar_shown(self, gnss_3comp, rect_fault):
+        """'both' mode should show the vertical colorbar by default."""
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="both")
+        assert len(ax.figure.axes) >= 2
+
+    def test_both_colorbar_off(self, gnss_3comp, rect_fault):
+        """vertical_colorbar=False suppresses the colorbar in 'both' mode."""
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="both",
+                                  vertical_colorbar=False)
+        assert len(ax.figure.axes) == 1
+
+    def test_both_dots_below_arrows(self, gnss_3comp, rect_fault):
+        """In 'both' mode the vertical dots must sit below the arrows, so
+        large dots cannot hide the displacement vectors."""
+        from matplotlib.quiver import Quiver
+        predicted = gnss_3comp.obs * 0.9
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="both",
+                                  predicted=predicted)
+        quivers = [c for c in ax.get_children() if isinstance(c, Quiver)]
+        dots = [c for c in ax.get_children()
+                if isinstance(c, matplotlib.collections.PathCollection)
+                and len(c.get_offsets()) > 0]
+        assert quivers and dots
+        assert (max(d.get_zorder() for d in dots)
+                < min(q.get_zorder() for q in quivers))
+
     def test_vertical_dot_size_scales(self, gnss_3comp, rect_fault):
         """scale parameter should affect dot sizes in vertical mode."""
         ax1 = geodef.plot.vectors(gnss_3comp, rect_fault,

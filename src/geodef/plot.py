@@ -687,7 +687,8 @@ def vectors(
             ``'upper left'``.
         quiver_kwargs: Extra kwargs passed to ``ax.quiver()``.
         vertical_colorbar: Whether to show a colorbar for the vertical
-            component when ``components='vertical'``.
+            component when vertical dots are drawn (``components='vertical'``
+            or ``'both'``).
         vertical_colorbar_label: Label for the vertical colorbar.
         title: Axes title.
 
@@ -710,7 +711,9 @@ def vectors(
             "Vertical component requested but dataset is horizontal-only."
         )
 
-    qkw = {"angles": "xy", "scale_units": "xy", "scale": 1}
+    # Arrows sit above the vertical dots (zorder 5) so that large dots can't
+    # hide the displacement vectors in ``components='both'`` mode.
+    qkw = {"angles": "xy", "scale_units": "xy", "scale": 1, "zorder": 5}
     if quiver_kwargs:
         qkw.update(quiver_kwargs)
 
@@ -754,17 +757,17 @@ def vectors(
         sizes = np.clip(sizes, base_size * 0.2, None)
 
         sc = ax.scatter(x_km, y_km, c=vu, s=sizes, cmap="RdBu_r",
-                        edgecolors="k", linewidths=0.5, zorder=5,
+                        edgecolors="k", linewidths=0.5, zorder=2,
                         label="Vertical (obs)" if components == "vertical"
                         else None)
-        if components == "vertical" and vertical_colorbar:
+        if vertical_colorbar and components in ("vertical", "both"):
             ax.figure.colorbar(sc, ax=ax, label=vertical_colorbar_label)
 
         if predicted is not None and has_vert:
             pu = predicted[2::3]
             ax.scatter(x_km, y_km, c=pu, s=sizes, cmap="RdBu_r",
                        edgecolors=pred_color, linewidths=1.0,
-                       facecolors="none", marker="o", zorder=6)
+                       facecolors="none", marker="o", zorder=3)
 
     ax.set_aspect("equal")
     ax.set_xlabel("East (km)")
