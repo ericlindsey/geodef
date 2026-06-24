@@ -10,11 +10,13 @@ import pytest
 from nbclient import NotebookClient
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# The live, progressively built tutorial sequence (see PLAN.md). Previous-
+# generation notebooks are retained as ``old_*`` reference copies and are not
+# executed here; new notebooks are added to this tuple as they are written.
 TUTORIAL_NOTEBOOKS = (
     ROOT / "tutorials" / "01_forward_model.ipynb",
-    ROOT / "tutorials" / "02_caching.ipynb",
-    ROOT / "tutorials" / "03_plotting.ipynb",
-    ROOT / "tutorials" / "04_mesh_generation.ipynb",
+    ROOT / "tutorials" / "02_discretization_and_g_matrix.ipynb",
 )
 
 

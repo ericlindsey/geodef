@@ -58,13 +58,13 @@ fixed_azimuth = geodef.invert(fault, gnss,
 
 | Notebook | What it covers |
 |----------|---------------|
-| `tutorials/01_forward_model.ipynb` | Fault creation, Green's matrix, GNSS + InSAR forward prediction |
-| `tutorials/02_caching.ipynb` | Hash-based caching for fast reuse of Green's matrices |
-| `tutorials/03_plotting.ipynb` | All plot types: slip, vectors, InSAR, fit, fault3d, map, resolution |
-| `tutorials/04_mesh_generation.ipynb` | Triangular mesh creation from trace, polygon, slab2.0 grids |
+| `tutorials/01_forward_model.ipynb` | Fault creation, the forward model `d = G m`, predicting displacements, moment magnitude |
+| `tutorials/02_discretization_and_g_matrix.ipynb` | Discretization, `G` as a design matrix, blocked-column / interleaved-row layout |
 
-Tutorial notebooks are executed by the pytest suite so they stay aligned with
-the runtime API.
+These are the first two of a progressive teaching sequence (continued in
+`PLAN.md`); the earlier feature notebooks are kept as `tutorials/old_*` for
+reference. Tutorial notebooks are executed by the pytest suite so they stay
+aligned with the runtime API. See `tutorials/README.md` for the full path.
 
 ## Examples
 
@@ -93,14 +93,14 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest -q   # 807 passed, 1 skipped, 808 collected as of 2026-05-20
+uv run pytest -q   # 805 passed, 1 skipped, 806 collected as of 2026-06-17
 ```
 
 ## AI co-authorship
 
-All code in this repository has been co-authored with Claude Opus 4.6 and
-Codex 5.5. Keep this model list current when future AI models make material
-contributions.
+All code in this repository has been co-authored with Claude Opus 4.6, Claude
+Opus 4.8, and Codex 5.5. Keep this model list current when future AI models make
+material contributions.
 
 ## References
 
