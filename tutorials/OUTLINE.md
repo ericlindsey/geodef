@@ -102,6 +102,14 @@ So notebooks stay consistent and composable:
   stated seed) for reproducible noise and pytest stability.
 - **Standard imports.** `import numpy as np`, `import matplotlib.pyplot as plt`,
   `import geodef`.
+- **Double-demo (used sparingly).** When it genuinely clarifies *what GeoDef is
+  doing*, show the underlying calculation by hand first (a few lines of NumPy)
+  and then the one-line GeoDef equivalent, asserting the two agree with
+  `np.allclose(...)`. This demystifies the API without hiding it. Reserve it for
+  the rare spots where the manual version is itself instructive — e.g. `d = G @ m`
+  vs. `fault.displacement()` in Tutorial 01, or building `G` column by column vs.
+  `greens.greens()` in Tutorial 02. Skip it everywhere else: the default remains
+  one clear `geodef.*` call plus a labeled plot.
 
 ---
 
