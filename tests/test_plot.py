@@ -733,6 +733,38 @@ class TestPlotFault3D:
         ax = geodef.plot.fault3d(rect_fault, station_locations=gnss_3comp)
         assert ax.computed_zorder is False
 
+    def test_aspect_equal_default(self, rect_fault):
+        """Default 'equal' scales the box in proportion to data ranges."""
+        ax = geodef.plot.fault3d(rect_fault)
+        box = ax.get_box_aspect()
+        zlo, zhi = ax.get_zlim()
+        xlo, xhi = ax.get_xlim()
+        # Box depth:east ratio matches the data depth:east ratio.
+        assert box[2] / box[0] == pytest.approx(
+            abs(zhi - zlo) / abs(xhi - xlo), rel=1e-6
+        )
+
+    def test_aspect_vertical_exaggeration(self, rect_fault):
+        """A numeric aspect stretches depth relative to 'equal'."""
+        ax_eq = geodef.plot.fault3d(rect_fault, aspect="equal")
+        ax_ve = geodef.plot.fault3d(rect_fault, aspect=5.0)
+        eq = ax_eq.get_box_aspect()
+        ve = ax_ve.get_box_aspect()
+        assert ve[2] / ve[0] == pytest.approx(5.0 * eq[2] / eq[0], rel=1e-6)
+
+    def test_aspect_auto_differs_from_equal(self, rect_fault):
+        """'auto' leaves matplotlib's cubic box rather than data ranges."""
+        ax_auto = geodef.plot.fault3d(rect_fault, aspect="auto")
+        ax_eq = geodef.plot.fault3d(rect_fault, aspect="equal")
+        auto = ax_auto.get_box_aspect()
+        eq = ax_eq.get_box_aspect()
+        assert auto[2] / auto[0] != pytest.approx(eq[2] / eq[0], rel=1e-3)
+
+    @pytest.mark.parametrize("bad", ["nope", -2.0, 0])
+    def test_aspect_invalid_raises(self, rect_fault, bad):
+        with pytest.raises(ValueError):
+            geodef.plot.fault3d(rect_fault, aspect=bad)
+
 
 # ======================================================================
 # plot.map (6.7f)

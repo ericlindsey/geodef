@@ -42,13 +42,63 @@ def _ensure_axes(
 def _ensure_axes_3d(
     ax: matplotlib.axes.Axes | None = None,
 ) -> matplotlib.axes.Axes:
-    """Return *ax* (must be 3D) or create a new 3D figure and axes."""
+    """Return *ax* (must be 3D) or create a new 3D figure and axes.
+
+    New figures use a roomier default size and constrained layout so that
+    axis labels, tick labels, and a colorbar do not collide — important
+    for shallow faults whose depth extent is small relative to their
+    horizontal footprint.
+    """
     if ax is not None:
         return ax
     import matplotlib.pyplot as plt
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 6), layout="constrained")
     return fig.add_subplot(111, projection="3d")
+
+
+def _apply_3d_aspect(
+    ax: matplotlib.axes.Axes,
+    aspect: str | float,
+    zoom: float = 0.85,
+) -> None:
+    """Set the data aspect ratio of a 3-D fault axes.
+
+    Args:
+        ax: 3-D axes whose limits have already been set.
+        aspect: ``'equal'`` for true 1:1:1 scaling (the box is sized in
+            proportion to the data ranges); ``'auto'`` for matplotlib's
+            default cubic box; or a positive number giving a vertical
+            exaggeration factor applied to the depth axis relative to
+            equal horizontal scaling (``1.0`` is identical to
+            ``'equal'``, ``3.0`` stretches depth three-fold).
+        zoom: Box zoom factor passed to ``set_box_aspect``; values below
+            ``1`` leave a margin around the box so labels are not clipped.
+
+    Raises:
+        ValueError: If *aspect* is neither ``'equal'``/``'auto'`` nor a
+            positive number.
+    """
+    if aspect == "auto":
+        return
+    if aspect == "equal":
+        vertical_exaggeration = 1.0
+    elif isinstance(aspect, (int, float)) and not isinstance(aspect, bool):
+        vertical_exaggeration = float(aspect)
+        if vertical_exaggeration <= 0:
+            raise ValueError(f"aspect must be a positive number, got {aspect!r}")
+    else:
+        raise ValueError(
+            "aspect must be 'equal', 'auto', or a positive number, "
+            f"got {aspect!r}"
+        )
+
+    dx = abs(np.subtract(*ax.get_xlim()))
+    dy = abs(np.subtract(*ax.get_ylim()))
+    dz = abs(np.subtract(*ax.get_zlim()))
+    ranges = np.maximum([dx, dy, dz], 1e-9)
+    ranges[2] *= vertical_exaggeration
+    ax.set_box_aspect(tuple(ranges), zoom=zoom)
 
 
 def _stations_to_local_km(
@@ -1002,6 +1052,7 @@ def fault3d(
     colorbar: bool = True,
     colorbar_label: str | None = None,
     view: tuple[float, float] | None = None,
+    aspect: str | float = "equal",
     title: str | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
@@ -1023,6 +1074,12 @@ def fault3d(
         colorbar_label: Colorbar label. Auto-generated if ``None``.
         view: ``(elevation, azimuth)`` in degrees for the 3-D view angle.
             If ``None``, uses matplotlib's default (30, -60).
+        aspect: Data aspect ratio. ``'equal'`` (default) scales all three
+            axes in proportion to their data ranges so geometry is not
+            distorted; ``'auto'`` uses matplotlib's default cubic box; a
+            positive number applies that vertical exaggeration to the
+            depth axis relative to equal horizontal scaling (useful for
+            shallow faults whose depth extent is small).
         title: Axes title.
         **kwargs: Passed to ``Poly3DCollection`` (e.g. ``alpha``).
 
@@ -1070,8 +1127,10 @@ def fault3d(
         pc.set_facecolor(mapper.to_rgba(face_values))
 
         if colorbar:
+            # ``pad`` keeps the colorbar clear of the depth axis labels,
+            # which sit on the right of the box at typical view angles.
             ax.figure.colorbar(mapper, ax=ax, label=colorbar_label,
-                                shrink=0.6)
+                                shrink=0.6, pad=0.1)
 
     ax.add_collection3d(pc)
 
@@ -1099,6 +1158,17 @@ def fault3d(
     # Invert z so depth increases downward
     if ax.get_zlim()[0] < ax.get_zlim()[1]:
         ax.invert_zaxis()
+
+    _apply_3d_aspect(ax, aspect)
+
+    # Thin in depth: cap depth ticks and pad the label so numbers neither
+    # crowd each other nor collide with the North-axis tick labels.
+    from matplotlib.ticker import MaxNLocator
+
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.zaxis.set_major_locator(MaxNLocator(nbins=4))
+    ax.zaxis.labelpad = 12
 
     ax.set_xlabel("East (km)")
     ax.set_ylabel("North (km)")
