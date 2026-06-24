@@ -60,7 +60,7 @@ They are **retired in their current form** and their content is redistributed:
 | Old notebook | Disposition |
 |---|---|
 | `01_forward_model` | Rebuilt as the new **Tutorial 01** with dislocation theory added; the joint GNSS+InSAR section moves forward to **Tutorial 06**. |
-| `02_caching` | Demoted to a short **sidebar/appendix in Tutorial 02** ("computing G is expensive; GeoDef caches it"). Not a standalone tutorial. |
+| `02_caching` | Demoted to a short **sidebar in Tutorial 02** ("computing G is expensive; GeoDef caches it") — now implemented there. Not a standalone tutorial. |
 | `03_plotting` | Dissolved. Each plot type is introduced in the tutorial where its concept first appears (see §4). The exhaustive gallery survives as its own unnumbered `reference_plots.ipynb`, not a numbered tutorial. |
 | `04_mesh_generation` | Moved out of the teaching sequence. Basic rectangular vs. triangular discretization is covered conceptually in **Tutorial 02**; real mesh building (traces, polygons, slab2.0) becomes an **`examples/` worked example**, since it is data/IO-heavy rather than a method. |
 
@@ -97,7 +97,10 @@ So notebooks stay consistent and composable:
   ≈ 8, `n_width` ≈ 5) so `G` is small and inversions are instant. A prescribed
   "true" slip patch (a smooth bump) generates synthetic data; seeded Gaussian
   noise is added. Notebooks reuse this setup via a short copied cell rather than
-  a shared import, so each notebook stays self-contained.
+  a shared import, so each notebook stays self-contained. Tutorials 01–02
+  (forward modeling, no inversion) instead use per-lesson illustrative
+  geometries; the single recurring scenario with seeded noise is established
+  from Tutorial 03 onward.
 - **Random seeds.** Every notebook sets `rng = np.random.default_rng(0)` (or a
   stated seed) for reproducible noise and pytest stability.
 - **Standard imports.** `import numpy as np`, `import matplotlib.pyplot as plt`,
@@ -122,7 +125,7 @@ introduced at the moment its underlying concept is taught:
 |---|---|---|
 | `plot.slip`, `plot.patches` | 01 | first time slip-on-fault is shown |
 | `plot.map`, `plot.vectors` | 01 | surface displacement field |
-| `plot.fault3d` | 02 | discretized geometry in 3D |
+| `plot.fault3d` | 01 | fault geometry at depth |
 | `plot.fit` | 03 | observed vs. predicted diagnostic |
 | `plot.insar` | 06 | first InSAR dataset |
 | L-curve / ABIC curve plots | 05 | hyperparameter selection |
@@ -152,33 +155,36 @@ must appear), **Key calls** (the small set of `geodef` calls used), **Plots**, a
 *The elastic dislocation forward problem.*
 
 **Goal.** Understand how slip on a buried fault produces surface displacement,
-and compute it for a single rectangular source.
+and compute it for a discretized rectangular source.
 
 **Concepts & Math.**
-- Faulting as a *dislocation* in an elastic half-space; homogeneous, isotropic,
-  linear elasticity.
-- The representation theorem in words: surface displacement is an integral of
-  slip over the fault weighted by the medium's elastic Green's functions.
-- The Okada (1985) rectangular dislocation as the analytic building block;
-  inputs are geometry (location, `strike`, `dip`, `length`, `width`, `depth`)
-  and slip (`strike-slip`, `dip-slip`, optional opening).
-- Geometry conventions: strike, dip, rake; decomposition of a slip vector of
-  given rake into strike-slip and dip-slip components.
-- The map: `u(x) = G(x; geometry) · s` — for *fixed* geometry the displacement
-  is **linear in slip**. (This linearity is the hinge for Tutorials 02–09.)
-- Near-field vs. far-field: how displacement amplitude decays with distance and
-  source depth.
+- Faulting as a *dislocation* in an elastic half-space (homogeneous, isotropic,
+  linear elasticity); the Okada (1985) rectangular source is the analytic
+  building block GeoDef evaluates from geometry (`strike`, `dip`, `length`,
+  `width`, `depth`) and slip.
+- Forward vs. inverse problems, tied by the linear relation `d = G m + e`. For
+  *fixed* geometry the surface displacement is **linear in slip** — the hinge
+  for Tutorials 02–09.
+- Slip has two in-plane components; GeoDef stores them as one **blocked** vector
+  `m = [strike-slip | dip-slip]` of length `2N`.
+- Reading the prediction: rows of `G` are interleaved `[e, n, u]` per station,
+  so `d = G m` unpacks directly to East/North/Up fields.
+- Seismic moment `M0 = μ Σ s_k A_k` and the moment magnitude `M_w` of a slip
+  distribution.
+- **Double-demo:** the forward map by hand (`G @ m`, then unpack) and via the
+  one-liner `fault.displacement(...)`, shown to be identical.
 
-**Key calls.** `Fault.planar(...)`, `fault.displacement(...)` (or
-`greens.greens` + a slip vector), basic `Fault` attributes (`n_patches`,
-`patch_outlines`).
+**Key calls.** `Fault.planar(...)`, `fault.greens_matrix(...)` with a blocked
+slip vector and `fault.displacement(...)`, `fault.moment` / `fault.magnitude`,
+basic `Fault` attributes (`n_patches`, `grid_shape`, `centers`, `areas`).
 
-**Plots.** Map-view surface displacement (`plot.map` / `plot.vectors`); slip on
-the fault patch (`plot.slip`).
+**Plots.** 3-D fault geometry colored by depth (`plot.fault3d`); slip on the
+fault (`plot.slip`); map-view surface displacement over the fault footprint
+(`plot.map` + `plot.vectors`: horizontal arrows plus vertical dots).
 
-**Exercises.** Vary dip and depth; predict then observe how the surface pattern
-and peak amplitude change. Flip the rake (thrust → normal) and interpret the
-vertical field.
+**Exercises.** Vary dip and depth and predict the change in pattern and peak
+amplitude; switch the mechanism to pure strike-slip and interpret the new vector
+field; refine the patch grid (foreshadowing Tutorial 02).
 
 ---
 
@@ -189,6 +195,8 @@ vertical field.
 structure as the discrete forward operator.
 
 **Concepts & Math.**
+- `G` as a **design matrix**: warm up with the two-column line fit `y = a x + b`
+  before generalizing to fault slip.
 - Discretizing a fault surface into `N` patches; slip approximated as
   piecewise-constant per patch.
 - Superposition (from linearity): total displacement is the sum of each patch's
@@ -198,21 +206,27 @@ structure as the discrete forward operator.
   strike-slip, next `N` columns dip-slip. Units of `G` entries.
 - How dataset projection turns the raw 3-component response into observed rows
   (interleaved E/N/U for GNSS; foreshadow LOS for InSAR in Tut 06).
-- Rectangular vs. triangular patches (conceptual): why triangular meshes fit
-  curved/variable-dip geometry; pointer to the `examples/` mesh workflow.
-- **Sidebar (absorbs old caching notebook):** `G` (and stress kernels) can be
-  expensive; GeoDef hashes inputs and caches results to disk, so repeated calls
-  are instant. One short demo, then move on.
+- **Double-demo:** build `G` column by column (unit slip per patch) and confirm
+  it equals `fault.greens_matrix(...)` / `geodef.greens.greens(...)`.
+- **Sidebar (absorbs old caching notebook):** assembling `G` is expensive and
+  often repeated, so GeoDef hashes its inputs and caches `G` to disk; one short
+  timing demo (first call computes, second loads).
+- Why finer discretization trades resolution for stability — an ill-posedness
+  teaser for Tutorials 03–04.
 
-**Key calls.** `Fault.planar(...)` with multiple patches, `greens.greens(fault,
-dataset)`, inspecting `G.shape`; brief `geodef.cache.info()` sidebar;
-`plot.fault3d`.
+**Key calls.** `Fault.planar(...)` with multiple patches, `fault.greens_matrix`
+and `geodef.greens.greens(fault, dataset)` (shown to agree with a hand-built
+`G`), `np.linalg.lstsq` for the warm-up, `fault.patch_index`, the
+`geodef.cache.info()` / `set_dir()` sidebar, `plot.slip`, `plot.vectors`.
 
-**Plots.** 3D fault geometry colored by patch index/depth; a single column of
-`G` rendered as the surface response of one patch.
+**Plots.** The line-fit design matrix; `G` rendered with `imshow` (the
+strike/dip column blocks); a single column of `G` drawn as one patch's surface
+response; a two-asperity slip model and its predicted displacements.
 
-**Exercises.** Refine `n_length`/`n_width` and watch `G.shape` and column count
-grow; plot the response of an edge patch vs. a central patch.
+**Exercises.** Refine `n_length`/`n_width` and watch `G.shape` and the column
+count grow; plot a strike-slip column vs. the dip-slip column for the same
+patch; compare adjacent deep vs. shallow patch columns and relate their
+similarity to resolvability.
 
 ---
 
