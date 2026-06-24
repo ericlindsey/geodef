@@ -123,9 +123,18 @@ geodef.plot.fault3d(fault,
     cmap='viridis',
     show_edges=True,
     view=(30, -60),         # (elevation, azimuth) in degrees; None = matplotlib default
+    aspect='equal',         # 'equal', 'auto', or a vertical-exaggeration factor
     station_locations=gnss, # optional: overlay station positions
 )
 ```
+
+`aspect` controls the data aspect ratio. The default `'equal'` scales all
+three axes in proportion to their data ranges so the geometry is undistorted.
+Shallow faults have a small depth extent relative to their horizontal
+footprint, so `'equal'` can render them as a thin slab; pass a positive number
+(e.g. `aspect=3`) to apply a vertical exaggeration to the depth axis, or
+`'auto'` for matplotlib's default cubic box. New figures use constrained
+layout and a padded colorbar so depth labels and the colorbar do not collide.
 
 ---
 
