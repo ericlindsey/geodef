@@ -5,10 +5,15 @@ from geometric parameters, files, or slab2.0 grids. Supports forward
 modeling via Green's function matrices and seismic moment calculation.
 """
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from geodef import greens as _greens
 from geodef import transforms
+
+if TYPE_CHECKING:
+    from geodef.mesh import Mesh
 
 
 class Fault:
@@ -162,12 +167,25 @@ class Fault:
         ii = ii.ravel()
         jj = jj.ravel()
 
-        e_offsets = fault_e0 + (ii + 0.5) * patch_L * sin_str + (jj + 0.5) * patch_W * cos_dip * cos_str
-        n_offsets = fault_n0 + (ii + 0.5) * patch_L * cos_str - (jj + 0.5) * patch_W * cos_dip * sin_str
+        e_offsets = (
+            fault_e0
+            + (ii + 0.5) * patch_L * sin_str
+            + (jj + 0.5) * patch_W * cos_dip * cos_str
+        )
+        n_offsets = (
+            fault_n0
+            + (ii + 0.5) * patch_L * cos_str
+            - (jj + 0.5) * patch_W * cos_dip * sin_str
+        )
         u_offsets = fault_u0 + (jj + 0.5) * patch_W * sin_dip
 
         lat_c, lon_c, _ = transforms.translate_flat(
-            lat, lon, 0.0, e_offsets, n_offsets, 0.0,
+            lat,
+            lon,
+            0.0,
+            e_offsets,
+            n_offsets,
+            0.0,
         )
         depth_c = depth - u_offsets
 
@@ -178,8 +196,15 @@ class Fault:
         width_arr = np.full(n_patches, patch_W)
 
         return cls(
-            lat_c, lon_c, depth_c, strike_arr, dip_arr, length_arr, width_arr,
-            grid_shape=(n_length, n_width), engine="okada",
+            lat_c,
+            lon_c,
+            depth_c,
+            strike_arr,
+            dip_arr,
+            length_arr,
+            width_arr,
+            grid_shape=(n_length, n_width),
+            engine="okada",
         )
 
     @classmethod
@@ -225,15 +250,27 @@ class Fault:
         center_u = 0.5 * width * sin_dip
 
         center_lat, center_lon, _ = transforms.translate_flat(
-            lat, lon, 0.0, center_e, center_n, 0.0,
+            lat,
+            lon,
+            0.0,
+            center_e,
+            center_n,
+            0.0,
         )
         center_depth = depth + center_u  # deeper = more positive
 
         # Delegate to planar() which handles the grid generation
         # Note: we negate center_u because depth convention is positive-down
         return cls.planar(
-            float(center_lat), float(center_lon), float(center_depth),
-            strike, dip, length, width, n_length, n_width,
+            float(center_lat),
+            float(center_lon),
+            float(center_depth),
+            strike,
+            dip,
+            length,
+            width,
+            n_length,
+            n_width,
         )
 
     @classmethod
@@ -263,7 +300,6 @@ class Fault:
         if vertices.ndim != 3 or vertices.shape[1:] != (3, 3):
             raise ValueError("vertices must have shape (N, 3, 3)")
 
-        n = vertices.shape[0]
         strike, dip = _compute_strike_dip(vertices)
 
         # Compute centroids in ENU then convert to geographic
@@ -272,13 +308,22 @@ class Fault:
             centroids_enu[:, 0],
             centroids_enu[:, 1],
             centroids_enu[:, 2],
-            ref_lat, ref_lon, 0.0,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
         depth = -alt  # ENU up → depth positive down
 
         return cls(
-            lat, lon, depth, strike, dip, None, None,
-            vertices=vertices, engine="tri",
+            lat,
+            lon,
+            depth,
+            strike,
+            dip,
+            None,
+            None,
+            vertices=vertices,
+            engine="tri",
         )
 
     @classmethod
@@ -297,7 +342,6 @@ class Fault:
         Returns:
             A triangular Fault with ``engine="tri"``.
         """
-        centers = mesh.centers_geo
         ref_lat = float(np.mean(mesh.lat))
         ref_lon = float(np.mean(mesh.lon))
         vertices = mesh.vertices_enu(ref_lat, ref_lon)
@@ -342,6 +386,7 @@ class Fault:
 
         if format == "ned":
             from geodef.mesh import Mesh
+
             mesh = Mesh.load(fname, format="ned")
             return cls.from_mesh(mesh)
 
@@ -375,8 +420,15 @@ class Fault:
         grid_shape = (n_length, n_width) if n_length * n_width == n else None
 
         return cls(
-            lat_c, lon_c, depth, strike, dip, length, width,
-            grid_shape=grid_shape, engine="okada",
+            lat_c,
+            lon_c,
+            depth,
+            strike,
+            dip,
+            length,
+            width,
+            grid_shape=grid_shape,
+            engine="okada",
         )
 
     @classmethod
@@ -402,7 +454,9 @@ class Fault:
         n_offset = (length / 2) * cos_str - (width / 2) * cos_dip * sin_str
         u_offset = (width / 2) * sin_dip
 
-        lat_c, lon_c, _ = transforms.translate_flat(lat, lon, 0.0, e_offset, n_offset, 0.0)
+        lat_c, lon_c, _ = transforms.translate_flat(
+            lat, lon, 0.0, e_offset, n_offset, 0.0
+        )
         depth_c = depth + u_offset
 
         n_length = int(filedata[:, 2].max()) + 1
@@ -411,8 +465,15 @@ class Fault:
         grid_shape = (n_length, n_width) if n_length * n_width == n else None
 
         return cls(
-            lat_c, lon_c, depth_c, strike, dip, length, width,
-            grid_shape=grid_shape, engine="okada",
+            lat_c,
+            lon_c,
+            depth_c,
+            strike,
+            dip,
+            length,
+            width,
+            grid_shape=grid_shape,
+            engine="okada",
         )
 
     @classmethod
@@ -440,18 +501,18 @@ class Fault:
 
         if ncols == 14:
             # With Vpl column
-            x1 = filedata[:, 2]       # North position
-            x2 = filedata[:, 3]       # East position
-            x3 = filedata[:, 4]       # Depth (positive down)
-            seg_L = filedata[:, 5]    # Total length
-            seg_W = filedata[:, 6]    # Total width
+            x1 = filedata[:, 2]  # North position
+            x2 = filedata[:, 3]  # East position
+            x3 = filedata[:, 4]  # Depth (positive down)
+            seg_L = filedata[:, 5]  # Total length
+            seg_W = filedata[:, 6]  # Total width
             strike = filedata[:, 7]
             dip = filedata[:, 8]
             # rake = filedata[:, 9]   # stored but not used for geometry
-            L0 = filedata[:, 10]      # Initial patch length
-            W0 = filedata[:, 11]      # Initial patch width
-            qL = filedata[:, 12]      # Length growth factor
-            qW = filedata[:, 13]      # Width growth factor
+            L0 = filedata[:, 10]  # Initial patch length
+            W0 = filedata[:, 11]  # Initial patch width
+            qL = filedata[:, 12]  # Length growth factor
+            qW = filedata[:, 13]  # Width growth factor
         elif ncols == 13:
             # Without Vpl column
             x1 = filedata[:, 1]
@@ -467,18 +528,22 @@ class Fault:
             qL = filedata[:, 11]
             qW = filedata[:, 12]
         else:
-            raise ValueError(
-                f"Seg file has {ncols} columns; expected 13 or 14"
-            )
+            raise ValueError(f"Seg file has {ncols} columns; expected 13 or 14")
 
         # Process each segment and collect all patches
         all_patches = []
         for k in range(len(x1)):
             origin = np.array([x1[k], x2[k], x3[k]])  # North, East, Depth
             patches = _seg_to_patches(
-                origin, seg_L[k], seg_W[k],
-                strike[k], dip[k],
-                L0[k], W0[k], qL[k], qW[k],
+                origin,
+                seg_L[k],
+                seg_W[k],
+                strike[k],
+                dip[k],
+                L0[k],
+                W0[k],
+                qL[k],
+                qW[k],
             )
             all_patches.append(patches)
 
@@ -504,13 +569,20 @@ class Fault:
         # Dip vector: [-cos(dip)*sin(strike), cos(dip)*cos(strike), sin(dip)]
         # Center = corner + L/2 * strike_vec + W/2 * dip_vec
         # (following unicycle convention from flt2flt.m)
-        c_north = p_north + (p_length / 2) * cos_str + (p_width / 2) * (-cos_dip * sin_str)
+        c_north = (
+            p_north + (p_length / 2) * cos_str + (p_width / 2) * (-cos_dip * sin_str)
+        )
         c_east = p_east + (p_length / 2) * sin_str + (p_width / 2) * (cos_dip * cos_str)
         c_depth = p_depth + (p_width / 2) * sin_dip
 
         # Convert local Cartesian (East, North) to geographic
         lat_c, lon_c, _ = transforms.translate_flat(
-            ref_lat, ref_lon, 0.0, c_east, c_north, 0.0,
+            ref_lat,
+            ref_lon,
+            0.0,
+            c_east,
+            c_north,
+            0.0,
         )
         depth_c = c_depth
 
@@ -523,8 +595,15 @@ class Fault:
                 grid_shape = (n_length, n_width)
 
         return cls(
-            lat_c, lon_c, depth_c, p_strike, p_dip, p_length, p_width,
-            grid_shape=grid_shape, engine="okada",
+            lat_c,
+            lon_c,
+            depth_c,
+            p_strike,
+            p_dip,
+            p_length,
+            p_width,
+            grid_shape=grid_shape,
+            engine="okada",
         )
 
     # ==================================================================
@@ -550,8 +629,12 @@ class Fault:
         if self._centers_local is None:
             alt = np.zeros(self.n_patches)
             e, n, u = transforms.geod2enu(
-                self._lat, self._lon, alt,
-                self._ref_lat, self._ref_lon, 0.0,
+                self._lat,
+                self._lon,
+                alt,
+                self._ref_lat,
+                self._ref_lon,
+                0.0,
             )
             self._centers_local = np.column_stack([e, n, -self._depth])
         return self._centers_local
@@ -630,15 +713,27 @@ class Fault:
         if self._engine == "okada":
             if kind == "displacement":
                 return _greens.displacement_greens(
-                    obs_lat, obs_lon,
-                    self._lat, self._lon, self._depth,
-                    self.strike, self.dip, self._length, self._width,
+                    obs_lat,
+                    obs_lon,
+                    self._lat,
+                    self._lon,
+                    self._depth,
+                    self.strike,
+                    self.dip,
+                    self._length,
+                    self._width,
                 )
             elif kind == "strain":
                 return _greens.strain_greens(
-                    obs_lat, obs_lon,
-                    self._lat, self._lon, self._depth,
-                    self.strike, self.dip, self._length, self._width,
+                    obs_lat,
+                    obs_lon,
+                    self._lat,
+                    self._lon,
+                    self._depth,
+                    self.strike,
+                    self.dip,
+                    self._length,
+                    self._width,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -646,14 +741,20 @@ class Fault:
         if self._engine == "tri":
             if kind == "displacement":
                 return _greens.tri_displacement_greens(
-                    obs_lat, obs_lon,
-                    self._lat, self._lon, self._depth,
+                    obs_lat,
+                    obs_lon,
+                    self._lat,
+                    self._lon,
+                    self._depth,
                     self._vertices,
                 )
             elif kind == "strain":
                 return _greens.tri_strain_greens(
-                    obs_lat, obs_lon,
-                    self._lat, self._lon, self._depth,
+                    obs_lat,
+                    obs_lon,
+                    self._lat,
+                    self._lon,
+                    self._depth,
                     self._vertices,
                     obs_depth=obs_depth,
                 )
@@ -682,17 +783,18 @@ class Fault:
         """
         obs_lat = np.atleast_1d(np.asarray(obs_lat, dtype=float))
         obs_lon = np.atleast_1d(np.asarray(obs_lon, dtype=float))
-        nobs = obs_lat.shape[0]
 
-        slip_s = np.broadcast_to(np.asarray(slip_strike, dtype=float), (self.n_patches,))
+        slip_s = np.broadcast_to(
+            np.asarray(slip_strike, dtype=float), (self.n_patches,)
+        )
         slip_d = np.broadcast_to(np.asarray(slip_dip, dtype=float), (self.n_patches,))
 
         G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
 
         # Build slip vector: blocked [ss0, ..., ssN, ds0, ..., dsN]
         m = np.empty(2 * self.n_patches)
-        m[:self.n_patches] = slip_s
-        m[self.n_patches:] = slip_d
+        m[: self.n_patches] = slip_s
+        m[self.n_patches :] = slip_d
 
         d = G @ m
 
@@ -722,9 +824,14 @@ class Fault:
         key = _build_stress_key(self, mu)
         return _cache.cached_compute(
             key,
-            lambda: mu * self.greens_matrix(
-                self._lat, self._lon, kind="strain",
-                obs_depth=self._depth,
+            lambda: (
+                mu
+                * self.greens_matrix(
+                    self._lat,
+                    self._lon,
+                    kind="strain",
+                    obs_depth=self._depth,
+                )
             ),
         )
 
@@ -852,23 +959,29 @@ class Fault:
             strike_ids = np.zeros(self.n_patches)
             dip_ids = np.arange(self.n_patches)
 
-        outdata = np.column_stack((
-            np.arange(self.n_patches),
-            dip_ids,
-            strike_ids,
-            self._lon,
-            self._lat,
-            self._depth,
-            self._length,
-            self._width,
-            self.strike,
-            self.dip,
-        ))
+        outdata = np.column_stack(
+            (
+                np.arange(self.n_patches),
+                dip_ids,
+                strike_ids,
+                self._lon,
+                self._lat,
+                self._depth,
+                self._length,
+                self._width,
+                self.strike,
+                self.dip,
+            )
+        )
         np.savetxt(fname, outdata, fmt="%10.5f")
 
     def _save_seg(
-        self, fname: str, ref_lat: float, ref_lon: float,
-        vpl: float, rake: float,
+        self,
+        fname: str,
+        ref_lat: float,
+        ref_lon: float,
+        vpl: float,
+        rake: float,
     ) -> None:
         """Save as a unicycle ``.seg`` file.
 
@@ -879,7 +992,12 @@ class Fault:
         # Convert geographic centers back to local Cartesian
         alt = np.zeros(self.n_patches)
         east, north, _ = transforms.geod2enu(
-            self._lat, self._lon, alt, ref_lat, ref_lon, 0.0,
+            self._lat,
+            self._lon,
+            alt,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
 
         # Compute upper-left corner of each patch
@@ -888,8 +1006,16 @@ class Fault:
         sin_dip = np.sin(np.radians(self.dip))
         cos_dip = np.cos(np.radians(self.dip))
 
-        corner_north = north - (self._length / 2) * cos_str - (self._width / 2) * (-cos_dip * sin_str)
-        corner_east = east - (self._length / 2) * sin_str - (self._width / 2) * (cos_dip * cos_str)
+        corner_north = (
+            north
+            - (self._length / 2) * cos_str
+            - (self._width / 2) * (-cos_dip * sin_str)
+        )
+        corner_east = (
+            east
+            - (self._length / 2) * sin_str
+            - (self._width / 2) * (cos_dip * cos_str)
+        )
         corner_depth = self._depth - (self._width / 2) * sin_dip
 
         # Find the overall segment bounding box
@@ -899,21 +1025,21 @@ class Fault:
         x2 = float(np.min(corner_east))
         x3 = float(np.min(corner_depth))
 
-        # Total length and width of the segment
         strike_val = float(self.strike[0])
         dip_val = float(self.dip[0])
 
-        # Project all corners onto strike/dip directions to get total extent
-        str_rad = np.radians(strike_val)
-        dip_rad = np.radians(dip_val)
-        strike_vec = np.array([np.cos(str_rad), np.sin(str_rad)])
-        dip_vec_h = np.array([-np.cos(dip_rad) * np.sin(str_rad),
-                               np.cos(dip_rad) * np.cos(str_rad)])
-
         # Use patch properties to determine total extent
         # Sum unique lengths along strike and widths along dip
-        total_L = float(np.sum(self._length[:1])) if self._grid_shape is None else float(self._length[0] * self._grid_shape[0])
-        total_W = float(np.sum(self._width[:1])) if self._grid_shape is None else float(self._width[0] * self._grid_shape[1])
+        total_L = (
+            float(np.sum(self._length[:1]))
+            if self._grid_shape is None
+            else float(self._length[0] * self._grid_shape[0])
+        )
+        total_W = (
+            float(np.sum(self._width[:1]))
+            if self._grid_shape is None
+            else float(self._width[0] * self._grid_shape[1])
+        )
 
         # If we don't have grid_shape, estimate from the patches
         if self._grid_shape is None:
@@ -942,7 +1068,10 @@ class Fault:
 
         with open(fname, "w") as f:
             f.write("# Unicycle .seg file generated by geodef\n")
-            f.write("# n  Vpl  x1  x2  x3  Length  Width  Strike  Dip  Rake  L0  W0  qL  qW\n")
+            f.write(
+                "# n  Vpl  x1  x2  x3  Length  Width  Strike  Dip  Rake  "
+                "L0  W0  qL  qW\n"
+            )
             f.write(
                 f"1 {vpl:.9f} {x1:.9f} {x2:.9f} {x3:.9f} "
                 f"{total_L:.9f} {total_W:.9f} {strike_val:.9f} {dip_val:.9f} "
@@ -963,8 +1092,12 @@ class Fault:
 
         # Convert ENU offsets (relative to fault centroid) back to geographic
         lat_nodes, lon_nodes, _ = transforms.translate_flat(
-            self._ref_lat, self._ref_lon, 0.0,
-            verts_flat[:, 0], verts_flat[:, 1], 0.0,
+            self._ref_lat,
+            self._ref_lon,
+            0.0,
+            verts_flat[:, 0],
+            verts_flat[:, 1],
+            0.0,
         )
         depth_nodes = -verts_flat[:, 2]  # up -> positive-down depth
 
@@ -1008,9 +1141,7 @@ class Fault:
         else:
             values = np.asarray(values, dtype=float)
             if values.shape != (n,):
-                raise ValueError(
-                    f"values must have shape ({n},), got {values.shape}"
-                )
+                raise ValueError(f"values must have shape ({n},), got {values.shape}")
 
         if self._engine == "okada":
             # vertices_2d: (N, 4, 2) as [lon, lat]
@@ -1020,8 +1151,12 @@ class Fault:
             verts_enu = self._vertices  # (N, 3, 3)
             verts_flat = verts_enu.reshape(-1, 3)
             lat_v, lon_v, _ = transforms.translate_flat(
-                self._ref_lat, self._ref_lon, 0.0,
-                verts_flat[:, 0], verts_flat[:, 1], 0.0,
+                self._ref_lat,
+                self._ref_lon,
+                0.0,
+                verts_flat[:, 0],
+                verts_flat[:, 1],
+                0.0,
             )
             verts = np.stack(
                 [lon_v.reshape(n, 3), lat_v.reshape(n, 3)], axis=-1
@@ -1065,7 +1200,9 @@ class Fault:
         Vertices are ordered: top-left, top-right, bottom-right, bottom-left.
         """
         if self._engine != "okada":
-            raise NotImplementedError("vertices_3d is only implemented for rectangular faults")
+            raise NotImplementedError(
+                "vertices_3d is only implemented for rectangular faults"
+            )
 
         n = self.n_patches
         sin_dip = np.sin(np.radians(self.dip))
@@ -1078,30 +1215,38 @@ class Fault:
 
         # 4 corner offsets in ENU: [top-left, top-right, bottom-right, bottom-left]
         # "top" = updip (shallower), strike direction is positive along-strike
-        e_offsets = np.column_stack([
-            -half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str - half_W * cos_dip * cos_str,
-            -half_L * sin_str - half_W * cos_dip * cos_str,
-        ])  # (N, 4)
+        e_offsets = np.column_stack(
+            [
+                -half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str - half_W * cos_dip * cos_str,
+                -half_L * sin_str - half_W * cos_dip * cos_str,
+            ]
+        )  # (N, 4)
 
-        n_offsets = np.column_stack([
-            -half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str + half_W * cos_dip * sin_str,
-            -half_L * cos_str + half_W * cos_dip * sin_str,
-        ])  # (N, 4)
+        n_offsets = np.column_stack(
+            [
+                -half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str + half_W * cos_dip * sin_str,
+                -half_L * cos_str + half_W * cos_dip * sin_str,
+            ]
+        )  # (N, 4)
 
-        depth_offsets = np.column_stack([
-            +half_W * sin_dip,
-            +half_W * sin_dip,
-            -half_W * sin_dip,
-            -half_W * sin_dip,
-        ])  # (N, 4)
+        depth_offsets = np.column_stack(
+            [
+                +half_W * sin_dip,
+                +half_W * sin_dip,
+                -half_W * sin_dip,
+                -half_W * sin_dip,
+            ]
+        )  # (N, 4)
 
         # Convert ENU offsets to lat/lon using local scale factors
         lat_rad = np.radians(self._lat)
-        m_per_deg_lat = 111132.92 - 559.82 * np.cos(2 * lat_rad) + 1.175 * np.cos(4 * lat_rad)
+        m_per_deg_lat = (
+            111132.92 - 559.82 * np.cos(2 * lat_rad) + 1.175 * np.cos(4 * lat_rad)
+        )
         m_per_deg_lon = 111412.84 * np.cos(lat_rad) - 93.5 * np.cos(3 * lat_rad)
 
         verts = np.empty((n, 4, 3))
@@ -1145,6 +1290,7 @@ def _build_stress_key(fault: Fault, mu: float) -> dict:
 # Module-level utilities
 # ======================================================================
 
+
 def moment_to_magnitude(moment: float) -> float:
     """Convert seismic moment to moment magnitude.
 
@@ -1172,6 +1318,7 @@ def magnitude_to_moment(mw: float) -> float:
 # ======================================================================
 # Seg format helpers
 # ======================================================================
+
 
 def _seg_to_patches(
     origin: np.ndarray,
@@ -1211,7 +1358,7 @@ def _seg_to_patches(
     widths = []
     k = 0
     while remaining_W > 0:
-        wt = W0 * alpha_w ** k
+        wt = W0 * alpha_w**k
         if wt > remaining_W / 2:
             wt = remaining_W
         wt = min(wt, remaining_W)
@@ -1225,27 +1372,36 @@ def _seg_to_patches(
     str_rad = np.radians(strike)
     dip_rad = np.radians(dip)
     strike_vec = np.array([np.cos(str_rad), np.sin(str_rad), 0.0])
-    dip_vec = np.array([
-        -np.cos(dip_rad) * np.sin(str_rad),
-        np.cos(dip_rad) * np.cos(str_rad),
-        np.sin(dip_rad),
-    ])
+    dip_vec = np.array(
+        [
+            -np.cos(dip_rad) * np.sin(str_rad),
+            np.cos(dip_rad) * np.cos(str_rad),
+            np.sin(dip_rad),
+        ]
+    )
 
     # Step 3: Build patches row by row
     patches = []
     cumulative_w = 0.0
     for j, wj in enumerate(widths):
         # Patch length for this row
-        lt = L0 * alpha_l ** j
+        lt = L0 * alpha_l**j
         n_along = int(np.ceil(total_L / lt))
         lt = total_L / n_along  # distribute evenly
 
         for i in range(n_along):
             corner = origin + i * lt * strike_vec + cumulative_w * dip_vec
-            patches.append([
-                corner[0], corner[1], corner[2],
-                lt, wj, strike, dip,
-            ])
+            patches.append(
+                [
+                    corner[0],
+                    corner[1],
+                    corner[2],
+                    lt,
+                    wj,
+                    strike,
+                    dip,
+                ]
+            )
         cumulative_w += wj
 
     return np.array(patches)

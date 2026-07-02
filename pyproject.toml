@@ -9,6 +9,16 @@ dependencies = [
     "matplotlib",
 ]
 
+[project.optional-dependencies]
+# Geographic transforms and slab2.0 sampling.
+geo = ["pyproj"]
+# Triangular mesh generation from traces, polygons, and point clouds.
+mesh = ["meshpy"]
+# Cartopy-backed geographic map plotting (coastlines, borders, topography).
+maps = ["cartopy"]
+# Everything optional at once, for a full research install.
+all = ["pyproj", "meshpy", "cartopy"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -32,11 +42,46 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 88
+# Lint scope is the package and its tests only. Notebooks, reference code under
+# related/, and the original Green's-function sources under geometry/ are
+# intentionally excluded from routine linting.
+extend-exclude = [
+    "*.ipynb",
+    "related",
+    "geometry",
+    "tutorials",
+    "examples",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.ruff.format]
+# The numerical-engine ports below stay laid out line-by-line against their
+# published references; the formatter would reflow them and break that
+# correspondence.
+exclude = [
+    "src/geodef/okada85.py",
+    "src/geodef/okada92.py",
+    "src/geodef/tri.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The Okada (1985) / DC3D (Okada 1992) and triangular-dislocation (Nikkhoo &
+# Walter 2015) engines are faithful ports of published Fortran/MATLAB. They
+# keep the original variable names (e.g. `I` for the Okada I-integrals) and
+# line layout so the code can be checked against the reference; a few
+# intermediates mirror the source without being read back.
+"src/geodef/okada85.py" = ["E741", "E501", "W291", "W293"]
+"src/geodef/okada92.py" = ["E741", "F841", "E501", "W291", "W293"]
+"src/geodef/tri.py" = ["E501", "W291", "W293"]
 
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
+files = ["src/geodef"]
+
+[[tool.mypy.overrides]]
+module = ["scipy.*", "pyproj.*", "meshpy.*", "cartopy.*", "mpl_toolkits.*"]
+ignore_missing_imports = true

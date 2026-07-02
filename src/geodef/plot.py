@@ -16,9 +16,8 @@ import numpy as np
 
 if TYPE_CHECKING:
     import matplotlib.axes
-    import matplotlib.pyplot as plt
 
-    from geodef.data import DataSet, GNSS, InSAR
+    from geodef.data import GNSS, DataSet, InSAR
     from geodef.fault import Fault
 
 
@@ -89,8 +88,7 @@ def _apply_3d_aspect(
             raise ValueError(f"aspect must be a positive number, got {aspect!r}")
     else:
         raise ValueError(
-            "aspect must be 'equal', 'auto', or a positive number, "
-            f"got {aspect!r}"
+            f"aspect must be 'equal', 'auto', or a positive number, got {aspect!r}"
         )
 
     dx = abs(np.subtract(*ax.get_xlim()))
@@ -113,8 +111,12 @@ def _stations_to_local_km(
 
     alt = np.zeros(dataset.n_stations)
     e, n, _ = transforms.geod2enu(
-        dataset.lat, dataset.lon, alt,
-        fault._ref_lat, fault._ref_lon, 0.0,
+        dataset.lat,
+        dataset.lon,
+        alt,
+        fault._ref_lat,
+        fault._ref_lon,
+        0.0,
     )
     return e * 1e-3, n * 1e-3
 
@@ -135,7 +137,6 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
     ref_lon = fault._ref_lon
 
     if fault.engine == "okada":
-        sin_dip = np.sin(np.radians(fault.dip))
         cos_dip = np.cos(np.radians(fault.dip))
         sin_str = np.sin(np.radians(fault.strike))
         cos_str = np.cos(np.radians(fault.strike))
@@ -146,31 +147,42 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
         # Corner offsets in ENU (meters) relative to patch center
         # Order: top-left, top-right, bottom-right, bottom-left
         # "top" = updip (shallower)
-        e_off = np.column_stack([
-            -half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str - half_W * cos_dip * cos_str,
-            -half_L * sin_str - half_W * cos_dip * cos_str,
-        ])
-        n_off = np.column_stack([
-            -half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str + half_W * cos_dip * sin_str,
-            -half_L * cos_str + half_W * cos_dip * sin_str,
-        ])
+        e_off = np.column_stack(
+            [
+                -half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str - half_W * cos_dip * cos_str,
+                -half_L * sin_str - half_W * cos_dip * cos_str,
+            ]
+        )
+        n_off = np.column_stack(
+            [
+                -half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str + half_W * cos_dip * sin_str,
+                -half_L * cos_str + half_W * cos_dip * sin_str,
+            ]
+        )
 
         # Patch centers in local ENU (meters)
         alt = np.zeros(fault.n_patches)
         ce, cn, _ = transforms.geod2enu(
-            fault._lat, fault._lon, alt, ref_lat, ref_lon, 0.0,
+            fault._lat,
+            fault._lon,
+            alt,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
 
         verts = []
         for i in range(fault.n_patches):
-            corners = np.column_stack([
-                (ce[i] + e_off[i]) * 1e-3,
-                (cn[i] + n_off[i]) * 1e-3,
-            ])
+            corners = np.column_stack(
+                [
+                    (ce[i] + e_off[i]) * 1e-3,
+                    (cn[i] + n_off[i]) * 1e-3,
+                ]
+            )
             verts.append(corners)
         return verts
 
@@ -205,38 +217,51 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
         half_L = fault._length / 2
         half_W = fault._width / 2
 
-        e_off = np.column_stack([
-            -half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str + half_W * cos_dip * cos_str,
-            +half_L * sin_str - half_W * cos_dip * cos_str,
-            -half_L * sin_str - half_W * cos_dip * cos_str,
-        ])
-        n_off = np.column_stack([
-            -half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str - half_W * cos_dip * sin_str,
-            +half_L * cos_str + half_W * cos_dip * sin_str,
-            -half_L * cos_str + half_W * cos_dip * sin_str,
-        ])
+        e_off = np.column_stack(
+            [
+                -half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str + half_W * cos_dip * cos_str,
+                +half_L * sin_str - half_W * cos_dip * cos_str,
+                -half_L * sin_str - half_W * cos_dip * cos_str,
+            ]
+        )
+        n_off = np.column_stack(
+            [
+                -half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str - half_W * cos_dip * sin_str,
+                +half_L * cos_str + half_W * cos_dip * sin_str,
+                -half_L * cos_str + half_W * cos_dip * sin_str,
+            ]
+        )
         # Depth offsets (positive = deeper)
-        d_off = np.column_stack([
-            -half_W * sin_dip,
-            -half_W * sin_dip,
-            +half_W * sin_dip,
-            +half_W * sin_dip,
-        ])
+        d_off = np.column_stack(
+            [
+                -half_W * sin_dip,
+                -half_W * sin_dip,
+                +half_W * sin_dip,
+                +half_W * sin_dip,
+            ]
+        )
 
         alt = np.zeros(fault.n_patches)
         ce, cn, _ = transforms.geod2enu(
-            fault._lat, fault._lon, alt, ref_lat, ref_lon, 0.0,
+            fault._lat,
+            fault._lon,
+            alt,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
 
         verts = []
         for i in range(fault.n_patches):
-            corners = np.column_stack([
-                (ce[i] + e_off[i]) * 1e-3,
-                (cn[i] + n_off[i]) * 1e-3,
-                (fault._depth[i] + d_off[i]) * 1e-3,
-            ])
+            corners = np.column_stack(
+                [
+                    (ce[i] + e_off[i]) * 1e-3,
+                    (cn[i] + n_off[i]) * 1e-3,
+                    (fault._depth[i] + d_off[i]) * 1e-3,
+                ]
+            )
             verts.append(corners)
         return verts
 
@@ -368,19 +393,15 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
             nL, nW = fault.grid_shape
             # Patches are ordered (dip outer, strike inner).
             # Find which dip row has the shallowest depth.
-            row_depths = np.array([
-                np.mean(fault._depth[j * nL:(j + 1) * nL])
-                for j in range(nW)
-            ])
+            row_depths = np.array(
+                [np.mean(fault._depth[j * nL : (j + 1) * nL]) for j in range(nW)]
+            )
             shallow_row = np.argmin(row_depths)
-            shallow_indices = list(range(shallow_row * nL,
-                                         (shallow_row + 1) * nL))
+            shallow_indices = list(range(shallow_row * nL, (shallow_row + 1) * nL))
         else:
             # Unstructured: pick patches in the shallowest depth quartile
             depth_threshold = np.percentile(fault._depth, 25)
-            shallow_indices = np.where(
-                fault._depth <= depth_threshold
-            )[0].tolist()
+            shallow_indices = np.where(fault._depth <= depth_threshold)[0].tolist()
 
         # Collect updip edge endpoints (corners 0 and 1)
         edge_points = []
@@ -393,9 +414,7 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
 
         # Remove near-duplicates, then sort along the trace.
         # Use PCA-like approach: project onto the dominant direction.
-        _, unique_idx = np.unique(
-            np.round(edge_points, 5), axis=0, return_index=True
-        )
+        _, unique_idx = np.unique(np.round(edge_points, 5), axis=0, return_index=True)
         pts = edge_points[np.sort(unique_idx)]
 
         # Sort by projecting onto the along-strike direction
@@ -412,8 +431,9 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
         all_3d = np.vstack(verts_3d)
         min_depth = np.min(all_3d[:, 2])
         depth_range = np.max(all_3d[:, 2]) - min_depth
-        threshold = min_depth + depth_range * 0.1 if depth_range > 0 else \
-            min_depth + 1.0
+        threshold = (
+            min_depth + depth_range * 0.1 if depth_range > 0 else min_depth + 1.0
+        )
 
         top_points = []
         for v2d, v3d in zip(verts_2d, verts_3d):
@@ -423,9 +443,7 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
         if not top_points:
             return None
         top_points = np.array(top_points)
-        _, unique_idx = np.unique(
-            np.round(top_points, 5), axis=0, return_index=True
-        )
+        _, unique_idx = np.unique(np.round(top_points, 5), axis=0, return_index=True)
         pts = top_points[np.sort(unique_idx)]
         # Sort by projecting onto principal direction
         centroid = pts.mean(axis=0)
@@ -483,10 +501,16 @@ def patches(
         The axes used for plotting.
     """
     return _plot_patch_scalar(
-        fault, values,
-        ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
-        colorbar=colorbar, colorbar_label=colorbar_label,
-        colorbar_kwargs=colorbar_kwargs, title=title,
+        fault,
+        values,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=colorbar,
+        colorbar_label=colorbar_label,
+        colorbar_kwargs=colorbar_kwargs,
+        title=title,
         **kwargs,
     )
 
@@ -538,10 +562,16 @@ def slip(
         }
         colorbar_label = labels.get(components, "Slip (m)")
     return _plot_patch_scalar(
-        fault, values,
-        ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
-        colorbar=colorbar, colorbar_label=colorbar_label,
-        colorbar_kwargs=colorbar_kwargs, title=title,
+        fault,
+        values,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=colorbar,
+        colorbar_label=colorbar_label,
+        colorbar_kwargs=colorbar_kwargs,
+        title=title,
         **kwargs,
     )
 
@@ -579,10 +609,16 @@ def resolution(
         The axes used for plotting.
     """
     return _plot_patch_scalar(
-        fault, values,
-        ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
-        colorbar=colorbar, colorbar_label=colorbar_label,
-        colorbar_kwargs=colorbar_kwargs, title=title,
+        fault,
+        values,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=colorbar,
+        colorbar_label=colorbar_label,
+        colorbar_kwargs=colorbar_kwargs,
+        title=title,
         **kwargs,
     )
 
@@ -620,10 +656,16 @@ def uncertainty(
         The axes used for plotting.
     """
     return _plot_patch_scalar(
-        fault, values,
-        ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
-        colorbar=colorbar, colorbar_label=colorbar_label,
-        colorbar_kwargs=colorbar_kwargs, title=title,
+        fault,
+        values,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=colorbar,
+        colorbar_label=colorbar_label,
+        colorbar_kwargs=colorbar_kwargs,
+        title=title,
         **kwargs,
     )
 
@@ -707,9 +749,7 @@ def vectors(
     has_vert = dataset.components == "enu"
 
     if components == "vertical" and not has_vert:
-        raise ValueError(
-            "Vertical component requested but dataset is horizontal-only."
-        )
+        raise ValueError("Vertical component requested but dataset is horizontal-only.")
 
     # Arrows sit above the vertical dots (zorder 5) so that large dots can't
     # hide the displacement vectors in ``components='both'`` mode.
@@ -720,8 +760,7 @@ def vectors(
     if components in ("horizontal", "both"):
         ve = dataset._ve * scale
         vn = dataset._vn * scale
-        ax.quiver(x_km, y_km, ve, vn, color=obs_color, label="_nolegend_",
-                  **qkw)
+        ax.quiver(x_km, y_km, ve, vn, color=obs_color, label="_nolegend_", **qkw)
 
         if predicted is not None:
             if has_vert:
@@ -730,12 +769,15 @@ def vectors(
             else:
                 pe = predicted[0::2] * scale
                 pn = predicted[1::2] * scale
-            ax.quiver(x_km, y_km, pe, pn, color=pred_color,
-                      label="_nolegend_", **qkw)
+            ax.quiver(x_km, y_km, pe, pn, color=pred_color, label="_nolegend_", **qkw)
 
         if ellipses:
-            ekw = {"facecolor": "none", "edgecolor": obs_color,
-                   "linewidth": 0.5, "alpha": 0.4}
+            ekw = {
+                "facecolor": "none",
+                "edgecolor": obs_color,
+                "linewidth": 0.5,
+                "alpha": 0.4,
+            }
             if ellipse_kwargs:
                 ekw.update(ellipse_kwargs)
             for i in range(n):
@@ -751,23 +793,42 @@ def vectors(
         vu = dataset._vu  # raw values — don't scale the color
         # Scale controls dot size, not color
         base_size = 30
-        sizes = np.abs(vu) / np.max(np.abs(vu)) * base_size * scale \
-            if np.max(np.abs(vu)) > 0 else np.full(n, base_size)
+        sizes = (
+            np.abs(vu) / np.max(np.abs(vu)) * base_size * scale
+            if np.max(np.abs(vu)) > 0
+            else np.full(n, base_size)
+        )
         # Clamp minimum size so dots are always visible
         sizes = np.clip(sizes, base_size * 0.2, None)
 
-        sc = ax.scatter(x_km, y_km, c=vu, s=sizes, cmap="RdBu_r",
-                        edgecolors="k", linewidths=0.5, zorder=2,
-                        label="Vertical (obs)" if components == "vertical"
-                        else None)
+        sc = ax.scatter(
+            x_km,
+            y_km,
+            c=vu,
+            s=sizes,
+            cmap="RdBu_r",
+            edgecolors="k",
+            linewidths=0.5,
+            zorder=2,
+            label="Vertical (obs)" if components == "vertical" else None,
+        )
         if vertical_colorbar and components in ("vertical", "both"):
             ax.figure.colorbar(sc, ax=ax, label=vertical_colorbar_label)
 
         if predicted is not None and has_vert:
             pu = predicted[2::3]
-            ax.scatter(x_km, y_km, c=pu, s=sizes, cmap="RdBu_r",
-                       edgecolors=pred_color, linewidths=1.0,
-                       facecolors="none", marker="o", zorder=3)
+            ax.scatter(
+                x_km,
+                y_km,
+                c=pu,
+                s=sizes,
+                cmap="RdBu_r",
+                edgecolors=pred_color,
+                linewidths=1.0,
+                facecolors="none",
+                marker="o",
+                zorder=3,
+            )
 
     ax.set_aspect("equal")
     ax.set_xlabel("East (km)")
@@ -778,7 +839,9 @@ def vectors(
     if legend:
         if scale_arrow is not None:
             _add_scale_arrow_legend(
-                ax, scale_arrow, scale,
+                ax,
+                scale_arrow,
+                scale,
                 obs_color=obs_color,
                 pred_color=pred_color if predicted is not None else None,
                 label=scale_arrow_label,
@@ -790,13 +853,11 @@ def vectors(
             from matplotlib.lines import Line2D
 
             handles = [
-                Line2D([0], [0], color=obs_color, linewidth=2,
-                       label="Observed"),
+                Line2D([0], [0], color=obs_color, linewidth=2, label="Observed"),
             ]
             if predicted is not None:
                 handles.append(
-                    Line2D([0], [0], color=pred_color, linewidth=2,
-                           label="Predicted"),
+                    Line2D([0], [0], color=pred_color, linewidth=2, label="Predicted"),
                 )
             ax.legend(handles=handles)
 
@@ -855,19 +916,27 @@ def _add_scale_arrow_legend(
         qkw.update(quiver_kwargs)
 
     ax.quiver(bx, by, -arrow_km, 0, color=obs_color, clip_on=False, **qkw)
-    ax.text(text_x, by + text_dy, label, ha=ha, va="bottom",
-            fontsize=8, color=obs_color)
+    ax.text(
+        text_x, by + text_dy, label, ha=ha, va="bottom", fontsize=8, color=obs_color
+    )
 
     if pred_color is not None:
         by2 = by + row_dy
         pred_label = (
-            label.replace("observed", "predicted") if "observed" in label
+            label.replace("observed", "predicted")
+            if "observed" in label
             else f"{scale_arrow} predicted"
         )
-        ax.quiver(bx, by2, -arrow_km, 0, color=pred_color, clip_on=False,
-                  **qkw)
-        ax.text(text_x, by2 + text_dy, pred_label, ha=ha, va="bottom",
-                fontsize=8, color=pred_color)
+        ax.quiver(bx, by2, -arrow_km, 0, color=pred_color, clip_on=False, **qkw)
+        ax.text(
+            text_x,
+            by2 + text_dy,
+            pred_label,
+            ha=ha,
+            va="bottom",
+            fontsize=8,
+            color=pred_color,
+        )
 
 
 def insar(
@@ -927,8 +996,10 @@ def insar(
         if vmin is not None and vmax is not None:
             return vmin, vmax
         absmax = np.max(np.abs(data))
-        return (vmin if vmin is not None else -absmax,
-                vmax if vmax is not None else absmax)
+        return (
+            vmin if vmin is not None else -absmax,
+            vmax if vmax is not None else absmax,
+        )
 
     def _scatter_panel(ax_panel, data, panel_title, show_ylabel=True):
         lo, hi = _auto_clim(data)
@@ -946,10 +1017,8 @@ def insar(
         residual = dataset.obs - predicted
         fig, axes = plt.subplots(1, 3, figsize=(14, 4))
         sc0 = _scatter_panel(axes[0], dataset.obs, "Observed")
-        sc1 = _scatter_panel(axes[1], predicted, "Predicted",
-                             show_ylabel=False)
-        sc2 = _scatter_panel(axes[2], residual, "Residual",
-                             show_ylabel=False)
+        _scatter_panel(axes[1], predicted, "Predicted", show_ylabel=False)
+        sc2 = _scatter_panel(axes[2], residual, "Residual", show_ylabel=False)
         if colorbar:
             fig.colorbar(sc0, ax=axes[:2], label=colorbar_label, shrink=0.8)
             fig.colorbar(sc2, ax=axes[2], label="Residual", shrink=0.8)
@@ -1018,8 +1087,13 @@ def fit(
         lo = min(np.min(observed), np.min(predicted))
         hi = max(np.max(observed), np.max(predicted))
         margin = (hi - lo) * 0.05
-        ax.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
-                "k--", linewidth=0.8, label="1:1")
+        ax.plot(
+            [lo - margin, hi + margin],
+            [lo - margin, hi + margin],
+            "k--",
+            linewidth=0.8,
+            label="1:1",
+        )
         ax.set_xlabel("Observed")
         ax.set_ylabel("Predicted")
         ax.set_title(title or "Observed vs. Predicted")
@@ -1113,9 +1187,11 @@ def fault3d(
                 f"got {face_values.shape[0]}"
             )
 
-    defaults = {"edgecolor": "gray" if show_edges else "none",
-                "linewidth": 0.5 if show_edges else 0,
-                "alpha": 0.8}
+    defaults = {
+        "edgecolor": "gray" if show_edges else "none",
+        "linewidth": 0.5 if show_edges else 0,
+        "alpha": 0.8,
+    }
     defaults.update(kwargs)
 
     pc = Poly3DCollection(verts_3d, **defaults)
@@ -1124,16 +1200,14 @@ def fault3d(
         import matplotlib.cm as cm
         import matplotlib.colors as mcolors
 
-        norm = mcolors.Normalize(vmin=np.min(face_values),
-                                  vmax=np.max(face_values))
+        norm = mcolors.Normalize(vmin=np.min(face_values), vmax=np.max(face_values))
         mapper = cm.ScalarMappable(norm=norm, cmap=cmap)
         pc.set_facecolor(mapper.to_rgba(face_values))
 
         if colorbar:
             # ``pad`` keeps the colorbar clear of the depth axis labels,
             # which sit on the right of the box at typical view angles.
-            ax.figure.colorbar(mapper, ax=ax, label=colorbar_label,
-                                shrink=0.6, pad=0.1)
+            ax.figure.colorbar(mapper, ax=ax, label=colorbar_label, shrink=0.6, pad=0.1)
 
     ax.add_collection3d(pc)
 
@@ -1144,16 +1218,22 @@ def fault3d(
         ax.computed_zorder = False
         pc.set_zorder(1)
         sx, sy = _stations_to_local_km(station_locations, fault)
-        ax.scatter(sx, sy, np.zeros_like(sx), c="red", s=30,
-                   marker="^", zorder=10, depthshade=False,
-                   label="Stations")
+        ax.scatter(
+            sx,
+            sy,
+            np.zeros_like(sx),
+            c="red",
+            s=30,
+            marker="^",
+            zorder=10,
+            depthshade=False,
+            label="Stations",
+        )
 
     # Set axis limits from vertices
     all_verts = np.vstack(verts_3d)
     pad = 0.05
-    for dim, setter in enumerate(
-        [ax.set_xlim, ax.set_ylim, ax.set_zlim]
-    ):
+    for dim, setter in enumerate([ax.set_xlim, ax.set_ylim, ax.set_zlim]):
         lo, hi = all_verts[:, dim].min(), all_verts[:, dim].max()
         margin = (hi - lo) * pad or 1.0
         setter(lo - margin, hi + margin)
@@ -1255,9 +1335,7 @@ def map(
     if values is not None:
         color_values = np.asarray(values)
     elif slip_vector is not None:
-        color_values = _get_slip_component(
-            slip_vector, fault.n_patches, components
-        )
+        color_values = _get_slip_component(slip_vector, fault.n_patches, components)
 
     if show_patches:
         verts = _get_patch_vertices_local(fault)
@@ -1299,8 +1377,7 @@ def map(
             mk = markers[i % len(markers)]
             cl = colors[i % len(colors)]
             label = type(ds).__name__
-            ax.scatter(sx, sy, marker=mk, color=cl, s=30,
-                       zorder=10, label=label)
+            ax.scatter(sx, sy, marker=mk, color=cl, s=30, zorder=10, label=label)
 
     ax.set_aspect("equal")
     ax.set_xlabel("East (km)")

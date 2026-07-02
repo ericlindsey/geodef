@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Green's matrix assembly (geographic coordinates)
 # ======================================================================
 
+
 def displacement_greens(
     lat: np.ndarray,
     lon: np.ndarray,
@@ -70,19 +71,33 @@ def displacement_greens(
     G = np.zeros((3 * nobs, 2 * npatch))
 
     for ipatch in range(npatch):
-        e, n, _ = transforms.geod2enu(
-            lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-        )
+        e, n, _ = transforms.geod2enu(lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0)
 
         str_e, str_n, str_u = okada85.displacement(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            0.0, 1.0, 0.0, nu,
+            e,
+            n,
+            float(depth[ipatch]),
+            float(strike[ipatch]),
+            float(dip[ipatch]),
+            float(L[ipatch]),
+            float(W[ipatch]),
+            0.0,
+            1.0,
+            0.0,
+            nu,
         )
         dip_e, dip_n, dip_u = okada85.displacement(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            90.0, 1.0, 0.0, nu,
+            e,
+            n,
+            float(depth[ipatch]),
+            float(strike[ipatch]),
+            float(dip[ipatch]),
+            float(L[ipatch]),
+            float(W[ipatch]),
+            90.0,
+            1.0,
+            0.0,
+            nu,
         )
 
         gstr = np.zeros(3 * nobs)
@@ -149,14 +164,30 @@ def strain_greens(
             )
 
             str_nn, str_ne, str_en, str_ee = okada85.strain(
-                e, n, float(depth[ipatch]), float(strike[ipatch]),
-                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                0.0, 1.0, 0.0, nu,
+                e,
+                n,
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+                0.0,
+                1.0,
+                0.0,
+                nu,
             )
             dip_nn, dip_ne, dip_en, dip_ee = okada85.strain(
-                e, n, float(depth[ipatch]), float(strike[ipatch]),
-                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                90.0, 1.0, 0.0, nu,
+                e,
+                n,
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+                90.0,
+                1.0,
+                0.0,
+                nu,
             )
 
             gstr = np.zeros(4 * nobs)
@@ -173,6 +204,7 @@ def strain_greens(
             G[:, npatch + ipatch] = gdip
     else:
         from geodef import okada92
+
         obs_depth = np.asarray(obs_depth, dtype=float)
         G_mu = 1.0  # unit shear modulus; actual scaling done by caller
         for ipatch in range(npatch):
@@ -182,16 +214,36 @@ def strain_greens(
             for iobs in range(nobs):
                 z_obs = -float(obs_depth[iobs])  # okada92 convention: Z <= 0
                 _, strain_ss = okada92.okada92(
-                    float(e[iobs]), float(n[iobs]), z_obs,
-                    float(depth[ipatch]), float(strike[ipatch]),
-                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                    1.0, 0.0, 0.0, G_mu, nu, allow_singular=True,
+                    float(e[iobs]),
+                    float(n[iobs]),
+                    z_obs,
+                    float(depth[ipatch]),
+                    float(strike[ipatch]),
+                    float(dip[ipatch]),
+                    float(L[ipatch]),
+                    float(W[ipatch]),
+                    1.0,
+                    0.0,
+                    0.0,
+                    G_mu,
+                    nu,
+                    allow_singular=True,
                 )
                 _, strain_ds = okada92.okada92(
-                    float(e[iobs]), float(n[iobs]), z_obs,
-                    float(depth[ipatch]), float(strike[ipatch]),
-                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                    0.0, 1.0, 0.0, G_mu, nu, allow_singular=True,
+                    float(e[iobs]),
+                    float(n[iobs]),
+                    z_obs,
+                    float(depth[ipatch]),
+                    float(strike[ipatch]),
+                    float(dip[ipatch]),
+                    float(L[ipatch]),
+                    float(W[ipatch]),
+                    0.0,
+                    1.0,
+                    0.0,
+                    G_mu,
+                    nu,
+                    allow_singular=True,
                 )
                 row = 4 * iobs
                 # NN, NE, EN, EE from the 3x3 gradient tensor
@@ -210,6 +262,7 @@ def strain_greens(
 # ======================================================================
 # Green's matrix assembly for triangular patches (geographic coordinates)
 # ======================================================================
+
 
 def tri_displacement_greens(
     lat: np.ndarray,
@@ -263,7 +316,7 @@ def tri_displacement_greens(
 
         gstr = np.zeros(3 * nobs)
         gdip = np.zeros(3 * nobs)
-        gstr[::3] = disp_ss[:, 0]   # East
+        gstr[::3] = disp_ss[:, 0]  # East
         gstr[1::3] = disp_ss[:, 1]  # North
         gstr[2::3] = disp_ss[:, 2]  # Up
         gdip[::3] = disp_ds[:, 0]
@@ -345,6 +398,7 @@ def tri_strain_greens(
 # ======================================================================
 # Polymorphic Green's matrix assembly (Fault + DataSet)
 # ======================================================================
+
 
 def _build_greens_key(fault: Fault, data: DataSet) -> dict:
     """Build the cache key dict for a fault + dataset combination."""
@@ -541,6 +595,7 @@ def _check_lengths(
 # Regularization operators
 # ======================================================================
 
+
 def build_laplacian_knn(
     coords: np.ndarray,
     k: int = 4,
@@ -576,9 +631,7 @@ def build_laplacian_knn(
     n = coords.shape[0]
 
     if k < 1 or k >= n:
-        raise ValueError(
-            f"k must satisfy 1 <= k < n_points ({n}), got k={k}"
-        )
+        raise ValueError(f"k must satisfy 1 <= k < n_points ({n}), got k={k}")
 
     # Pairwise squared distances via broadcasting: (n,1,3) - (1,n,3)
     diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
@@ -587,7 +640,7 @@ def build_laplacian_knn(
     # For each point, find k nearest neighbors (exclude self)
     # argsort along axis=1; column 0 is self (distance=0)
     idx_sorted = np.argsort(dist, axis=1)
-    knn_idx = idx_sorted[:, 1:k + 1]  # (n, k)
+    knn_idx = idx_sorted[:, 1 : k + 1]  # (n, k)
     knn_dist = np.take_along_axis(dist, knn_idx, axis=1)  # (n, k)
 
     # Inverse-distance weights: w_ij = 1 / d_ij

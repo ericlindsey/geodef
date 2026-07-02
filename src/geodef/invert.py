@@ -9,10 +9,14 @@ Automatic hyperparameter tuning via ABIC or cross-validation.
 import dataclasses
 import functools
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.linalg
 import scipy.optimize
+
+if TYPE_CHECKING:
+    import matplotlib
 
 from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
@@ -102,9 +106,7 @@ class InversionResult:
             else np.array([self.smoothing_strength])
         )
         rake_arr = (
-            np.array([float("nan")])
-            if self.rake is None
-            else np.array([self.rake])
+            np.array([float("nan")]) if self.rake is None else np.array([self.rake])
         )
         slip_azimuth_arr = (
             np.array([float("nan")])
@@ -159,9 +161,7 @@ class InversionResult:
         rake: float | None = None if np.isnan(raw_rake) else raw_rake
 
         raw_az = (
-            float(data["slip_azimuth"][0])
-            if "slip_azimuth" in data
-            else float("nan")
+            float(data["slip_azimuth"][0]) if "slip_azimuth" in data else float("nan")
         )
         slip_azimuth: float | None = None if np.isnan(raw_az) else raw_az
 
@@ -202,7 +202,8 @@ class InversionResult:
             else (self.smoothing if isinstance(self.smoothing, str) else "custom")
         )
         strength_desc = (
-            "N/A" if self.smoothing_strength is None
+            "N/A"
+            if self.smoothing_strength is None
             else f"{self.smoothing_strength:.6g}"
         )
 
@@ -222,18 +223,29 @@ class InversionResult:
 
         if fault.engine == "okada":
             col_names = "lon lat depth_m strike dip length_m width_m"
-            geom = np.column_stack([
-                fault._lon, fault._lat, fault._depth,
-                fault.strike, fault.dip,
-                fault._length, fault._width,
-            ])
+            geom = np.column_stack(
+                [
+                    fault._lon,
+                    fault._lat,
+                    fault._depth,
+                    fault.strike,
+                    fault.dip,
+                    fault._length,
+                    fault._width,
+                ]
+            )
         else:
             col_names = "lon lat depth_m strike dip area_m2"
-            geom = np.column_stack([
-                fault._lon, fault._lat, fault._depth,
-                fault.strike, fault.dip,
-                fault.areas,
-            ])
+            geom = np.column_stack(
+                [
+                    fault._lon,
+                    fault._lat,
+                    fault._depth,
+                    fault.strike,
+                    fault.dip,
+                    fault.areas,
+                ]
+            )
 
         if self.components == "both":
             slip_col_names = ["slip_strike_m", "slip_dip_m"]
@@ -321,8 +333,7 @@ class LCurveResult:
             lkw.update(line_kwargs)
         ax.loglog(self.misfits, self.model_norms, **lkw)
 
-        mkw: dict = {"color": "r", "marker": "o", "markersize": 10,
-                      "linestyle": "none"}
+        mkw: dict = {"color": "r", "marker": "o", "markersize": 10, "linestyle": "none"}
         if marker_kwargs:
             mkw.update(marker_kwargs)
         idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
@@ -332,10 +343,11 @@ class LCurveResult:
             ax.annotate(
                 f"λ = {self.optimal:.3g}",
                 xy=(self.misfits[idx], self.model_norms[idx]),
-                xytext=(10, 10), textcoords="offset points",
-                fontsize=9, color=mkw.get("color", "r"),
-                arrowprops={"arrowstyle": "->",
-                             "color": mkw.get("color", "r")},
+                xytext=(10, 10),
+                textcoords="offset points",
+                fontsize=9,
+                color=mkw.get("color", "r"),
+                arrowprops={"arrowstyle": "->", "color": mkw.get("color", "r")},
             )
 
         ax.set_xlabel("Data misfit ||Gm - d||")
@@ -392,8 +404,7 @@ class ABICCurveResult:
             lkw.update(line_kwargs)
         ax.semilogx(self.smoothing_values, self.abic_values, **lkw)
 
-        mkw: dict = {"color": "r", "marker": "o", "markersize": 10,
-                      "linestyle": "none"}
+        mkw: dict = {"color": "r", "marker": "o", "markersize": 10, "linestyle": "none"}
         if marker_kwargs:
             mkw.update(marker_kwargs)
         idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
@@ -403,10 +414,11 @@ class ABICCurveResult:
             ax.annotate(
                 f"λ = {self.optimal:.3g}",
                 xy=(self.smoothing_values[idx], self.abic_values[idx]),
-                xytext=(0, 20), textcoords="offset points",
-                fontsize=9, color=mkw.get("color", "r"),
-                arrowprops={"arrowstyle": "->",
-                             "color": mkw.get("color", "r")},
+                xytext=(0, 20),
+                textcoords="offset points",
+                fontsize=9,
+                color=mkw.get("color", "r"),
+                arrowprops={"arrowstyle": "->", "color": mkw.get("color", "r")},
             )
 
         ax.set_xlabel("Smoothing strength (lambda)")
@@ -418,6 +430,7 @@ class ABICCurveResult:
 # ======================================================================
 # LinearSystem: persistent prepared system with cached matrix products
 # ======================================================================
+
 
 class LinearSystem:
     """Prepared linear system for fault slip inversion.
@@ -500,8 +513,12 @@ class LinearSystem:
         self.d = stack_obs(datasets)
         self.W = stack_weights(datasets)
         self.G = _select_columns(
-            G_full, n_patches, components, rake,
-            fault_strike=fault.strike, slip_azimuth=slip_azimuth,
+            G_full,
+            n_patches,
+            components,
+            rake,
+            fault_strike=fault.strike,
+            slip_azimuth=slip_azimuth,
         )
         self.G_w, self.d_w = _apply_weights(self.G, self.d, self.W)
         self.L: np.ndarray | None = (
@@ -514,7 +531,8 @@ class LinearSystem:
                 rake,
                 slip_azimuth,
             )
-            if smoothing is not None else None
+            if smoothing is not None
+            else None
         )
 
     @functools.cached_property
@@ -545,7 +563,8 @@ class LinearSystem:
     # ------------------------------------------------------------------
 
     def _abic_value(
-        self, smoothing_strength: float,
+        self,
+        smoothing_strength: float,
     ) -> tuple[float, float, float]:
         """ABIC, misfit norm, and model norm at a given smoothing strength.
 
@@ -604,12 +623,14 @@ class LinearSystem:
             raise ValueError("ABIC requires a smoothing matrix")
 
         def objective(log10_lam: float) -> float:
-            return self._abic_value(10.0 ** log10_lam)[0]
+            return self._abic_value(10.0**log10_lam)[0]
 
         result = scipy.optimize.minimize_scalar(
-            objective, bounds=(-6, 10), method="bounded",
+            objective,
+            bounds=(-6, 10),
+            method="bounded",
         )
-        return 10.0 ** result.x
+        return 10.0**result.x
 
     def _optimal_cv(
         self,
@@ -636,7 +657,7 @@ class LinearSystem:
         rng = np.random.default_rng(0)
         perm = rng.permutation(n_obs)
         fold_sizes = np.full(cv_folds, n_obs // cv_folds)
-        fold_sizes[:n_obs % cv_folds] += 1
+        fold_sizes[: n_obs % cv_folds] += 1
         folds = np.split(perm, np.cumsum(fold_sizes[:-1]))
 
         lambdas = np.geomspace(1e-4, 1e8, 50)
@@ -666,7 +687,11 @@ class LinearSystem:
             Leverage vector, shape (M,).
         """
         H = self.GtWG.copy()
-        if self.L is not None and smoothing_strength is not None and smoothing_strength > 0:
+        if (
+            self.L is not None
+            and smoothing_strength is not None
+            and smoothing_strength > 0
+        ):
             H += smoothing_strength * self.LtL
         A = np.linalg.solve(H.T, self.G_w.T).T
         return np.sum(A * self.G_w, axis=1)
@@ -705,9 +730,16 @@ class LinearSystem:
             ValueError: For invalid arguments.
         """
         _validate_args(
-            self.datasets, self.components, self.smoothing, smoothing_strength,
-            bounds, method, smoothing_target, self._n_params,
-            self.rake, self.slip_azimuth,
+            self.datasets,
+            self.components,
+            self.smoothing,
+            smoothing_strength,
+            bounds,
+            method,
+            smoothing_target,
+            self._n_params,
+            self.rake,
+            self.slip_azimuth,
         )
 
         if isinstance(smoothing_strength, str):
@@ -734,10 +766,10 @@ class LinearSystem:
         predicted = self.G @ m
         residuals = self.d - predicted
         chi2 = _compute_chi2(residuals, self.W, self._n_params)
-        rms = float(np.sqrt(np.mean(residuals ** 2)))
+        rms = float(np.sqrt(np.mean(residuals**2)))
 
         if self.components == "both":
-            slip = np.column_stack([m[:self._n_patches], m[self._n_patches:]])
+            slip = np.column_stack([m[: self._n_patches], m[self._n_patches :]])
             slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
         else:
             slip = m.reshape(-1, 1)
@@ -863,7 +895,8 @@ class LinearSystem:
         )
 
     def dataset_diagnostics(
-        self, result: InversionResult,
+        self,
+        result: InversionResult,
     ) -> list[DatasetDiagnostics]:
         """Compute per-dataset fit diagnostics using the hat matrix.
 
@@ -889,17 +922,19 @@ class LinearSystem:
             dof_k = n - lev_k
             reduced_chi2_k = chi2_k / dof_k if dof_k > 0 else float("nan")
             wrms_k = float(np.sqrt(chi2_k / n))
-            rms_k = float(np.sqrt(np.mean(r_k ** 2)))
+            rms_k = float(np.sqrt(np.mean(r_k**2)))
 
-            diags.append(DatasetDiagnostics(
-                chi2=chi2_k,
-                reduced_chi2=reduced_chi2_k,
-                wrms=wrms_k,
-                rms=rms_k,
-                n_obs=n,
-                dof=dof_k,
-                leverage=lev_k,
-            ))
+            diags.append(
+                DatasetDiagnostics(
+                    chi2=chi2_k,
+                    reduced_chi2=reduced_chi2_k,
+                    wrms=wrms_k,
+                    rms=rms_k,
+                    n_obs=n,
+                    dof=dof_k,
+                    leverage=lev_k,
+                )
+            )
             offset += n
 
         return diags
@@ -961,6 +996,7 @@ class LinearSystem:
 # Module-level convenience functions (backward-compatible wrappers)
 # ======================================================================
 
+
 def invert(
     fault: Fault,
     datasets: DataSet | list[DataSet],
@@ -1014,8 +1050,9 @@ def invert(
         ValueError: For invalid arguments.
     """
     sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
-    return sys.invert(smoothing_strength, bounds, method, smoothing_target,
-                      constraints, cv_folds)
+    return sys.invert(
+        smoothing_strength, bounds, method, smoothing_target, constraints, cv_folds
+    )
 
 
 def compute_abic(
@@ -1153,8 +1190,14 @@ def dataset_diagnostics(
     Returns:
         List of ``DatasetDiagnostics``, one per dataset.
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
-                       result.rake, result.slip_azimuth)
+    sys = LinearSystem(
+        fault,
+        datasets,
+        result.smoothing,
+        result.components,
+        result.rake,
+        result.slip_azimuth,
+    )
     return sys.dataset_diagnostics(result)
 
 
@@ -1182,8 +1225,14 @@ def model_covariance(
     Returns:
         Model covariance matrix, shape (n_params, n_params).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
-                       result.rake, result.slip_azimuth)
+    sys = LinearSystem(
+        fault,
+        datasets,
+        result.smoothing,
+        result.components,
+        result.rake,
+        result.slip_azimuth,
+    )
     return sys.model_covariance(result)
 
 
@@ -1208,8 +1257,14 @@ def model_resolution(
     Returns:
         Resolution matrix, shape (n_params, n_params).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
-                       result.rake, result.slip_azimuth)
+    sys = LinearSystem(
+        fault,
+        datasets,
+        result.smoothing,
+        result.components,
+        result.rake,
+        result.slip_azimuth,
+    )
     return sys.model_resolution(result)
 
 
@@ -1230,14 +1285,21 @@ def model_uncertainty(
     Returns:
         Uncertainty array, shape (n_params,).
     """
-    sys = LinearSystem(fault, datasets, result.smoothing, result.components,
-                       result.rake, result.slip_azimuth)
+    sys = LinearSystem(
+        fault,
+        datasets,
+        result.smoothing,
+        result.components,
+        result.rake,
+        result.slip_azimuth,
+    )
     return sys.model_uncertainty(result)
 
 
 # ======================================================================
 # Private helpers
 # ======================================================================
+
 
 def _validate_args(
     datasets: list[DataSet],
@@ -1260,8 +1322,7 @@ def _validate_args(
 
     if components not in _VALID_COMPONENTS:
         raise ValueError(
-            f"components must be one of {_VALID_COMPONENTS}, "
-            f"got {components!r}"
+            f"components must be one of {_VALID_COMPONENTS}, got {components!r}"
         )
 
     if components == "rake" and rake is None:
@@ -1280,9 +1341,7 @@ def _validate_args(
         )
 
     if method is not None and method not in _VALID_METHODS:
-        raise ValueError(
-            f"method must be one of {_VALID_METHODS}, got {method!r}"
-        )
+        raise ValueError(f"method must be one of {_VALID_METHODS}, got {method!r}")
 
     if isinstance(smoothing, str) and smoothing not in _VALID_SMOOTHING_STRINGS:
         raise ValueError(
@@ -1292,8 +1351,7 @@ def _validate_args(
 
     if isinstance(smoothing, np.ndarray) and smoothing.shape[1] != n_params:
         raise ValueError(
-            f"smoothing matrix must have {n_params} columns, "
-            f"got {smoothing.shape[1]}"
+            f"smoothing matrix must have {n_params} columns, got {smoothing.shape[1]}"
         )
 
     if isinstance(smoothing_strength, str):
@@ -1310,14 +1368,11 @@ def _validate_args(
 
     if smoothing_target is not None:
         if smoothing is None and smoothing_strength == 0.0:
-            raise ValueError(
-                "smoothing_target requires smoothing to be set"
-            )
+            raise ValueError("smoothing_target requires smoothing to be set")
         target = np.asarray(smoothing_target)
         if target.shape != (n_params,):
             raise ValueError(
-                f"smoothing_target must have shape ({n_params},), "
-                f"got {target.shape}"
+                f"smoothing_target must have shape ({n_params},), got {target.shape}"
             )
 
 
@@ -1362,14 +1417,13 @@ def _select_columns(
                 "components='azimuth' requires fault_strike and slip_azimuth"
             )
         theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
-    return (
-        G_full[:, :n_patches] * np.cos(theta)
-        + G_full[:, n_patches:] * np.sin(theta)
-    )
+    return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
 
 
 def _apply_weights(
-    G: np.ndarray, d: np.ndarray, W: np.ndarray,
+    G: np.ndarray,
+    d: np.ndarray,
+    W: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Apply data weights via W^(1/2).
 
@@ -1543,11 +1597,13 @@ def _solve_constrained(
     scipy_constraints = []
     if constraints is not None:
         C, d_ineq = constraints
-        scipy_constraints.append({
-            "type": "ineq",
-            "fun": lambda m, C=C, d_ineq=d_ineq: d_ineq - C @ m,
-            "jac": lambda m, C=C: -C,
-        })
+        scipy_constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda m, C=C, d_ineq=d_ineq: d_ineq - C @ m,
+                "jac": lambda m, C=C: -C,
+            }
+        )
 
     m0, _, _, _ = np.linalg.lstsq(G, d, rcond=None)
     if bounds is not None:
@@ -1556,8 +1612,12 @@ def _solve_constrained(
         m0 = np.clip(m0, lower_val, upper_val)
 
     result = scipy.optimize.minimize(
-        objective, m0, jac=gradient, method="SLSQP",
-        bounds=scipy_bounds, constraints=scipy_constraints,
+        objective,
+        m0,
+        jac=gradient,
+        method="SLSQP",
+        bounds=scipy_bounds,
+        constraints=scipy_constraints,
         options={"maxiter": 1000, "ftol": 1e-12},
     )
     return result.x

@@ -117,7 +117,7 @@ class DataSet(ABC):
         if self._covariance_explicit is not None:
             cov = np.asarray(self._covariance_explicit, dtype=float)
         else:
-            cov = np.diag(self.sigma ** 2)
+            cov = np.diag(self.sigma**2)
 
         self._covariance_cache = _make_readonly(cov)
         return self._covariance_cache
@@ -129,8 +129,7 @@ class DataSet(ABC):
             cov = np.asarray(self._covariance_explicit, dtype=float)
             if cov.shape != (n, n):
                 raise ValueError(
-                    f"covariance shape {cov.shape} does not match "
-                    f"expected ({n}, {n})"
+                    f"covariance shape {cov.shape} does not match expected ({n}, {n})"
                 )
 
 
@@ -176,13 +175,9 @@ class GNSS(DataSet):
 
         n = self.n_stations
         if ve.shape != (n,) or vn.shape != (n,):
-            raise ValueError(
-                "ve, vn must be 1-D arrays of the same length as lat/lon"
-            )
+            raise ValueError("ve, vn must be 1-D arrays of the same length as lat/lon")
         if se.shape != (n,) or sn.shape != (n,):
-            raise ValueError(
-                "se, sn must be 1-D arrays of the same length as lat/lon"
-            )
+            raise ValueError("se, sn must be 1-D arrays of the same length as lat/lon")
 
         # Validate vertical component consistency
         if (vu is None) != (su is None):
@@ -234,9 +229,7 @@ class GNSS(DataSet):
             return _make_readonly(
                 np.column_stack([self._ve, self._vn, self._vu]).ravel()
             )
-        return _make_readonly(
-            np.column_stack([self._ve, self._vn]).ravel()
-        )
+        return _make_readonly(np.column_stack([self._ve, self._vn]).ravel())
 
     @property
     def sigma(self) -> np.ndarray:
@@ -245,9 +238,7 @@ class GNSS(DataSet):
             return _make_readonly(
                 np.column_stack([self._se, self._sn, self._su]).ravel()
             )
-        return _make_readonly(
-            np.column_stack([self._se, self._sn]).ravel()
-        )
+        return _make_readonly(np.column_stack([self._se, self._sn]).ravel())
 
     def project(self, *components: np.ndarray) -> np.ndarray:
         """Project displacement components into GNSS observation space.
@@ -283,14 +274,21 @@ class GNSS(DataSet):
 
         vu = self._vu if self._vu is not None else np.zeros(self.n_stations)
         su = self._su if self._su is not None else np.ones(self.n_stations)
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._ve, self._vn, vu,
-            self._se, self._sn, su,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uE uN uZ sigE sigN sigZ",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._ve,
+                self._vn,
+                vu,
+                self._se,
+                self._sn,
+                su,
+            ]
+        )
+        np.savetxt(
+            Path(fname), data, header="lon lat uE uN uZ sigE sigN sigZ", fmt="%.8f"
+        )
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save GNSS data in GMT-compatible format.
@@ -302,11 +300,16 @@ class GNSS(DataSet):
             fname: Output file path.
         """
         header = "lon lat uE uN sigE sigN"
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._ve, self._vn,
-            self._se, self._sn,
-        ])
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._ve,
+                self._vn,
+                self._se,
+                self._sn,
+            ]
+        )
         np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     @classmethod
@@ -445,14 +448,20 @@ class InSAR(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._los, self._sigma,
-            self._look_e, self._look_n, self._look_u,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uLOS sigLOS losE losN losU",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._los,
+                self._sigma,
+                self._look_e,
+                self._look_n,
+                self._look_u,
+            ]
+        )
+        np.savetxt(
+            Path(fname), data, header="lon lat uLOS sigLOS losE losN losU", fmt="%.8f"
+        )
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save InSAR data in GMT-compatible format.
@@ -584,13 +593,15 @@ class Vertical(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._displacement, self._sigma,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uZ sigZ",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._displacement,
+                self._sigma,
+            ]
+        )
+        np.savetxt(Path(fname), data, header="lon lat uZ sigZ", fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save vertical data in GMT-compatible format.

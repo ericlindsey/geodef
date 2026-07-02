@@ -81,10 +81,19 @@ def displacement(
 
     for i in range(e.size):
         disp, _ = _okada92(
-            e.flat[i], n.flat[i], z_arr.flat[i],
-            depth, strike, dip, length, width,
-            strike_slip, dip_slip, opening,
-            G=1.0, nu=nu,
+            e.flat[i],
+            n.flat[i],
+            z_arr.flat[i],
+            depth,
+            strike,
+            dip,
+            length,
+            width,
+            strike_slip,
+            dip_slip,
+            opening,
+            G=1.0,
+            nu=nu,
         )
         ue.flat[i] = disp[0, 0]
         un.flat[i] = disp[1, 0]
