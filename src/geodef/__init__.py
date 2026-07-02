@@ -2,7 +2,18 @@
 
 __version__ = "0.1.0"
 
-from geodef import cache, greens, mesh, okada, okada85, okada92, plot, transforms, tri
+from geodef import (
+    cache,
+    euler,
+    greens,
+    mesh,
+    okada,
+    okada85,
+    okada92,
+    plot,
+    transforms,
+    tri,
+)
 from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 from geodef.fault import Fault, magnitude_to_moment, moment_to_magnitude
 from geodef.greens import select_slip_columns, stack_obs, stack_weights
@@ -25,6 +36,7 @@ from geodef.invert import (
 __all__ = [
     # Submodules
     "cache",
+    "euler",
     "greens",
     "mesh",
     "okada",
