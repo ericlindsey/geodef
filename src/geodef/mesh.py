@@ -382,7 +382,7 @@ def _snap_boundary_nodes(
             dist = np.linalg.norm(pt - closest)
 
             if dist < best_dist:
-                best_dist = dist
+                best_dist = float(dist)
                 if dist < abs_tol:
                     # Interpolate along the original 3D boundary edge
                     a3 = boundary_3d[j]
@@ -733,6 +733,7 @@ def from_polygon(
             lon, lat, depth, target_length, max_area, max_refinements
         )
     else:
+        assert depth_func is not None  # guaranteed by the checks above
         return _from_polygon_2d(
             lon, lat, depth_func, target_length, max_area, max_refinements
         )
@@ -925,13 +926,12 @@ def from_trace(
     dip_n = np.cos(dip_dir_rad)
 
     # Compute down-dip horizontal offset profile
-    is_callable = callable(dip)
     depths = np.linspace(0, max_depth, n_downdip + 1)
     horiz_offsets = np.zeros(n_downdip + 1)
     for i in range(n_downdip):
         z_mid = 0.5 * (depths[i] + depths[i + 1])
         dz = depths[i + 1] - depths[i]
-        dip_angle = float(dip(z_mid)) if is_callable else float(dip)
+        dip_angle = float(dip(z_mid)) if callable(dip) else float(dip)
         dip_rad = np.radians(dip_angle)
         if abs(np.tan(dip_rad)) > 1e-10:
             horiz_offsets[i + 1] = horiz_offsets[i] + dz / np.tan(dip_rad)

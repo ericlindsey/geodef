@@ -102,7 +102,7 @@ class Fault:
         # Make arrays read-only
         for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
             arr.flags.writeable = False
-        if self._length is not None:
+        if self._length is not None and self._width is not None:
             self._length.flags.writeable = False
             self._width.flags.writeable = False
         if self._vertices is not None:
@@ -163,9 +163,9 @@ class Fault:
         # Vectorized grid of patch center offsets
         i_idx = np.arange(n_length)
         j_idx = np.arange(n_width)
-        jj, ii = np.meshgrid(j_idx, i_idx, indexing="ij")
-        ii = ii.ravel()
-        jj = jj.ravel()
+        jj_grid, ii_grid = np.meshgrid(j_idx, i_idx, indexing="ij")
+        ii = ii_grid.ravel()
+        jj = jj_grid.ravel()
 
         e_offsets = (
             fault_e0
@@ -643,9 +643,11 @@ class Fault:
     def areas(self) -> np.ndarray:
         """Patch areas in square meters, shape (N,)."""
         if self._engine == "okada":
+            assert self._length is not None and self._width is not None
             return self._length * self._width
         # Triangular: area from cross product of two edge vectors
         v = self._vertices
+        assert v is not None
         edge1 = v[:, 1, :] - v[:, 0, :]
         edge2 = v[:, 2, :] - v[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
@@ -711,6 +713,7 @@ class Fault:
             ValueError: If kind is unknown or engine doesn't support it.
         """
         if self._engine == "okada":
+            assert self._length is not None and self._width is not None
             if kind == "displacement":
                 return _greens.displacement_greens(
                     obs_lat,
@@ -739,6 +742,7 @@ class Fault:
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
         if self._engine == "tri":
+            assert self._vertices is not None
             if kind == "displacement":
                 return _greens.tri_displacement_greens(
                     obs_lat,
@@ -951,12 +955,13 @@ class Fault:
 
     def _save_center(self, fname: str) -> None:
         """Save in center-defined format."""
+        assert self._length is not None and self._width is not None
         if self._grid_shape is not None:
             nL, _ = self._grid_shape
             strike_ids = np.arange(self.n_patches) % nL
             dip_ids = np.arange(self.n_patches) // nL
         else:
-            strike_ids = np.zeros(self.n_patches)
+            strike_ids = np.zeros(self.n_patches, dtype=int)
             dip_ids = np.arange(self.n_patches)
 
         outdata = np.column_stack(
@@ -989,6 +994,7 @@ class Fault:
         uniform patch sizes (qL=qW=1), this round-trips exactly. For
         non-uniform faults, L0/W0 are taken from the smallest patch.
         """
+        assert self._length is not None and self._width is not None
         # Convert geographic centers back to local Cartesian
         alt = np.zeros(self.n_patches)
         east, north, _ = transforms.geod2enu(
@@ -1087,6 +1093,7 @@ class Fault:
         """
         from geodef.mesh import Mesh
 
+        assert self._vertices is not None
         n_tri = self.n_patches
         verts_flat = self._vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
 
@@ -1149,6 +1156,7 @@ class Fault:
         else:
             # Triangular: convert ENU to geographic lon/lat
             verts_enu = self._vertices  # (N, 3, 3)
+            assert verts_enu is not None
             verts_flat = verts_enu.reshape(-1, 3)
             lat_v, lon_v, _ = transforms.translate_flat(
                 self._ref_lat,
@@ -1203,6 +1211,7 @@ class Fault:
             raise NotImplementedError(
                 "vertices_3d is only implemented for rectangular faults"
             )
+        assert self._length is not None and self._width is not None
 
         n = self.n_patches
         sin_dip = np.sin(np.radians(self.dip))

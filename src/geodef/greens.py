@@ -457,8 +457,8 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
         key = _build_greens_key(fault, data)
         G_proj = _cache.cached_compute(
             key,
-            lambda d=data: _project_greens(
-                d, fault.greens_matrix(d.lat, d.lon, kind=d.greens_type)
+            lambda: _project_greens(
+                data, fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
             ),
         )
         blocks.append(G_proj)

@@ -375,7 +375,7 @@ def translate_flat(
     # from flat due to curvature of the sphere, is ignored here - hence
     # 'translate_flat'
     la, lo, al = enu2geod(eoffset, noffset, 0, lat, lon, alt, ellps=ellps)
-    return la * 1.0, lo * 1.0, alt + uoffset * 1.0
+    return la * 1.0, lo * 1.0, np.asarray(alt + uoffset * 1.0)
 
 
 def vincenty(

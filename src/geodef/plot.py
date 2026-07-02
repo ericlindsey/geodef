@@ -10,12 +10,13 @@ Every public function follows a consistent pattern:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 if TYPE_CHECKING:
     import matplotlib.axes
+    from mpl_toolkits.mplot3d import Axes3D
 
     from geodef.data import GNSS, DataSet, InSAR
     from geodef.fault import Fault
@@ -39,8 +40,8 @@ def _ensure_axes(
 
 
 def _ensure_axes_3d(
-    ax: matplotlib.axes.Axes | None = None,
-) -> matplotlib.axes.Axes:
+    ax: Axes3D | None = None,
+) -> Axes3D:
     """Return *ax* (must be 3D) or create a new 3D figure and axes.
 
     New figures use a roomier default size and constrained layout so that
@@ -57,7 +58,7 @@ def _ensure_axes_3d(
 
 
 def _apply_3d_aspect(
-    ax: matplotlib.axes.Axes,
+    ax: Axes3D,
     aspect: str | float,
     zoom: float = 0.85,
 ) -> None:
@@ -137,6 +138,7 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
     ref_lon = fault._ref_lon
 
     if fault.engine == "okada":
+        assert fault._length is not None and fault._width is not None
         cos_dip = np.cos(np.radians(fault.dip))
         sin_str = np.sin(np.radians(fault.strike))
         cos_str = np.cos(np.radians(fault.strike))
@@ -188,6 +190,7 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
 
     # Triangular: _vertices is (N, 3, 3) in local ENU meters [e, n, u]
     tri_verts = fault._vertices
+    assert tri_verts is not None
     verts = []
     for i in range(fault.n_patches):
         corners = tri_verts[i, :, :2] * 1e-3  # (3, 2) east/north in km
@@ -209,6 +212,7 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
     ref_lon = fault._ref_lon
 
     if fault.engine == "okada":
+        assert fault._length is not None and fault._width is not None
         sin_dip = np.sin(np.radians(fault.dip))
         cos_dip = np.cos(np.radians(fault.dip))
         sin_str = np.sin(np.radians(fault.strike))
@@ -267,6 +271,7 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
 
     # Triangular
     tri_verts = fault._vertices  # (N, 3, 3) [e, n, u]
+    assert tri_verts is not None
     verts = []
     for i in range(fault.n_patches):
         v = tri_verts[i] * 1e-3  # (3, 3) in km
@@ -344,7 +349,7 @@ def _plot_patch_scalar(
     ax = _ensure_axes(ax)
     verts = _get_patch_vertices_local(fault)
 
-    defaults = {"edgecolor": "face", "linewidth": 0.5}
+    defaults: dict[str, Any] = {"edgecolor": "face", "linewidth": 0.5}
     defaults.update(kwargs)
 
     pc = PolyCollection(verts, **defaults)
@@ -410,12 +415,12 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
             edge_points.append(verts_2d[idx][1])  # top-right
         if not edge_points:
             return None
-        edge_points = np.array(edge_points)
+        edge_arr = np.array(edge_points)
 
         # Remove near-duplicates, then sort along the trace.
         # Use PCA-like approach: project onto the dominant direction.
-        _, unique_idx = np.unique(np.round(edge_points, 5), axis=0, return_index=True)
-        pts = edge_points[np.sort(unique_idx)]
+        _, unique_idx = np.unique(np.round(edge_arr, 5), axis=0, return_index=True)
+        pts = edge_arr[np.sort(unique_idx)]
 
         # Sort by projecting onto the along-strike direction
         centroid = pts.mean(axis=0)
@@ -442,9 +447,9 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
                     top_points.append(v2d[j])
         if not top_points:
             return None
-        top_points = np.array(top_points)
-        _, unique_idx = np.unique(np.round(top_points, 5), axis=0, return_index=True)
-        pts = top_points[np.sort(unique_idx)]
+        top_arr = np.array(top_points)
+        _, unique_idx = np.unique(np.round(top_arr, 5), axis=0, return_index=True)
+        pts = top_arr[np.sort(unique_idx)]
         # Sort by projecting onto principal direction
         centroid = pts.mean(axis=0)
         centered = pts - centroid
@@ -753,7 +758,7 @@ def vectors(
 
     # Arrows sit above the vertical dots (zorder 5) so that large dots can't
     # hide the displacement vectors in ``components='both'`` mode.
-    qkw = {"angles": "xy", "scale_units": "xy", "scale": 1, "zorder": 5}
+    qkw: dict[str, Any] = {"angles": "xy", "scale_units": "xy", "scale": 1, "zorder": 5}
     if quiver_kwargs:
         qkw.update(quiver_kwargs)
 
@@ -772,7 +777,7 @@ def vectors(
             ax.quiver(x_km, y_km, pe, pn, color=pred_color, label="_nolegend_", **qkw)
 
         if ellipses:
-            ekw = {
+            ekw: dict[str, Any] = {
                 "facecolor": "none",
                 "edgecolor": obs_color,
                 "linewidth": 0.5,
@@ -791,6 +796,7 @@ def vectors(
 
     if components == "vertical" or (components == "both" and has_vert):
         vu = dataset._vu  # raw values — don't scale the color
+        assert vu is not None
         # Scale controls dot size, not color
         base_size = 30
         sizes = (
@@ -911,7 +917,7 @@ def _add_scale_arrow_legend(
         row_dy = y_range * 0.05
 
     # Build quiver kwargs that match the data arrows
-    qkw = {"angles": "xy", "scale_units": "xy", "scale": 1}
+    qkw: dict[str, Any] = {"angles": "xy", "scale_units": "xy", "scale": 1}
     if quiver_kwargs:
         qkw.update(quiver_kwargs)
 
@@ -986,7 +992,7 @@ def insar(
     import matplotlib.pyplot as plt
 
     x_km, y_km = _stations_to_local_km(dataset, fault)
-    skw = {"s": 8, "cmap": cmap}
+    skw: dict[str, Any] = {"s": 8, "cmap": cmap}
     if scatter_kwargs:
         skw.update(scatter_kwargs)
     # Don't pass cmap twice
@@ -1032,9 +1038,11 @@ def insar(
         data = dataset.obs
         panel_title = title or "Observed"
     elif layout == "pred":
+        assert predicted is not None  # guaranteed by the check above
         data = predicted
         panel_title = title or "Predicted"
     elif layout == "residual":
+        assert predicted is not None  # guaranteed by the check above
         data = dataset.obs - predicted
         panel_title = title or "Residual"
     else:
@@ -1080,7 +1088,7 @@ def fit(
     ax = _ensure_axes(ax)
 
     if style == "scatter":
-        skw = {"s": 10, "alpha": 0.7, "edgecolors": "none"}
+        skw: dict[str, Any] = {"s": 10, "alpha": 0.7, "edgecolors": "none"}
         if scatter_kwargs:
             skw.update(scatter_kwargs)
         ax.scatter(observed, predicted, **skw)
@@ -1121,7 +1129,7 @@ def fit(
 def fault3d(
     fault: Fault,
     *,
-    ax: matplotlib.axes.Axes | None = None,
+    ax: Axes3D | None = None,
     color_by: str | np.ndarray | None = "depth",
     cmap: str = "viridis",
     show_edges: bool = True,
@@ -1187,7 +1195,7 @@ def fault3d(
                 f"got {face_values.shape[0]}"
             )
 
-    defaults = {
+    defaults: dict[str, Any] = {
         "edgecolor": "gray" if show_edges else "none",
         "linewidth": 0.5 if show_edges else 0,
         "alpha": 0.8,
@@ -1361,7 +1369,7 @@ def map(
     if show_trace:
         trace = _get_surface_trace(fault)
         if trace is not None:
-            tkw = {"color": "red", "linewidth": 2, "zorder": 5}
+            tkw: dict[str, Any] = {"color": "red", "linewidth": 2, "zorder": 5}
             if trace_kwargs:
                 tkw.update(trace_kwargs)
             ax.plot(trace[:, 0], trace[:, 1], **tkw)

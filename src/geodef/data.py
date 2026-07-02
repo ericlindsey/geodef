@@ -341,8 +341,10 @@ class GNSS(DataSet):
 
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
-        ve, vn, vu = raw[:, 2], raw[:, 3], raw[:, 4]
-        se, sn, su = raw[:, 5], raw[:, 6], raw[:, 7]
+        ve, vn = raw[:, 2], raw[:, 3]
+        se, sn = raw[:, 5], raw[:, 6]
+        vu: np.ndarray | None = raw[:, 4]
+        su: np.ndarray | None = raw[:, 7]
 
         if components == "en":
             vu, su = None, None

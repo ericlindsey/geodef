@@ -222,6 +222,7 @@ class InversionResult:
             header_lines.append(f"slip_azimuth_deg: {self.slip_azimuth:.6g}")
 
         if fault.engine == "okada":
+            assert fault._length is not None and fault._width is not None
             col_names = "lon lat depth_m strike dip length_m width_m"
             geom = np.column_stack(
                 [
@@ -744,19 +745,26 @@ class LinearSystem:
 
         if isinstance(smoothing_strength, str):
             if smoothing_strength == "abic":
-                smoothing_strength = self._optimal_abic()
+                strength = self._optimal_abic()
             elif smoothing_strength == "cv":
-                smoothing_strength = self._optimal_cv(bounds, method, cv_folds)
+                strength = self._optimal_cv(bounds, method, cv_folds)
+            else:
+                raise ValueError(
+                    "smoothing_strength string must be 'abic' or 'cv', "
+                    f"got {smoothing_strength!r}"
+                )
+        else:
+            strength = float(smoothing_strength)
 
-        if self.L is not None and smoothing_strength > 0:
-            d_reg = _build_reg_rhs(self.L, smoothing_strength, smoothing_target)
-            G_aug = np.vstack([self.G_w, np.sqrt(smoothing_strength) * self.L])
+        if self.L is not None and strength > 0:
+            d_reg = _build_reg_rhs(self.L, strength, smoothing_target)
+            G_aug = np.vstack([self.G_w, np.sqrt(strength) * self.L])
             d_aug = np.concatenate([self.d_w, d_reg])
-            reg_strength: float | None = smoothing_strength
+            reg_strength: float | None = strength
         else:
             G_aug = self.G_w
             d_aug = self.d_w
-            reg_strength = None if smoothing_strength == 0.0 else smoothing_strength
+            reg_strength = None if strength == 0.0 else strength
 
         if method is None:
             method = _auto_select_method(bounds)
