@@ -581,6 +581,94 @@ def slip(
     )
 
 
+def _patch_centroids_km(fault: Fault) -> tuple[np.ndarray, np.ndarray]:
+    """Return per-patch centroids in local map-view coordinates (East, North km)."""
+    verts = _get_patch_vertices_local(fault)
+    cx = np.array([v[:, 0].mean() for v in verts])
+    cy = np.array([v[:, 1].mean() for v in verts])
+    return cx, cy
+
+
+def slip_interpolated(
+    fault: Fault,
+    slip_vector: np.ndarray,
+    *,
+    ax: matplotlib.axes.Axes | None = None,
+    components: str = "magnitude",
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    levels: int = 20,
+    colorbar: bool = True,
+    colorbar_label: str | None = None,
+    colorbar_kwargs: dict | None = None,
+    title: str | None = None,
+) -> matplotlib.axes.Axes:
+    """Plot a smoothly interpolated slip field in map view.
+
+    Unlike :func:`slip`, which draws discrete colored patches, this renders a
+    continuous field: a ``pcolormesh`` with Gouraud shading over the structured
+    grid for rectangular faults, or a ``tricontourf`` over the patch centroids
+    for triangular (or unstructured) faults.
+
+    Args:
+        fault: Fault geometry (rectangular or triangular).
+        slip_vector: Slip vector, length N or 2*N (see :func:`slip`).
+        ax: Axes to plot on. Creates a new figure if ``None``.
+        components: Component to display for a 2*N vector: ``'strike'``,
+            ``'dip'``, or ``'magnitude'`` (default).
+        cmap: Matplotlib colormap name.
+        vmin: Minimum color limit.
+        vmax: Maximum color limit.
+        levels: Number of filled contour levels (``tricontourf`` path only).
+        colorbar: Whether to add a colorbar.
+        colorbar_label: Colorbar label. Auto-generated if ``None``.
+        colorbar_kwargs: Extra kwargs passed to ``fig.colorbar()``.
+        title: Axes title.
+
+    Returns:
+        The axes used for plotting.
+    """
+    values = _get_slip_component(slip_vector, fault.n_patches, components)
+    if colorbar_label is None:
+        labels = {
+            "strike": "Strike-slip (m)",
+            "dip": "Dip-slip (m)",
+            "magnitude": "Slip magnitude (m)",
+        }
+        colorbar_label = labels.get(components, "Slip (m)")
+
+    ax = _ensure_axes(ax)
+    cx, cy = _patch_centroids_km(fault)
+
+    mesh: Any
+    if fault.engine == "okada" and fault.grid_shape is not None:
+        n_length, n_width = fault.grid_shape
+        shape = (n_width, n_length)
+        mesh = ax.pcolormesh(
+            cx.reshape(shape),
+            cy.reshape(shape),
+            values.reshape(shape),
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            shading="gouraud",
+        )
+    else:
+        mesh = ax.tricontourf(
+            cx, cy, values, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax
+        )
+
+    ax.set_aspect("equal")
+    ax.set_xlabel("East (km)")
+    ax.set_ylabel("North (km)")
+    if title is not None:
+        ax.set_title(title)
+    if colorbar:
+        ax.figure.colorbar(mesh, ax=ax, label=colorbar_label, **(colorbar_kwargs or {}))
+    return ax
+
+
 def resolution(
     fault: Fault,
     values: np.ndarray,

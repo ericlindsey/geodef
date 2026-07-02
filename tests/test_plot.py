@@ -372,6 +372,63 @@ class TestPlotSlip:
         assert isinstance(ax, plt.Axes)
 
 
+@pytest.fixture
+def tri_fault_4():
+    """A 4-triangle fault (enough centroids for tricontourf)."""
+    nodes = np.array(
+        [
+            [0.0, 0, 0],
+            [1e4, 0, 0],
+            [0, 1e4, -5e3],
+            [1e4, 1e4, -5e3],
+            [2e4, 0, 0],
+            [2e4, 1e4, -5e3],
+        ]
+    )
+    tris = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3], [4, 5, 3]])
+    return Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+
+
+class TestSlipInterpolated:
+    """Tests for geodef.plot.slip_interpolated."""
+
+    def test_rect_pcolormesh(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip_interpolated(rect_fault, slip_magnitude)
+        assert isinstance(ax, plt.Axes)
+        # gouraud pcolormesh registers a QuadMesh collection
+        assert len(ax.collections) >= 1
+
+    def test_single_component_vector(self, rect_fault):
+        n = rect_fault.n_patches
+        ax = geodef.plot.slip_interpolated(rect_fault, np.linspace(0, 2, n))
+        assert isinstance(ax, plt.Axes)
+
+    def test_tri_tricontourf(self, tri_fault_4):
+        vals = np.array([0.5, 1.0, 1.5, 0.8])
+        ax = geodef.plot.slip_interpolated(tri_fault_4, vals)
+        assert isinstance(ax, plt.Axes)
+
+    def test_colorbar_disabled(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip_interpolated(rect_fault, slip_magnitude, colorbar=False)
+        assert len(ax.figure.get_axes()) == 1
+
+    def test_title_and_labels(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip_interpolated(rect_fault, slip_magnitude, title="Slip")
+        assert ax.get_title() == "Slip"
+        assert "east" in ax.get_xlabel().lower()
+
+    def test_existing_axes(self, rect_fault, slip_magnitude):
+        fig, ax_in = plt.subplots()
+        ax_out = geodef.plot.slip_interpolated(rect_fault, slip_magnitude, ax=ax_in)
+        assert ax_out is ax_in
+
+    def test_components_strike(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip_interpolated(
+            rect_fault, slip_magnitude, components="strike"
+        )
+        assert isinstance(ax, plt.Axes)
+
+
 # ======================================================================
 # plot.resolution and plot.uncertainty
 # ======================================================================

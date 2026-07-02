@@ -33,6 +33,27 @@ plots that amplitude directly and ignores the `components` selector.
 
 ---
 
+## `plot.slip_interpolated(fault, slip_vector, **kwargs)`
+
+A smoothly interpolated slip field in map view, as an alternative to the
+discrete patches of `plot.slip`. Rectangular faults are drawn with a
+Gouraud-shaded `pcolormesh` over the structured grid; triangular (or
+unstructured) faults use `tricontourf` over the patch centroids.
+
+```python
+geodef.plot.slip_interpolated(fault, result.slip_vector,
+    components='magnitude',
+    cmap='viridis',
+    levels=20,          # filled contour levels (tricontourf path)
+    colorbar=True,
+    title='Interpolated slip',
+)
+```
+
+The `tricontourf` path needs at least three patches to triangulate.
+
+---
+
 ## `plot.patches(fault, values, **kwargs)`
 
 Generic per-patch scalar plot. `plot.slip`, `plot.resolution`, and `plot.uncertainty` are thin wrappers around this.
