@@ -104,6 +104,29 @@ covariance, reconstruct it from the source arrays and pass `covariance=`.
 The covariance is used automatically by `geodef.invert()` and
 `geodef.stack_weights()`.
 
+### Building a spatially-correlated covariance
+
+InSAR noise (atmosphere, orbits) is spatially correlated, so a diagonal `C_d`
+underestimates its true structure. `geodef.spatial_covariance()` builds a full
+`C_d` from an isotropic covariance model whose correlation decays with
+great-circle distance:
+
+```python
+from geodef import InSAR, spatial_covariance
+
+# sill = correlated variance (m^2), correlation_length in meters
+Cdata = spatial_covariance(
+    lon, lat, sill=4e-4, correlation_length=8_000.0,
+    model="exponential", nugget=1e-4,
+)
+insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
+```
+
+`C_ij = sill * rho(d_ij) + nugget * delta_ij`, with `rho(d) = exp(-d / L)`
+(`'exponential'`) or `exp(-(d / L)^2)` (`'gaussian'`). The `nugget` adds
+uncorrelated white noise on the diagonal. Applies to one-value-per-station
+datasets (`InSAR`, `Vertical`).
+
 ---
 
 ## Observation vector layout

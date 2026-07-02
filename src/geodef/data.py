@@ -645,3 +645,74 @@ class Vertical(DataSet):
         displacement, sigma = raw[:, 2], raw[:, 3]
 
         return cls(lon, lat, displacement, sigma)
+
+
+def spatial_covariance(
+    lon: np.ndarray,
+    lat: np.ndarray,
+    sill: float,
+    correlation_length: float,
+    *,
+    model: str = "exponential",
+    nugget: float = 0.0,
+) -> np.ndarray:
+    """Build a spatially-correlated data covariance matrix ``C_d``.
+
+    Off-diagonal correlation decays with great-circle distance between
+    observation points, following a stationary, isotropic covariance model.
+    This is the standard way to represent spatially-correlated InSAR noise
+    (atmosphere, orbits) instead of assuming diagonal ``C_d``. Pass the result
+    as ``covariance=`` to a single-component-per-station dataset (``InSAR`` or
+    ``Vertical``), or thread it through ``geodef.invert()``.
+
+    The covariance is ``C_ij = sill * rho(d_ij) + nugget * delta_ij`` where
+    ``rho`` is the correlation function:
+
+    - ``'exponential'``: ``rho(d) = exp(-d / L)``
+    - ``'gaussian'``:    ``rho(d) = exp(-(d / L)^2)``
+
+    Args:
+        lon: Observation longitudes in degrees, shape (n,).
+        lat: Observation latitudes in degrees, shape (n,).
+        sill: Correlated variance (the ``d -> 0`` covariance), in the squared
+            units of the observations (e.g. m^2).
+        correlation_length: Decorrelation length ``L`` in meters.
+        model: Correlation function, ``'exponential'`` or ``'gaussian'``.
+        nugget: Uncorrelated (white-noise) variance added to the diagonal,
+            in the same squared units as ``sill``.
+
+    Returns:
+        Symmetric positive-definite covariance matrix, shape (n, n).
+
+    Raises:
+        ValueError: If ``sill`` or ``correlation_length`` is not positive,
+            ``nugget`` is negative, or ``model`` is unknown.
+    """
+    if sill <= 0:
+        raise ValueError("sill must be positive")
+    if correlation_length <= 0:
+        raise ValueError("correlation_length must be positive")
+    if nugget < 0:
+        raise ValueError("nugget must be non-negative")
+
+    lat_r = np.radians(np.asarray(lat, dtype=float))
+    lon_r = np.radians(np.asarray(lon, dtype=float))
+    dlat = lat_r[:, None] - lat_r[None, :]
+    dlon = lon_r[:, None] - lon_r[None, :]
+    a = (
+        np.sin(dlat / 2.0) ** 2
+        + np.cos(lat_r)[:, None] * np.cos(lat_r)[None, :] * np.sin(dlon / 2.0) ** 2
+    )
+    dist = 2.0 * 6371000.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+
+    ratio = dist / correlation_length
+    if model == "exponential":
+        rho = np.exp(-ratio)
+    elif model == "gaussian":
+        rho = np.exp(-(ratio**2))
+    else:
+        raise ValueError(f"model must be 'exponential' or 'gaussian', got {model!r}")
+
+    cov = sill * rho
+    cov[np.diag_indices_from(cov)] += nugget
+    return cov

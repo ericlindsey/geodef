@@ -7,7 +7,7 @@ covariance, component filtering (GNSS), and file I/O.
 import numpy as np
 import pytest
 
-from geodef.data import GNSS, DataSet, InSAR, Vertical
+from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 
 # ======================================================================
 # Fixtures
@@ -419,6 +419,77 @@ class TestCovariance:
         cov1 = vertical_4pt.covariance
         cov2 = vertical_4pt.covariance
         assert cov1 is cov2
+
+
+class TestSpatialCovariance:
+    """Test the spatially-correlated covariance builder."""
+
+    def _pts(self):
+        lon = np.array([100.0, 100.1, 100.2, 100.5])
+        lat = np.array([0.0, 0.0, 0.0, 0.0])
+        return lon, lat
+
+    def test_shape_and_symmetry(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(lon, lat, sill=4e-4, correlation_length=10_000.0)
+        assert cov.shape == (4, 4)
+        np.testing.assert_allclose(cov, cov.T)
+
+    def test_diagonal_is_sill_plus_nugget(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=4e-4, correlation_length=10_000.0, nugget=1e-4
+        )
+        np.testing.assert_allclose(np.diag(cov), 4e-4 + 1e-4)
+
+    def test_correlation_decays_with_distance(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(lon, lat, sill=1.0, correlation_length=10_000.0)
+        # points ordered by increasing distance from point 0
+        row = cov[0]
+        assert row[1] > row[2] > row[3]
+
+    def test_positive_definite(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=1.0, correlation_length=5_000.0, nugget=1e-3
+        )
+        assert np.all(np.linalg.eigvalsh(cov) > 0)
+
+    def test_gaussian_model(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=1.0, correlation_length=10_000.0, model="gaussian"
+        )
+        assert cov[0, 1] > cov[0, 2]
+
+    def test_usable_as_insar_covariance(self):
+        lon, lat = self._pts()
+        n = len(lon)
+        cov = spatial_covariance(lon, lat, sill=4e-4, correlation_length=10_000.0)
+        insar = InSAR(
+            lon,
+            lat,
+            los=np.zeros(n),
+            sigma=np.full(n, 0.02),
+            look_e=np.full(n, 0.4),
+            look_n=np.full(n, -0.1),
+            look_u=np.full(n, 0.9),
+            covariance=cov,
+        )
+        np.testing.assert_array_equal(insar.covariance, cov)
+
+    def test_invalid_sill_raises(self):
+        lon, lat = self._pts()
+        with pytest.raises(ValueError, match="sill"):
+            spatial_covariance(lon, lat, sill=0.0, correlation_length=1.0)
+
+    def test_invalid_model_raises(self):
+        lon, lat = self._pts()
+        with pytest.raises(ValueError, match="model"):
+            spatial_covariance(
+                lon, lat, sill=1.0, correlation_length=1.0, model="spherical"
+            )
 
 
 # ======================================================================
