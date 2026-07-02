@@ -5,6 +5,7 @@ __version__ = "0.1.0"
 from geodef import (
     cache,
     euler,
+    geomap,
     greens,
     mesh,
     okada,
@@ -37,6 +38,7 @@ __all__ = [
     # Submodules
     "cache",
     "euler",
+    "geomap",
     "greens",
     "mesh",
     "okada",

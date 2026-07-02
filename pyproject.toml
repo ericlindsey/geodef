@@ -85,5 +85,12 @@ warn_unused_configs = true
 files = ["src/geodef"]
 
 [[tool.mypy.overrides]]
-module = ["scipy.*", "pyproj.*", "meshpy.*", "mpl_toolkits.*", "netCDF4"]
+module = [
+    "scipy.*",
+    "pyproj.*",
+    "meshpy.*",
+    "mpl_toolkits.*",
+    "netCDF4",
+    "cartopy.*",
+]
 ignore_missing_imports = true
