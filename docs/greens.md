@@ -6,7 +6,7 @@ Assembles projected Green's matrices from `Fault` and `DataSet` objects, and pro
 
 ## High-level assembly
 
-### `greens(fault, datasets) → np.ndarray`
+### `greens(fault, datasets, *, components='both', rake=None, slip_azimuth=None) → np.ndarray`
 
 Build the projected Green's matrix for one or more datasets. Results are automatically cached.
 
@@ -17,21 +17,29 @@ G = geodef.greens.greens(fault, gnss)                # shape (n_obs, 2*N)
 G = geodef.greens.greens(fault, [gnss, insar])       # rows stacked vertically
 ```
 
-Columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
+By default columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
 
-`greens()` always returns both components. If you need a single-component G for a custom workflow, slice the result manually:
+Pass `components=` to have `greens()` return a single-component matrix (shape
+`(n_obs, N)`) directly, using the same slip basis as `geodef.invert()`:
 
 ```python
-N = fault.n_patches
-G_strike = G[:, :N]   # strike-slip columns only
-G_dip    = G[:, N:]   # dip-slip columns only
+G_strike = geodef.greens.greens(fault, gnss, components='strike')
+G_dip    = geodef.greens.greens(fault, gnss, components='dip')
+G_rake   = geodef.greens.greens(fault, gnss, components='rake', rake=90.0)
+G_az     = geodef.greens.greens(fault, gnss, components='azimuth', slip_azimuth=350.0)
 ```
 
-`geodef.invert()` applies this column selection internally when
-`components='strike'` or `components='dip'`. For one-parameter rake or
-geographic-azimuth inversions, it projects the two blocked column sets into the
-active slip basis before solving. The same projection is also applied to
-stress-kernel regularization.
+For `'rake'` (a single rake for every patch) and `'azimuth'` (a fixed
+geographic slip azimuth, so each patch's local rake is `slip_azimuth - strike_i`)
+the two blocked column sets are combined as `cos(theta)*G_strike + sin(theta)*G_dip`.
+
+### `select_slip_columns(G_full, n_patches, components, rake=None, fault_strike=None, slip_azimuth=None) → np.ndarray`
+
+The reduction primitive behind `greens(components=...)`. Apply it to any
+already-assembled `(M, 2*N)` matrix — a Green's matrix or a stress kernel — to
+project it into a one-component slip basis. `geodef.invert()` uses it internally
+for `components='strike'|'dip'|'rake'|'azimuth'` and to project stress-kernel
+regularization into the active basis.
 
 ### `stack_obs(datasets) → np.ndarray`
 

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
-from geodef.greens import greens, stack_obs, stack_weights
+from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
@@ -513,7 +513,7 @@ class LinearSystem:
         G_full = greens(fault, datasets)
         self.d = stack_obs(datasets)
         self.W = stack_weights(datasets)
-        self.G = _select_columns(
+        self.G = select_slip_columns(
             G_full,
             n_patches,
             components,
@@ -1384,50 +1384,6 @@ def _validate_args(
             )
 
 
-def _select_columns(
-    G_full: np.ndarray,
-    n_patches: int,
-    components: str,
-    rake: float | None = None,
-    fault_strike: np.ndarray | None = None,
-    slip_azimuth: float | None = None,
-) -> np.ndarray:
-    """Select G matrix columns for the requested slip component(s).
-
-    Args:
-        G_full: Full Green's matrix, shape (M, 2*N).
-        n_patches: Number of fault patches N.
-        components: ``'both'``, ``'strike'``, ``'dip'``, ``'rake'``, or
-            ``'azimuth'``.
-        rake: Fixed rake angle in degrees (same for all patches), used
-            when ``components='rake'``.
-        fault_strike: Per-patch strike angles in degrees, shape (N,).
-            Required when ``components='azimuth'``.
-        slip_azimuth: Geographic slip azimuth in degrees CW from North,
-            used when ``components='azimuth'``.
-
-    Returns:
-        G matrix with columns for the requested components.
-    """
-    if components == "both":
-        return G_full
-    if components == "strike":
-        return G_full[:, :n_patches]
-    if components == "dip":
-        return G_full[:, n_patches:]
-    if components == "rake":
-        if rake is None:
-            raise ValueError("components='rake' requires a rake angle in degrees")
-        theta = np.deg2rad(rake)  # scalar
-    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
-        if fault_strike is None or slip_azimuth is None:
-            raise ValueError(
-                "components='azimuth' requires fault_strike and slip_azimuth"
-            )
-        theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
-    return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
-
-
 def _apply_weights(
     G: np.ndarray,
     d: np.ndarray,
@@ -1488,7 +1444,7 @@ def _build_smoothing_matrix(
 
     if smoothing == "stresskernel":
         K = fault.stress_kernel()
-        return _select_columns(
+        return select_slip_columns(
             K,
             fault.n_patches,
             components,

@@ -11,7 +11,13 @@ import pytest
 import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
-from geodef.greens import _project_greens, greens, stack_obs, stack_weights
+from geodef.greens import (
+    _project_greens,
+    greens,
+    select_slip_columns,
+    stack_obs,
+    stack_weights,
+)
 
 # ======================================================================
 # Fixtures
@@ -492,3 +498,56 @@ class TestTriEngine:
         obs_lon = np.array([100.1])
         with pytest.raises(ValueError, match="Unknown kind"):
             tri_fault.greens_matrix(obs_lat, obs_lon, kind="tilt")
+
+
+# ======================================================================
+# 6. greens() component selection
+# ======================================================================
+
+
+class TestGreensComponents:
+    """greens(components=...) reduces columns like the inversion path."""
+
+    def test_both_is_default(self, fault_4x3, gnss_4station):
+        G_default = greens(fault_4x3, gnss_4station)
+        G_both = greens(fault_4x3, gnss_4station, components="both")
+        assert G_both.shape == (12, 24)
+        np.testing.assert_array_equal(G_default, G_both)
+
+    def test_strike_selects_first_block(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        G_strike = greens(fault_4x3, gnss_4station, components="strike")
+        assert G_strike.shape == (12, 12)
+        np.testing.assert_array_equal(G_strike, G_full[:, :12])
+
+    def test_dip_selects_second_block(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        G_dip = greens(fault_4x3, gnss_4station, components="dip")
+        assert G_dip.shape == (12, 12)
+        np.testing.assert_array_equal(G_dip, G_full[:, 12:])
+
+    def test_rake_matches_manual_combination(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        rake = 30.0
+        G_rake = greens(fault_4x3, gnss_4station, components="rake", rake=rake)
+        theta = np.deg2rad(rake)
+        expected = G_full[:, :12] * np.cos(theta) + G_full[:, 12:] * np.sin(theta)
+        assert G_rake.shape == (12, 12)
+        np.testing.assert_allclose(G_rake, expected)
+
+    def test_azimuth_uses_per_patch_strike(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        az = 350.0
+        G_az = greens(fault_4x3, gnss_4station, components="azimuth", slip_azimuth=az)
+        theta = np.deg2rad(az - fault_4x3.strike)
+        expected = G_full[:, :12] * np.cos(theta) + G_full[:, 12:] * np.sin(theta)
+        np.testing.assert_allclose(G_az, expected)
+
+    def test_rake_requires_angle(self, fault_4x3, gnss_4station):
+        with pytest.raises(ValueError, match="rake"):
+            greens(fault_4x3, gnss_4station, components="rake")
+
+    def test_helper_matches_greens(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        reduced = select_slip_columns(G_full, fault_4x3.n_patches, "strike")
+        np.testing.assert_array_equal(reduced, G_full[:, :12])

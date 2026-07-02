@@ -430,7 +430,65 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
     return key
 
 
-def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
+def select_slip_columns(
+    G_full: np.ndarray,
+    n_patches: int,
+    components: str,
+    rake: float | None = None,
+    fault_strike: np.ndarray | None = None,
+    slip_azimuth: float | None = None,
+) -> np.ndarray:
+    """Project a two-component Green's matrix onto the requested slip basis.
+
+    The full matrix has ``2*N`` columns blocked as ``[strike-slip | dip-slip]``.
+    This reduces them to the columns for the requested component(s), matching
+    the semantics used by :func:`geodef.invert`.
+
+    Args:
+        G_full: Full Green's (or stress-kernel) matrix, shape (M, 2*N).
+        n_patches: Number of fault patches N.
+        components: ``'both'`` (no reduction), ``'strike'``, ``'dip'``,
+            ``'rake'`` (fixed rake, all patches), or ``'azimuth'`` (fixed
+            geographic slip azimuth, per-patch local rake).
+        rake: Fixed rake angle in degrees, required for ``'rake'``.
+        fault_strike: Per-patch strike angles in degrees, shape (N,),
+            required for ``'azimuth'``.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            required for ``'azimuth'``.
+
+    Returns:
+        Reduced matrix: shape (M, 2*N) for ``'both'``, else (M, N).
+
+    Raises:
+        ValueError: If required angles for the chosen basis are missing.
+    """
+    if components == "both":
+        return G_full
+    if components == "strike":
+        return G_full[:, :n_patches]
+    if components == "dip":
+        return G_full[:, n_patches:]
+    if components == "rake":
+        if rake is None:
+            raise ValueError("components='rake' requires a rake angle in degrees")
+        theta = np.deg2rad(rake)  # scalar
+    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
+        if fault_strike is None or slip_azimuth is None:
+            raise ValueError(
+                "components='azimuth' requires fault_strike and slip_azimuth"
+            )
+        theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
+    return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
+
+
+def greens(
+    fault: Fault,
+    datasets: DataSet | list[DataSet],
+    *,
+    components: str = "both",
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
+) -> np.ndarray:
     """Build a projected Green's matrix for one or more datasets.
 
     Computes the raw Green's matrix from the fault at each dataset's
@@ -440,12 +498,19 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
     Args:
         fault: A ``Fault`` instance.
         datasets: A single ``DataSet`` or a list of them.
+        components: Slip basis for the returned columns: ``'both'``
+            (default, ``2*N`` columns), ``'strike'``, ``'dip'``, ``'rake'``
+            (fixed rake), or ``'azimuth'`` (fixed geographic slip azimuth).
+            The reduction uses the same semantics as :func:`geodef.invert`.
+        rake: Fixed rake angle in degrees, required for ``components='rake'``.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            required for ``components='azimuth'``.
 
     Returns:
         Projected Green's matrix. For a single dataset with M observations
-        and a fault with N patches: shape (M_obs, 2*N). Columns are blocked:
-        ``[:N]`` strike-slip, ``[N:]`` dip-slip. For multiple datasets:
-        rows are vertically stacked.
+        and a fault with N patches: shape (M_obs, 2*N) for ``'both'``, else
+        (M_obs, N). Columns for ``'both'`` are blocked ``[:N]`` strike-slip,
+        ``[N:]`` dip-slip. For multiple datasets rows are vertically stacked.
     """
     from geodef.data import DataSet
 
@@ -463,7 +528,15 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
         )
         blocks.append(G_proj)
 
-    return np.vstack(blocks)
+    G_full = np.vstack(blocks)
+    return select_slip_columns(
+        G_full,
+        fault.n_patches,
+        components,
+        rake,
+        fault_strike=fault.strike,
+        slip_azimuth=slip_azimuth,
+    )
 
 
 def stack_obs(datasets: DataSet | list[DataSet]) -> np.ndarray:
