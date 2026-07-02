@@ -663,7 +663,7 @@ def TDSetupS(obs,alpha,slip_b,nu,TriVertex,SideVec):
 
     # Transform strains from ADCS into TDCS
     # 3x3 Transformation matrix
-    B = np.row_stack(([1, 0, 0],np.column_stack((np.zeros((2,1)),np.array(A,ndmin=2).T))))
+    B = np.vstack(([1, 0, 0],np.column_stack((np.zeros((2,1)),np.array(A,ndmin=2).T))))
     exx,eyy,ezz,exy,exz,eyz = TensTrans(exx,eyy,ezz,exy,exz,eyz,B)
 
     return exx,eyy,ezz,exy,exz,eyz

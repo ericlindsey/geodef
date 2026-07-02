@@ -822,13 +822,10 @@ def vectors(
             ax.figure.colorbar(sc, ax=ax, label=vertical_colorbar_label)
 
         if predicted is not None and has_vert:
-            pu = predicted[2::3]
             ax.scatter(
                 x_km,
                 y_km,
-                c=pu,
                 s=sizes,
-                cmap="RdBu_r",
                 edgecolors=pred_color,
                 linewidths=1.0,
                 facecolors="none",

@@ -124,11 +124,15 @@ def ecef2geod(
         if np.all(np.abs(alat - alat0) < 1.0e-15):
             break
     cutoff = 80.0 * 2 * np.pi / 360.0
-    hght = np.where(
-        alat > cutoff,
-        z / np.sin(alat) - curvn + ellps.e2 * curvn,
-        (sqr / np.cos(alat)) - curvn,
-    )
+    # np.where evaluates both branches, so the high-latitude expression divides
+    # by sin(alat) even near the equator where it is discarded; ignore the
+    # resulting invalid values rather than warn.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        hght = np.where(
+            alat > cutoff,
+            z / np.sin(alat) - curvn + ellps.e2 * curvn,
+            (sqr / np.cos(alat)) - curvn,
+        )
     alat = alat * 180.0 / np.pi
     along = along * 180.0 / np.pi
     along = np.where(along > 180.0, along - 360.0, along)
