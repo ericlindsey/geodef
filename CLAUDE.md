@@ -4,9 +4,11 @@
 
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
-(locked fault / coupling) applications. The core runtime library is complete;
-remaining work is broader documentation and notebook refresh, tooling cleanup,
-teaching material, and targeted extensions.
+(locked fault / coupling) applications. As of **v1.0** the runtime library, the
+ten-part tutorial course, and the per-module documentation are complete; `ruff`
+and `mypy` pass cleanly and the suite runs warning-free. Forward-looking work
+(a GPU/autodiff accelerator, earthquake-cycle modeling, more Green's engines)
+is tracked in `PLAN.md`.
 
 **Read `PYTHON.md` before editing any code.**
 
@@ -21,8 +23,8 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 815 tests collected across 16 files
-├── tutorials/             # Progressive teaching notebooks executed by pytest
+├── tests/                 # 884 tests collected across 18 files
+├── tutorials/             # Ten-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
@@ -42,11 +44,13 @@ geodef/
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
-| `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment |
-| `plot` | Visualization: slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty |
+| `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
+| `plot` | Visualization: slip, interpolated slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty |
+| `geomap` | Optional Cartopy geographic map plotting (basemap, fault/vector overlays) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
 | `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 (optional deps) |
+| `euler` | Euler pole fitting and rigid-block velocity prediction |
 
 See `docs/` for per-module API reference with examples.
 
@@ -106,6 +110,8 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**814 tests passing, 1 skipped, 815 collected** across 16 test files covering
+**883 tests passing, 1 skipped, 884 collected** across 18 test files covering
 all modules. Reference data in `tests/reference_data/` — Matlab-generated
-`.npz` files for cross-validation of Green's function engines.
+`.npz` files for cross-validation of Green's function engines. A few `Fault.load`
+tests need reference data under `related/stress-shadows/` and are skipped when
+it is absent.
