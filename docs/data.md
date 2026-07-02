@@ -94,6 +94,19 @@ All data classes share:
 | `data.project(ue, un, uz)` | Maps displacement components to observation space |
 | `data.n_stations` | Number of physical observation locations |
 | `data.n_obs` | Length of the observation vector |
+| `data.name` | Optional per-station site names, shape `(n_stations,)`, or `None` |
+
+### Site names
+
+`GNSS` and `Vertical` accept an optional `name=` array of per-station labels.
+When present, names round-trip through `save()`/`load()` as a leading
+`# names:` comment line, so the numeric data block stays unchanged:
+
+```python
+gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, name=["P001", "P002", "P003"])
+gnss.save("stations.dat")
+GNSS.load("stations.dat").name   # array(['P001', 'P002', 'P003'])
+```
 
 ### Setting a full covariance matrix
 

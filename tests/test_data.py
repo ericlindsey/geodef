@@ -421,6 +421,73 @@ class TestCovariance:
         assert cov1 is cov2
 
 
+class TestSiteNames:
+    """Test optional per-station site names and their file round-trip."""
+
+    def _names(self):
+        return np.array(["ABCD", "WXYZ", "TEST"])
+
+    def _gnss(self, name=None):
+        n = 3
+        lon = np.array([1.0, 2.0, 3.0])
+        lat = np.zeros(n)
+        return GNSS(
+            lon,
+            lat,
+            ve=np.ones(n),
+            vn=np.ones(n),
+            vu=np.ones(n),
+            se=np.ones(n),
+            sn=np.ones(n),
+            su=np.ones(n),
+            name=name,
+        )
+
+    def test_name_default_none(self):
+        assert self._gnss().name is None
+
+    def test_name_stored(self):
+        g = self._gnss(self._names())
+        np.testing.assert_array_equal(g.name, self._names())
+
+    def test_name_wrong_length_raises(self):
+        with pytest.raises(ValueError, match="name"):
+            self._gnss(np.array(["A", "B"]))
+
+    def test_gnss_name_roundtrip(self, tmp_path):
+        g = self._gnss(self._names())
+        p = tmp_path / "g.dat"
+        g.save(p)
+        loaded = GNSS.load(p)
+        np.testing.assert_array_equal(loaded.name, self._names())
+
+    def test_gnss_name_roundtrip_en(self, tmp_path):
+        g = self._gnss(self._names())
+        p = tmp_path / "g.dat"
+        g.save(p)
+        loaded = GNSS.load(p, components="en")
+        np.testing.assert_array_equal(loaded.name, self._names())
+
+    def test_gnss_no_name_roundtrip(self, tmp_path):
+        g = self._gnss()
+        p = tmp_path / "g.dat"
+        g.save(p)
+        assert GNSS.load(p).name is None
+
+    def test_vertical_name_roundtrip(self, tmp_path):
+        n = 3
+        v = Vertical(
+            np.array([1.0, 2.0, 3.0]),
+            np.zeros(n),
+            np.zeros(n),
+            np.ones(n),
+            name=self._names(),
+        )
+        p = tmp_path / "v.dat"
+        v.save(p)
+        np.testing.assert_array_equal(Vertical.load(p).name, self._names())
+
+
 class TestGNSSCorrelation:
     """Test the optional East-North correlation (rho) on GNSS."""
 
