@@ -279,25 +279,55 @@ class Fault:
         vertices: np.ndarray,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
+        *,
+        triangles: np.ndarray | None = None,
     ) -> "Fault":
         """Create a triangular fault from ENU vertex coordinates.
 
         Derives per-triangle strike, dip, and geographic centers automatically
         from the vertex geometry.
 
+        Two input forms are supported:
+
+        - **Explicit vertices** (``triangles=None``): ``vertices`` is a
+          ``(N, 3, 3)`` array giving all three ENU corners of each triangle.
+        - **Node array + connectivity** (``triangles`` given): ``vertices`` is
+          a shared ``(M, 3)`` node array and ``triangles`` is an ``(N, 3)``
+          index array. This preserves the exact patch order of an imported
+          mesh and its node sharing.
+
         Args:
-            vertices: Triangle vertices in local ENU meters, shape (N, 3, 3).
-                Each triangle has 3 vertices with [east, north, up] coords.
+            vertices: Either per-triangle corners, shape (N, 3, 3), or a shared
+                node array, shape (M, 3), each row [east, north, up] in meters.
             ref_lat: Reference latitude for the ENU origin.
             ref_lon: Reference longitude for the ENU origin.
+            triangles: Optional connectivity indices into ``vertices``, shape
+                (N, 3). When given, ``vertices`` is treated as a node array.
 
         Returns:
             A triangular Fault with ``engine="tri"``.
+
+        Raises:
+            ValueError: If the array shapes are inconsistent, or a triangle
+                index is out of range.
         """
         from geodef.mesh import _compute_strike_dip
 
         vertices = np.asarray(vertices, dtype=float)
-        if vertices.ndim != 3 or vertices.shape[1:] != (3, 3):
+        if triangles is not None:
+            triangles = np.asarray(triangles, dtype=int)
+            if vertices.ndim != 2 or vertices.shape[1] != 3:
+                raise ValueError(
+                    "with triangles, vertices must be a node array of shape (M, 3)"
+                )
+            if triangles.ndim != 2 or triangles.shape[1] != 3:
+                raise ValueError("triangles must have shape (N, 3)")
+            if triangles.size and (
+                triangles.min() < 0 or triangles.max() >= vertices.shape[0]
+            ):
+                raise ValueError("triangles index out of range for the node array")
+            vertices = vertices[triangles]  # (N, 3, 3)
+        elif vertices.ndim != 3 or vertices.shape[1:] != (3, 3):
             raise ValueError("vertices must have shape (N, 3, 3)")
 
         strike, dip = _compute_strike_dip(vertices)

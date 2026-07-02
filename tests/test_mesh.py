@@ -366,6 +366,45 @@ class TestFaultFromTriangles:
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
         assert fault._depth[0] == pytest.approx(10000.0, abs=100.0)
 
+    def test_node_connectivity_matches_explicit(self):
+        from geodef.fault import Fault
+
+        nodes = np.array(
+            [[0, 0, 0], [10000, 0, 0], [0, 10000, -5000], [10000, 10000, -5000]],
+            dtype=float,
+        )
+        tris = np.array([[0, 1, 2], [1, 3, 2]])
+        f_conn = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+        f_expl = Fault.from_triangles(nodes[tris], 0.0, 100.0)
+        assert f_conn.n_patches == 2
+        np.testing.assert_allclose(f_conn._vertices, f_expl._vertices)
+        np.testing.assert_allclose(f_conn.strike, f_expl.strike)
+
+    def test_connectivity_preserves_order(self):
+        from geodef.fault import Fault
+
+        nodes = np.array(
+            [[0, 0, 0], [10000, 0, 0], [0, 10000, -5000], [10000, 10000, -5000]],
+            dtype=float,
+        )
+        tris = np.array([[1, 3, 2], [0, 1, 2]])  # swapped order
+        fault = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+        np.testing.assert_allclose(fault._vertices[0], nodes[tris[0]])
+
+    def test_connectivity_bad_node_shape_raises(self):
+        from geodef.fault import Fault
+
+        verts = np.zeros((2, 3, 3))
+        with pytest.raises(ValueError, match="node array"):
+            Fault.from_triangles(verts, 0.0, 100.0, triangles=np.array([[0, 1, 2]]))
+
+    def test_connectivity_index_out_of_range_raises(self):
+        from geodef.fault import Fault
+
+        nodes = np.zeros((3, 3))
+        with pytest.raises(ValueError, match="out of range"):
+            Fault.from_triangles(nodes, 0.0, 100.0, triangles=np.array([[0, 1, 5]]))
+
 
 class TestFaultFromMesh:
     def test_basic(self, simple_mesh):
