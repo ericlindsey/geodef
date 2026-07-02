@@ -1,6 +1,7 @@
 """Tests for geodef.plot visualization module."""
 
 import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend for testing
 
 import matplotlib.pyplot as plt
@@ -10,46 +11,57 @@ import pytest
 import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
-from geodef.invert import InversionResult
-
 
 # ======================================================================
 # Fixtures
 # ======================================================================
 
+
 @pytest.fixture
 def rect_fault():
     """Simple 2x3 rectangular planar fault."""
     return Fault.planar(
-        lat=0.0, lon=0.0, depth=10_000.0,
-        strike=0.0, dip=45.0,
-        length=30_000.0, width=20_000.0,
-        n_length=3, n_width=2,
+        lat=0.0,
+        lon=0.0,
+        depth=10_000.0,
+        strike=0.0,
+        dip=45.0,
+        length=30_000.0,
+        width=20_000.0,
+        n_length=3,
+        n_width=2,
     )
 
 
 @pytest.fixture
 def tri_fault():
     """Simple triangular fault with 2 patches."""
-    n = 2
     lat = np.array([0.0, 0.01])
     lon = np.array([0.0, 0.01])
     depth = np.array([5000.0, 8000.0])
     strike = np.array([0.0, 0.0])
     dip = np.array([45.0, 45.0])
 
-    vertices = np.array([
-        [[0.0, 0.0, -5000.0],
-         [5000.0, 0.0, -5000.0],
-         [2500.0, 5000.0, -8000.0]],
-        [[5000.0, 0.0, -5000.0],
-         [10000.0, 0.0, -5000.0],
-         [7500.0, 5000.0, -8000.0]],
-    ])
+    vertices = np.array(
+        [
+            [[0.0, 0.0, -5000.0], [5000.0, 0.0, -5000.0], [2500.0, 5000.0, -8000.0]],
+            [
+                [5000.0, 0.0, -5000.0],
+                [10000.0, 0.0, -5000.0],
+                [7500.0, 5000.0, -8000.0],
+            ],
+        ]
+    )
     return Fault(
-        lat, lon, depth, strike, dip,
-        length=None, width=None,
-        vertices=vertices, engine="tri",
+        lat,
+        lon,
+        depth,
+        strike,
+        dip,
+        length=None,
+        width=None,
+        vertices=vertices,
+        engine="tri",
     )
 
 
@@ -136,23 +148,27 @@ def close_figures():
 # Internal helpers
 # ======================================================================
 
+
 class TestGetPatchVerticesLocal:
     """Tests for _get_patch_vertices_local."""
 
     def test_rect_shape(self, rect_fault):
         from geodef.plot import _get_patch_vertices_local
+
         verts = _get_patch_vertices_local(rect_fault)
         assert len(verts) == rect_fault.n_patches
         assert verts[0].shape == (4, 2)
 
     def test_tri_shape(self, tri_fault):
         from geodef.plot import _get_patch_vertices_local
+
         verts = _get_patch_vertices_local(tri_fault)
         assert len(verts) == tri_fault.n_patches
         assert verts[0].shape == (3, 2)
 
     def test_rect_units_km(self, rect_fault):
         from geodef.plot import _get_patch_vertices_local
+
         verts = _get_patch_vertices_local(rect_fault)
         all_x = np.concatenate([v[:, 0] for v in verts])
         all_y = np.concatenate([v[:, 1] for v in verts])
@@ -163,6 +179,7 @@ class TestGetPatchVerticesLocal:
 
     def test_tri_units_km(self, tri_fault):
         from geodef.plot import _get_patch_vertices_local
+
         verts = _get_patch_vertices_local(tri_fault)
         all_x = np.concatenate([v[:, 0] for v in verts])
         assert np.ptp(all_x) == pytest.approx(10.0, abs=1.0)
@@ -173,6 +190,7 @@ class TestGetSlipComponent:
 
     def test_magnitude(self, rect_fault, slip_magnitude):
         from geodef.plot import _get_slip_component
+
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "magnitude")
         assert vals.shape == (n,)
@@ -181,6 +199,7 @@ class TestGetSlipComponent:
 
     def test_strike(self, rect_fault, slip_magnitude):
         from geodef.plot import _get_slip_component
+
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "strike")
         assert vals.shape == (n,)
@@ -188,6 +207,7 @@ class TestGetSlipComponent:
 
     def test_dip(self, rect_fault, slip_magnitude):
         from geodef.plot import _get_slip_component
+
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "dip")
         assert vals.shape == (n,)
@@ -195,17 +215,20 @@ class TestGetSlipComponent:
 
     def test_invalid_component(self, rect_fault, slip_magnitude):
         from geodef.plot import _get_slip_component
+
         with pytest.raises(ValueError, match="component"):
             _get_slip_component(slip_magnitude, rect_fault.n_patches, "invalid")
 
     def test_single_component(self, rect_fault):
         from geodef.plot import _get_slip_component
+
         n = rect_fault.n_patches
         vals = _get_slip_component(np.ones(n) * 2.0, n, "magnitude")
         np.testing.assert_allclose(vals, 2.0)
 
     def test_wrong_slip_length(self, rect_fault):
         from geodef.plot import _get_slip_component
+
         with pytest.raises(ValueError, match="length"):
             _get_slip_component(np.ones(5), rect_fault.n_patches, "magnitude")
 
@@ -215,12 +238,14 @@ class TestStationsToLocal:
 
     def test_returns_two_arrays(self, rect_fault, gnss_3comp):
         from geodef.plot import _stations_to_local_km
+
         x, y = _stations_to_local_km(gnss_3comp, rect_fault)
         assert x.shape == (gnss_3comp.n_stations,)
         assert y.shape == (gnss_3comp.n_stations,)
 
     def test_units_km(self, rect_fault, gnss_3comp):
         from geodef.plot import _stations_to_local_km
+
         x, y = _stations_to_local_km(gnss_3comp, rect_fault)
         assert np.all(np.abs(x) < 50)
         assert np.all(np.abs(y) < 50)
@@ -229,6 +254,7 @@ class TestStationsToLocal:
 # ======================================================================
 # plot.patches (generic per-patch scalar)
 # ======================================================================
+
 
 class TestPlotPatches:
     """Tests for geodef.plot.patches."""
@@ -240,8 +266,7 @@ class TestPlotPatches:
 
     def test_custom_label(self, rect_fault):
         values = rect_fault._depth * 1e-3
-        ax = geodef.plot.patches(rect_fault, values,
-                                  colorbar_label="Depth (km)")
+        ax = geodef.plot.patches(rect_fault, values, colorbar_label="Depth (km)")
         assert isinstance(ax, plt.Axes)
 
     def test_tri_fault(self, tri_fault):
@@ -257,14 +282,14 @@ class TestPlotPatches:
 
     def test_kwargs_passthrough(self, rect_fault):
         values = np.ones(rect_fault.n_patches)
-        ax = geodef.plot.patches(rect_fault, values,
-                                  edgecolor="blue", linewidth=2)
+        ax = geodef.plot.patches(rect_fault, values, edgecolor="blue", linewidth=2)
         assert isinstance(ax, plt.Axes)
 
 
 # ======================================================================
 # plot.slip
 # ======================================================================
+
 
 class TestPlotSlip:
     """Tests for geodef.plot.slip."""
@@ -322,8 +347,9 @@ class TestPlotSlip:
         assert coll.get_clim() == (0, 2)
 
     def test_kwargs_passthrough(self, rect_fault, slip_magnitude):
-        ax = geodef.plot.slip(rect_fault, slip_magnitude,
-                              edgecolor="red", linewidth=2.0)
+        ax = geodef.plot.slip(
+            rect_fault, slip_magnitude, edgecolor="red", linewidth=2.0
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_title(self, rect_fault, slip_magnitude):
@@ -340,14 +366,16 @@ class TestPlotSlip:
         assert "km" in ax.get_ylabel().lower() or "north" in ax.get_ylabel().lower()
 
     def test_colorbar_kwargs(self, rect_fault, slip_magnitude):
-        ax = geodef.plot.slip(rect_fault, slip_magnitude,
-                              colorbar_kwargs={"orientation": "horizontal"})
+        ax = geodef.plot.slip(
+            rect_fault, slip_magnitude, colorbar_kwargs={"orientation": "horizontal"}
+        )
         assert isinstance(ax, plt.Axes)
 
 
 # ======================================================================
 # plot.resolution and plot.uncertainty
 # ======================================================================
+
 
 class TestPlotResolution:
     """Tests for geodef.plot.resolution."""
@@ -365,8 +393,9 @@ class TestPlotResolution:
 
     def test_custom_kwargs(self, rect_fault):
         values = np.random.rand(rect_fault.n_patches)
-        ax = geodef.plot.resolution(rect_fault, values,
-                                     cmap="plasma", edgecolor="white")
+        ax = geodef.plot.resolution(
+            rect_fault, values, cmap="plasma", edgecolor="white"
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_tri_fault(self, tri_fault):
@@ -392,6 +421,7 @@ class TestPlotUncertainty:
 # ======================================================================
 # plot.vectors (6.7c)
 # ======================================================================
+
 
 class TestPlotVectors:
     """Tests for geodef.plot.vectors."""
@@ -431,25 +461,25 @@ class TestPlotVectors:
         assert isinstance(ax, plt.Axes)
 
     def test_custom_colors(self, gnss_3comp, rect_fault):
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  obs_color="blue", pred_color="green")
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, obs_color="blue", pred_color="green"
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_with_legend(self, gnss_3comp, rect_fault):
         predicted = gnss_3comp.obs * 0.9
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  predicted=predicted, legend=True)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, predicted=predicted, legend=True
+        )
         legend = ax.get_legend()
         assert legend is not None
 
     def test_quiver_kwargs(self, gnss_3comp, rect_fault):
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  quiver_kwargs={"width": 0.005})
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, quiver_kwargs={"width": 0.005})
         assert isinstance(ax, plt.Axes)
 
     def test_ellipse_kwargs(self, gnss_3comp, rect_fault):
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  ellipse_kwargs={"alpha": 0.5})
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, ellipse_kwargs={"alpha": 0.5})
         assert isinstance(ax, plt.Axes)
 
     def test_equal_aspect(self, gnss_3comp, rect_fault):
@@ -467,11 +497,13 @@ class TestPlotVectors:
     def test_ellipses_at_tip(self, gnss_3comp, rect_fault):
         """Ellipses should be centered at arrow tips, not bases."""
         from matplotlib.patches import Ellipse
+
         ax = geodef.plot.vectors(gnss_3comp, rect_fault, scale=500.0)
         ellipses = [p for p in ax.patches if isinstance(p, Ellipse)]
         assert len(ellipses) == gnss_3comp.n_stations
         # Check that the first ellipse center differs from the station
         from geodef.plot import _stations_to_local_km
+
         x_km, y_km = _stations_to_local_km(gnss_3comp, rect_fault)
         ell0_center = ellipses[0].center
         tip_x = x_km[0] + gnss_3comp._ve[0] * 500.0
@@ -480,26 +512,34 @@ class TestPlotVectors:
 
     def test_scale_arrow_legend(self, gnss_3comp, rect_fault):
         predicted = gnss_3comp.obs * 0.9
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  predicted=predicted, scale=500.0,
-                                  legend=True, scale_arrow=0.01,
-                                  scale_arrow_label="10 mm observed")
+        ax = geodef.plot.vectors(
+            gnss_3comp,
+            rect_fault,
+            predicted=predicted,
+            scale=500.0,
+            legend=True,
+            scale_arrow=0.01,
+            scale_arrow_label="10 mm observed",
+        )
         # Should have quiver artists for the scale arrows (uses ax.quiver)
         from matplotlib.quiver import Quiver
+
         quivers = [c for c in ax.get_children() if isinstance(c, Quiver)]
         # At least 3: obs data, pred data, and 1-2 scale arrows
         assert len(quivers) >= 3
 
     def test_scale_arrow_obs_only(self, gnss_3comp, rect_fault):
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault, scale=500.0,
-                                  legend=True, scale_arrow=0.01)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, scale=500.0, legend=True, scale_arrow=0.01
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_legend_proxy_artists(self, gnss_3comp, rect_fault):
         """Without scale_arrow, legend should use proxy Line2D artists."""
         predicted = gnss_3comp.obs * 0.9
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                  predicted=predicted, legend=True)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, predicted=predicted, legend=True
+        )
         legend = ax.get_legend()
         assert legend is not None
         assert len(legend.get_texts()) == 2  # "Observed" and "Predicted"
@@ -512,8 +552,9 @@ class TestPlotVectors:
 
     def test_vertical_colorbar_off(self, gnss_3comp, rect_fault):
         """vertical_colorbar=False suppresses the colorbar."""
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="vertical",
-                                  vertical_colorbar=False)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="vertical", vertical_colorbar=False
+        )
         # Only the main axes, no colorbar axes
         assert len(ax.figure.axes) == 1
 
@@ -524,47 +565,65 @@ class TestPlotVectors:
 
     def test_both_colorbar_off(self, gnss_3comp, rect_fault):
         """vertical_colorbar=False suppresses the colorbar in 'both' mode."""
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="both",
-                                  vertical_colorbar=False)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="both", vertical_colorbar=False
+        )
         assert len(ax.figure.axes) == 1
 
     def test_both_dots_below_arrows(self, gnss_3comp, rect_fault):
         """In 'both' mode the vertical dots must sit below the arrows, so
         large dots cannot hide the displacement vectors."""
         from matplotlib.quiver import Quiver
+
         predicted = gnss_3comp.obs * 0.9
-        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="both",
-                                  predicted=predicted)
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="both", predicted=predicted
+        )
         quivers = [c for c in ax.get_children() if isinstance(c, Quiver)]
-        dots = [c for c in ax.get_children()
-                if isinstance(c, matplotlib.collections.PathCollection)
-                and len(c.get_offsets()) > 0]
+        dots = [
+            c
+            for c in ax.get_children()
+            if isinstance(c, matplotlib.collections.PathCollection)
+            and len(c.get_offsets()) > 0
+        ]
         assert quivers and dots
-        assert (max(d.get_zorder() for d in dots)
-                < min(q.get_zorder() for q in quivers))
+        assert max(d.get_zorder() for d in dots) < min(q.get_zorder() for q in quivers)
 
     def test_vertical_dot_size_scales(self, gnss_3comp, rect_fault):
         """scale parameter should affect dot sizes in vertical mode."""
-        ax1 = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                   components="vertical", scale=1)
-        ax2 = geodef.plot.vectors(gnss_3comp, rect_fault,
-                                   components="vertical", scale=5)
+        ax1 = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="vertical", scale=1
+        )
+        ax2 = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="vertical", scale=5
+        )
         # Get the scatter PathCollection
-        sc1 = [c for c in ax1.get_children()
-               if isinstance(c, matplotlib.collections.PathCollection)
-               and len(c.get_offsets()) > 0][0]
-        sc2 = [c for c in ax2.get_children()
-               if isinstance(c, matplotlib.collections.PathCollection)
-               and len(c.get_offsets()) > 0][0]
+        sc1 = [
+            c
+            for c in ax1.get_children()
+            if isinstance(c, matplotlib.collections.PathCollection)
+            and len(c.get_offsets()) > 0
+        ][0]
+        sc2 = [
+            c
+            for c in ax2.get_children()
+            if isinstance(c, matplotlib.collections.PathCollection)
+            and len(c.get_offsets()) > 0
+        ][0]
         # Larger scale should give larger max dot size
         assert sc2.get_sizes().max() > sc1.get_sizes().max()
 
     def test_scale_arrow_loc(self, gnss_3comp, rect_fault):
         """scale_arrow_loc should not raise for valid locations."""
         for loc in ("lower right", "lower left", "upper right", "upper left"):
-            ax = geodef.plot.vectors(gnss_3comp, rect_fault, scale=500.0,
-                                      legend=True, scale_arrow=0.01,
-                                      scale_arrow_loc=loc)
+            ax = geodef.plot.vectors(
+                gnss_3comp,
+                rect_fault,
+                scale=500.0,
+                legend=True,
+                scale_arrow=0.01,
+                scale_arrow_loc=loc,
+            )
             assert isinstance(ax, plt.Axes)
             plt.close(ax.figure)
 
@@ -572,6 +631,7 @@ class TestPlotVectors:
 # ======================================================================
 # plot.insar (6.7d)
 # ======================================================================
+
 
 class TestPlotInSAR:
     """Tests for geodef.plot.insar."""
@@ -586,22 +646,25 @@ class TestPlotInSAR:
 
     def test_layout_obs_pred_res(self, insar_data, rect_fault):
         predicted = insar_data.obs * 0.9
-        result = geodef.plot.insar(insar_data, rect_fault,
-                                    predicted=predicted, layout="obs_pred_res")
+        result = geodef.plot.insar(
+            insar_data, rect_fault, predicted=predicted, layout="obs_pred_res"
+        )
         # Returns array of axes for multi-panel
         assert hasattr(result, "__len__")
         assert len(result) == 3
 
     def test_layout_residual(self, insar_data, rect_fault):
         predicted = insar_data.obs * 0.9
-        ax = geodef.plot.insar(insar_data, rect_fault,
-                                predicted=predicted, layout="residual")
+        ax = geodef.plot.insar(
+            insar_data, rect_fault, predicted=predicted, layout="residual"
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_layout_pred(self, insar_data, rect_fault):
         predicted = insar_data.obs * 0.9
-        ax = geodef.plot.insar(insar_data, rect_fault,
-                                predicted=predicted, layout="pred")
+        ax = geodef.plot.insar(
+            insar_data, rect_fault, predicted=predicted, layout="pred"
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_existing_axes(self, insar_data, rect_fault):
@@ -618,8 +681,9 @@ class TestPlotInSAR:
         assert isinstance(ax, plt.Axes)
 
     def test_scatter_kwargs(self, insar_data, rect_fault):
-        ax = geodef.plot.insar(insar_data, rect_fault,
-                                scatter_kwargs={"s": 5, "marker": "s"})
+        ax = geodef.plot.insar(
+            insar_data, rect_fault, scatter_kwargs={"s": 5, "marker": "s"}
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_colorbar(self, insar_data, rect_fault):
@@ -641,8 +705,9 @@ class TestPlotInSAR:
     def test_obs_pred_res_ylabel_suppressed(self, insar_data, rect_fault):
         """Middle and right panels should not have y-axis labels."""
         predicted = insar_data.obs * 0.9
-        axes = geodef.plot.insar(insar_data, rect_fault,
-                                  predicted=predicted, layout="obs_pred_res")
+        axes = geodef.plot.insar(
+            insar_data, rect_fault, predicted=predicted, layout="obs_pred_res"
+        )
         # First panel keeps ylabel
         assert axes[0].get_ylabel() != ""
         # Second and third panels should have empty ylabel
@@ -653,6 +718,7 @@ class TestPlotInSAR:
 # ======================================================================
 # plot.fit (6.7g)
 # ======================================================================
+
 
 class TestPlotFit:
     """Tests for geodef.plot.fit."""
@@ -699,6 +765,7 @@ class TestPlotFit:
 # plot.fault3d (6.7e)
 # ======================================================================
 
+
 class TestPlotFault3D:
     """Tests for geodef.plot.fault3d."""
 
@@ -707,6 +774,7 @@ class TestPlotFault3D:
         assert ax is not None
         # 3D axes
         from mpl_toolkits.mplot3d import Axes3D
+
         assert isinstance(ax, Axes3D)
 
     def test_color_by_depth(self, rect_fault):
@@ -796,6 +864,7 @@ class TestPlotFault3D:
 # plot.map (6.7f)
 # ======================================================================
 
+
 class TestPlotMap:
     """Tests for geodef.plot.map."""
 
@@ -831,13 +900,15 @@ class TestPlotMap:
         assert ax.get_aspect() in ("equal", 1.0)
 
     def test_patch_kwargs(self, rect_fault):
-        ax = geodef.plot.map(rect_fault,
-                              patch_kwargs={"edgecolor": "blue", "facecolor": "none"})
+        ax = geodef.plot.map(
+            rect_fault, patch_kwargs={"edgecolor": "blue", "facecolor": "none"}
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_trace_kwargs(self, rect_fault):
-        ax = geodef.plot.map(rect_fault, show_trace=True,
-                              trace_kwargs={"color": "red", "linewidth": 3})
+        ax = geodef.plot.map(
+            rect_fault, show_trace=True, trace_kwargs={"color": "red", "linewidth": 3}
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_tri_fault(self, tri_fault):
@@ -847,6 +918,7 @@ class TestPlotMap:
     def test_surface_trace_smooth(self, rect_fault):
         """Surface trace should be a smooth line, not a zigzag."""
         from geodef.plot import _get_surface_trace
+
         trace = _get_surface_trace(rect_fault)
         assert trace.shape[0] >= 2
         assert trace.shape[1] == 2
@@ -856,31 +928,33 @@ class TestPlotMap:
         _, _, Vt = np.linalg.svd(centered, full_matrices=False)
         proj = centered @ Vt[0]
         diffs = np.diff(proj)
-        assert np.all(diffs >= -1e-3) or np.all(diffs <= 1e-3), \
+        assert np.all(diffs >= -1e-3) or np.all(diffs <= 1e-3), (
             "Surface trace should be monotonic along principal direction"
+        )
 
     def test_map_with_values(self, rect_fault):
         """Map should color patches when values array is provided."""
         vals = np.random.rand(rect_fault.n_patches)
-        ax = geodef.plot.map(rect_fault, values=vals, cmap="hot",
-                              colorbar_label="Test")
+        ax = geodef.plot.map(rect_fault, values=vals, cmap="hot", colorbar_label="Test")
         assert isinstance(ax, plt.Axes)
         # Colorbar adds an extra axes
         assert len(ax.figure.axes) >= 2
 
     def test_map_with_slip_vector(self, rect_fault, slip_magnitude):
         """Map should accept slip_vector and decompose it."""
-        ax = geodef.plot.map(rect_fault, slip_vector=slip_magnitude,
-                              components="magnitude",
-                              colorbar_label="Slip (m)")
+        ax = geodef.plot.map(
+            rect_fault,
+            slip_vector=slip_magnitude,
+            components="magnitude",
+            colorbar_label="Slip (m)",
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_map_values_and_slip_exclusive(self, rect_fault, slip_magnitude):
         """Providing both values and slip_vector should raise."""
         vals = np.random.rand(rect_fault.n_patches)
         with pytest.raises(ValueError, match="not both"):
-            geodef.plot.map(rect_fault, values=vals,
-                            slip_vector=slip_magnitude)
+            geodef.plot.map(rect_fault, values=vals, slip_vector=slip_magnitude)
 
     def test_map_no_colorbar(self, rect_fault):
         """colorbar=False should suppress colorbar even with values."""
@@ -893,11 +967,13 @@ class TestPlotMap:
 # LCurveResult.plot / ABICCurveResult.plot refactor (6.7h)
 # ======================================================================
 
+
 class TestLCurvePlotRefactor:
     """Tests for refactored LCurveResult.plot."""
 
     def _make_lcurve(self):
         from geodef.invert import LCurveResult
+
         return LCurveResult(
             smoothing_values=np.logspace(-2, 2, 10),
             misfits=np.logspace(1, -1, 10),
@@ -918,8 +994,10 @@ class TestLCurvePlotRefactor:
 
     def test_kwargs(self):
         lc = self._make_lcurve()
-        ax = lc.plot(marker_kwargs={"color": "green", "markersize": 15},
-                      line_kwargs={"color": "purple", "linewidth": 3})
+        ax = lc.plot(
+            marker_kwargs={"color": "green", "markersize": 15},
+            line_kwargs={"color": "purple", "linewidth": 3},
+        )
         assert isinstance(ax, plt.Axes)
 
     def test_annotate_default(self):
@@ -942,6 +1020,7 @@ class TestABICCurvePlotRefactor:
 
     def _make_abic(self):
         from geodef.invert import ABICCurveResult
+
         return ABICCurveResult(
             smoothing_values=np.logspace(-2, 2, 10),
             abic_values=np.random.rand(10) * 100 + 50,
@@ -963,8 +1042,7 @@ class TestABICCurvePlotRefactor:
 
     def test_kwargs(self):
         ac = self._make_abic()
-        ax = ac.plot(marker_kwargs={"color": "green"},
-                      line_kwargs={"linewidth": 3})
+        ax = ac.plot(marker_kwargs={"color": "green"}, line_kwargs={"linewidth": 3})
         assert isinstance(ax, plt.Axes)
 
     def test_annotate_default(self):
@@ -986,11 +1064,13 @@ class TestABICCurvePlotRefactor:
 # Module structure
 # ======================================================================
 
+
 class TestModuleStructure:
     """Tests for the plot module's public API."""
 
     def test_importable(self):
         import geodef.plot
+
         assert hasattr(geodef.plot, "patches")
         assert hasattr(geodef.plot, "slip")
         assert hasattr(geodef.plot, "resolution")

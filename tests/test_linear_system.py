@@ -16,7 +16,6 @@ import pytest
 
 from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
-from geodef.greens import stack_weights
 from geodef.invert import (
     LinearSystem,
     abic_curve,
@@ -28,18 +27,23 @@ from geodef.invert import (
     model_uncertainty,
 )
 
-
 # ======================================================================
 # Fixtures (shared with test_invert.py pattern)
 # ======================================================================
 
+
 @pytest.fixture
 def fault_4x3():
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=15e3,
-        strike=320.0, dip=15.0,
-        length=80e3, width=40e3,
-        n_length=4, n_width=3,
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=320.0,
+        dip=15.0,
+        length=80e3,
+        width=40e3,
+        n_length=4,
+        n_width=3,
     )
 
 
@@ -59,9 +63,14 @@ def gnss(fault_4x3, obs_points):
     slip_ds = np.ones(fault_4x3.n_patches) * 2.0
     ue, un, uz = fault_4x3.displacement(lat, lon, slip_ss, slip_ds)
     return GNSS(
-        lon, lat,
-        ve=ue, vn=un, vu=uz,
-        se=np.full(n, 0.001), sn=np.full(n, 0.001), su=np.full(n, 0.001),
+        lon,
+        lat,
+        ve=ue,
+        vn=un,
+        vu=uz,
+        se=np.full(n, 0.001),
+        sn=np.full(n, 0.001),
+        su=np.full(n, 0.001),
     )
 
 
@@ -77,15 +86,20 @@ def insar(fault_4x3, obs_points):
     look_u = np.full(n, 0.92)
     los = look_e * ue + look_n * un + look_u * uz
     return InSAR(
-        lon, lat,
-        los=los, sigma=np.full(n, 0.001),
-        look_e=look_e, look_n=look_n, look_u=look_u,
+        lon,
+        lat,
+        los=los,
+        sigma=np.full(n, 0.001),
+        look_e=look_e,
+        look_n=look_n,
+        look_u=look_u,
     )
 
 
 # ======================================================================
 # Construction and cached properties
 # ======================================================================
+
 
 class TestLinearSystemConstruction:
     def test_basic_construction(self, fault_4x3, gnss):
@@ -161,6 +175,7 @@ class TestCachedProperties:
 # invert() method parity with module-level function
 # ======================================================================
 
+
 class TestInvertMethodParity:
     def test_unregularized_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
@@ -171,15 +186,15 @@ class TestInvertMethodParity:
     def test_regularized_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
         r_method = sys.invert(smoothing_strength=10.0)
-        r_func = invert(fault_4x3, gnss, smoothing="laplacian",
-                        smoothing_strength=10.0)
+        r_func = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=10.0)
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_multi_dataset_matches_wrapper(self, fault_4x3, gnss, insar):
         sys = LinearSystem(fault_4x3, [gnss, insar], smoothing="damping")
         r_method = sys.invert(smoothing_strength=1.0)
-        r_func = invert(fault_4x3, [gnss, insar], smoothing="damping",
-                        smoothing_strength=1.0)
+        r_func = invert(
+            fault_4x3, [gnss, insar], smoothing="damping", smoothing_strength=1.0
+        )
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_strike_only_matches_wrapper(self, fault_4x3, gnss):
@@ -191,10 +206,14 @@ class TestInvertMethodParity:
     def test_nnls_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, smoothing="damping")
         r_method = sys.invert(smoothing_strength=1.0, bounds=(0, None))
-        r_func = invert(fault_4x3, gnss, smoothing="damping",
-                        smoothing_strength=1.0, bounds=(0, None))
-        np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector,
-                                   rtol=1e-5)
+        r_func = invert(
+            fault_4x3,
+            gnss,
+            smoothing="damping",
+            smoothing_strength=1.0,
+            bounds=(0, None),
+        )
+        np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector, rtol=1e-5)
 
     def test_invalid_smoothing_strength_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
@@ -206,16 +225,18 @@ class TestInvertMethodParity:
 # lcurve() method parity and fast-path correctness
 # ======================================================================
 
+
 class TestLcurveMethod:
     def test_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
         lc_method = sys.lcurve(smoothing_range=(1e-1, 1e3), n=5)
-        lc_func = lcurve(fault_4x3, gnss, smoothing="laplacian",
-                         smoothing_range=(1e-1, 1e3), n=5)
-        np.testing.assert_allclose(lc_method.misfits, lc_func.misfits,
-                                   rtol=1e-10)
-        np.testing.assert_allclose(lc_method.model_norms, lc_func.model_norms,
-                                   rtol=1e-10)
+        lc_func = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-1, 1e3), n=5
+        )
+        np.testing.assert_allclose(lc_method.misfits, lc_func.misfits, rtol=1e-10)
+        np.testing.assert_allclose(
+            lc_method.model_norms, lc_func.model_norms, rtol=1e-10
+        )
 
     def test_wls_fast_path_matches_augmented(self, fault_4x3, gnss):
         """WLS fast path (GtWG + lam*LtL solve) must equal augmented lstsq."""
@@ -228,8 +249,9 @@ class TestLcurveMethod:
             d_aug = np.concatenate([sys.d_w, np.zeros(sys.L.shape[0])])
             GtG = G_aug.T @ G_aug
             m_aug = np.linalg.solve(GtG, G_aug.T @ d_aug)
-            np.testing.assert_allclose(m_fast, m_aug, atol=1e-10,
-                                       err_msg=f"Mismatch at lam={lam}")
+            np.testing.assert_allclose(
+                m_fast, m_aug, atol=1e-10, err_msg=f"Mismatch at lam={lam}"
+            )
 
     def test_no_smoothing_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
@@ -238,6 +260,7 @@ class TestLcurveMethod:
 
     def test_returns_lcurve_result(self, fault_4x3, gnss):
         from geodef.invert import LCurveResult
+
         sys = LinearSystem(fault_4x3, gnss, smoothing="damping")
         lc = sys.lcurve(n=5)
         assert isinstance(lc, LCurveResult)
@@ -248,16 +271,18 @@ class TestLcurveMethod:
 # abic_curve() method parity
 # ======================================================================
 
+
 class TestAbicCurveMethod:
     def test_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
         ac_method = sys.abic_curve(smoothing_range=(1e-1, 1e3), n=5)
-        ac_func = abic_curve(fault_4x3, gnss, smoothing="laplacian",
-                             smoothing_range=(1e-1, 1e3), n=5)
-        np.testing.assert_allclose(ac_method.abic_values, ac_func.abic_values,
-                                   rtol=1e-10)
-        np.testing.assert_allclose(ac_method.misfits, ac_func.misfits,
-                                   rtol=1e-10)
+        ac_func = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-1, 1e3), n=5
+        )
+        np.testing.assert_allclose(
+            ac_method.abic_values, ac_func.abic_values, rtol=1e-10
+        )
+        np.testing.assert_allclose(ac_method.misfits, ac_func.misfits, rtol=1e-10)
 
     def test_eig_LtL_cached_after_abic_curve(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
@@ -279,6 +304,7 @@ class TestAbicCurveMethod:
 # Post-inversion methods parity
 # ======================================================================
 
+
 class TestPostInversionParity:
     @pytest.fixture
     def result_and_sys(self, fault_4x3, gnss):
@@ -287,7 +313,10 @@ class TestPostInversionParity:
         return result, sys
 
     def test_dataset_diagnostics_matches_wrapper(
-        self, fault_4x3, gnss, result_and_sys,
+        self,
+        fault_4x3,
+        gnss,
+        result_and_sys,
     ):
         result, sys = result_and_sys
         diag_method = sys.dataset_diagnostics(result)
@@ -297,7 +326,10 @@ class TestPostInversionParity:
         assert diag_method[0].leverage == pytest.approx(diag_func[0].leverage)
 
     def test_model_covariance_matches_wrapper(
-        self, fault_4x3, gnss, result_and_sys,
+        self,
+        fault_4x3,
+        gnss,
+        result_and_sys,
     ):
         result, sys = result_and_sys
         Cm_method = sys.model_covariance(result)
@@ -305,7 +337,10 @@ class TestPostInversionParity:
         np.testing.assert_allclose(Cm_method, Cm_func, rtol=1e-10)
 
     def test_model_resolution_matches_wrapper(
-        self, fault_4x3, gnss, result_and_sys,
+        self,
+        fault_4x3,
+        gnss,
+        result_and_sys,
     ):
         result, sys = result_and_sys
         R_method = sys.model_resolution(result)
@@ -313,7 +348,10 @@ class TestPostInversionParity:
         np.testing.assert_allclose(R_method, R_func, rtol=1e-10)
 
     def test_model_uncertainty_matches_wrapper(
-        self, fault_4x3, gnss, result_and_sys,
+        self,
+        fault_4x3,
+        gnss,
+        result_and_sys,
     ):
         result, sys = result_and_sys
         unc_method = sys.model_uncertainty(result)

@@ -10,21 +10,31 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geodef.fault import Fault, _seg_to_patches, magnitude_to_moment, moment_to_magnitude
-
+from geodef.fault import (
+    Fault,
+    _seg_to_patches,
+    magnitude_to_moment,
+    moment_to_magnitude,
+)
 
 # ======================================================================
 # Fixtures
 # ======================================================================
 
+
 @pytest.fixture
 def simple_fault():
     """A 10x5 planar fault for general testing."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=15e3,
-        strike=320.0, dip=15.0,
-        length=100e3, width=50e3,
-        n_length=10, n_width=5,
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=320.0,
+        dip=15.0,
+        length=100e3,
+        width=50e3,
+        n_length=10,
+        n_width=5,
     )
 
 
@@ -32,16 +42,22 @@ def simple_fault():
 def single_patch():
     """A single-patch fault for simple forward model tests."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=10e3,
-        strike=0.0, dip=90.0,
-        length=10e3, width=10e3,
-        n_length=1, n_width=1,
+        lat=0.0,
+        lon=100.0,
+        depth=10e3,
+        strike=0.0,
+        dip=90.0,
+        length=10e3,
+        width=10e3,
+        n_length=1,
+        n_width=1,
     )
 
 
 # ======================================================================
 # 1. Construction and validation
 # ======================================================================
+
 
 class TestConstruction:
     """Test Fault.__init__ validation."""
@@ -79,7 +95,8 @@ class TestConstruction:
                 np.array([10e3]),
                 np.array([0.0]),
                 np.array([90.0]),
-                None, None,
+                None,
+                None,
                 engine="okada",
             )
 
@@ -104,6 +121,7 @@ class TestConstruction:
 # ======================================================================
 # 2. Fault.planar() factory
 # ======================================================================
+
 
 class TestPlanar:
     """Test Fault.planar() factory classmethod."""
@@ -142,12 +160,16 @@ class TestPlanar:
     def test_depth_varies_with_dip(self):
         """Patches should span a depth range consistent with dip."""
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3,
-            strike=0.0, dip=45.0,
-            length=50e3, width=50e3,
-            n_length=5, n_width=5,
+            lat=0.0,
+            lon=100.0,
+            depth=20e3,
+            strike=0.0,
+            dip=45.0,
+            length=50e3,
+            width=50e3,
+            n_length=5,
+            n_width=5,
         )
-        expected_range = 50e3 * np.sin(np.radians(45.0))
         # Patches span from shallowest to deepest across the dip direction
         patch_W = 50e3 / 5
         # Range should be (nW - 1) * patchW * sin(dip)
@@ -165,6 +187,7 @@ class TestPlanar:
 # ======================================================================
 # 3. Properties
 # ======================================================================
+
 
 class TestProperties:
     """Test computed properties."""
@@ -188,6 +211,7 @@ class TestProperties:
 # ======================================================================
 # 4. Forward modeling
 # ======================================================================
+
 
 class TestForwardModeling:
     """Test greens_matrix() and displacement()."""
@@ -215,7 +239,9 @@ class TestForwardModeling:
     def test_zero_slip_gives_zero_displacement(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
-        ue, un, uz = simple_fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=0.0)
+        ue, un, uz = simple_fault.displacement(
+            obs_lat, obs_lon, slip_strike=0.0, slip_dip=0.0
+        )
         np.testing.assert_allclose(ue, 0.0, atol=1e-15)
         np.testing.assert_allclose(un, 0.0, atol=1e-15)
         np.testing.assert_allclose(uz, 0.0, atol=1e-15)
@@ -248,6 +274,7 @@ class TestForwardModeling:
 # ======================================================================
 # 5. Moment and magnitude
 # ======================================================================
+
 
 class TestMomentMagnitude:
     """Test moment/magnitude calculations."""
@@ -288,6 +315,7 @@ class TestMomentMagnitude:
 # 6. Laplacian
 # ======================================================================
 
+
 class TestLaplacian:
     """Test laplacian property."""
 
@@ -310,7 +338,8 @@ class TestLaplacian:
         lats = np.linspace(0, 1, n)
         lons = np.full(n, 100.0)
         fault = Fault(
-            lats, lons,
+            lats,
+            lons,
             np.linspace(5e3, 30e3, n),
             np.zeros(n),
             np.full(n, 45.0),
@@ -342,6 +371,7 @@ class TestLaplacian:
 # 7. Patch index
 # ======================================================================
 
+
 class TestPatchIndex:
     """Test patch_index for structured grids."""
 
@@ -369,6 +399,7 @@ class TestPatchIndex:
 # ======================================================================
 # 8. File I/O
 # ======================================================================
+
 
 class TestFileIO:
     """Test save/load round-trip."""
@@ -400,6 +431,7 @@ class TestFileIO:
 # 9. Vertex computation
 # ======================================================================
 
+
 class TestVertices:
     """Test vertices_2d and vertices_3d."""
 
@@ -425,33 +457,48 @@ class TestVertices:
         # so vertices only extend along strike
         lons = v[0, :, 0]
         lats = v[0, :, 1]
-        assert np.min(lons) <= center_lon <= np.max(lons) or np.allclose(lons, center_lon, atol=0.01)
-        assert np.min(lats) <= center_lat <= np.max(lats) or np.allclose(lats, center_lat, atol=0.01)
+        assert np.min(lons) <= center_lon <= np.max(lons) or np.allclose(
+            lons, center_lon, atol=0.01
+        )
+        assert np.min(lats) <= center_lat <= np.max(lats) or np.allclose(
+            lats, center_lat, atol=0.01
+        )
 
 
 # ======================================================================
 # 10. Planar from corner
 # ======================================================================
 
+
 class TestPlanarFromCorner:
     """Test Fault.planar_from_corner() factory."""
 
     def test_same_n_patches(self):
         f = Fault.planar_from_corner(
-            lat=0.0, lon=100.0, depth=0.0,
-            strike=0.0, dip=45.0,
-            length=50e3, width=30e3,
-            n_length=5, n_width=3,
+            lat=0.0,
+            lon=100.0,
+            depth=0.0,
+            strike=0.0,
+            dip=45.0,
+            length=50e3,
+            width=30e3,
+            n_length=5,
+            n_width=3,
         )
         assert f.n_patches == 15
 
     def test_shallowest_patch_near_corner_depth(self):
         """Shallowest patches should be near the corner depth."""
         f = Fault.planar_from_corner(
-            lat=0.0, lon=100.0, depth=1000.0,
-            strike=0.0, dip=45.0,
-            length=50e3, width=30e3,
-            n_length=5, n_width=3,
+            lat=0.0,
+            lon=100.0,
+            depth=1000.0,
+            strike=0.0,
+            dip=45.0,
+            length=50e3,
+            width=30e3,
+            n_length=5,
+            n_width=3,
         )
         # Shallowest patches (first row, j=0)
         min_depth = np.min(f._depth)
@@ -465,15 +512,21 @@ class TestPlanarFromCorner:
 # 11. Stress kernel
 # ======================================================================
 
+
 class TestStressKernel:
     """Test stress_kernel method."""
 
     def test_stress_kernel_shape(self):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=15e3,
-            strike=0.0, dip=45.0,
-            length=30e3, width=20e3,
-            n_length=3, n_width=2,
+            lat=0.0,
+            lon=100.0,
+            depth=15e3,
+            strike=0.0,
+            dip=45.0,
+            length=30e3,
+            width=20e3,
+            n_length=3,
+            n_width=2,
         )
         K = fault.stress_kernel()
         assert K.shape == (24, 12)  # 4*6 x 2*6
@@ -482,6 +535,7 @@ class TestStressKernel:
 # ======================================================================
 # 12. Cross-validation with old FaultModel
 # ======================================================================
+
 
 class TestCrossValidation:
     """Verify that Fault.planar() produces the same geometry as the old code."""
@@ -499,15 +553,8 @@ class TestCrossValidation:
 
         fault = Fault.planar(lat0, lon0, depth0, strike, dip, length, width, nL, nW)
 
-        patchL = length / nL
         patchW = width / nW
-        sin_str = np.sin(np.radians(strike))
-        cos_str = np.cos(np.radians(strike))
         sin_dip = np.sin(np.radians(dip))
-        cos_dip = np.cos(np.radians(dip))
-
-        fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
-        fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
         fault_u0 = -0.5 * width * sin_dip
 
         expected_depths = []
@@ -517,13 +564,16 @@ class TestCrossValidation:
                 expected_depths.append(depth0 - u_offset)
 
         np.testing.assert_allclose(
-            fault._depth, expected_depths, rtol=1e-10,
+            fault._depth,
+            expected_depths,
+            rtol=1e-10,
         )
 
 
 # ======================================================================
 # 13. Seg format (_seg_to_patches algorithm)
 # ======================================================================
+
 
 class TestSegToPatches:
     """Test the flt2flt port: _seg_to_patches()."""
@@ -588,6 +638,7 @@ class TestSegToPatches:
 # 14. Seg format I/O
 # ======================================================================
 
+
 class TestSegIO:
     """Test loading and saving .seg files."""
 
@@ -623,10 +674,15 @@ class TestSegIO:
     def test_seg_save_load_roundtrip(self):
         """Save a uniform fault as .seg and reload it."""
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=15e3,
-            strike=30.0, dip=20.0,
-            length=100e3, width=50e3,
-            n_length=5, n_width=5,
+            lat=0.0,
+            lon=100.0,
+            depth=15e3,
+            strike=30.0,
+            dip=20.0,
+            length=100e3,
+            width=50e3,
+            n_length=5,
+            n_width=5,
         )
         with tempfile.NamedTemporaryFile(suffix=".seg", delete=False) as f:
             fname = f.name
@@ -642,7 +698,9 @@ class TestSegIO:
         # Depths match (flt2flt orders shallow-to-deep, planar() deep-to-shallow,
         # so compare sorted values)
         np.testing.assert_allclose(
-            np.sort(loaded._depth), np.sort(fault._depth), rtol=0.01,
+            np.sort(loaded._depth),
+            np.sort(fault._depth),
+            rtol=0.01,
         )
 
         Path(fname).unlink()
@@ -662,8 +720,14 @@ class TestSegIO:
         with tempfile.NamedTemporaryFile(suffix=".seg", delete=False, mode="w") as f:
             fname = f.name
             f.write("# test seg file with geometric growth\n")
-            f.write("# n  Vpl  x1  x2  x3  Length  Width  Strike  Dip  Rake  L0  W0  qL  qW\n")
-            f.write("1 1.0 0.0 0.0 0.0 60000.0 30000.0 0.0 30.0 90.0 10000.0 5000.0 1.0 1.5\n")
+            f.write(
+                "# n  Vpl  x1  x2  x3  Length  Width  Strike  Dip  Rake  "
+                "L0  W0  qL  qW\n"
+            )
+            f.write(
+                "1 1.0 0.0 0.0 0.0 60000.0 30000.0 0.0 30.0 90.0 "
+                "10000.0 5000.0 1.0 1.5\n"
+            )
 
         f = Fault.load(fname, format="seg")
         assert f.n_patches > 0
@@ -682,9 +746,11 @@ class TestSegIO:
 # 14. Triangular fault ned save
 # ======================================================================
 
+
 def _make_tri_fault() -> Fault:
     """Small triangular fault from a simple planar mesh."""
     from geodef.mesh import Mesh
+
     lon = np.array([100.0, 100.1, 100.0, 100.1])
     lat = np.array([0.0, 0.0, 0.1, 0.1])
     depth = np.array([5e3, 5e3, 15e3, 15e3])
@@ -736,6 +802,7 @@ class TestFaultSaveNed:
 # 15. Fault.to_gmt()
 # ======================================================================
 
+
 class TestFaultToGmt:
     """Test Fault.to_gmt() polygon export."""
 
@@ -748,15 +815,20 @@ class TestFaultToGmt:
         fpath = tmp_path / "fault.gmt"
         simple_fault.to_gmt(str(fpath), values=np.ones(simple_fault.n_patches))
         lines = fpath.read_text().splitlines()
-        segment_headers = [l for l in lines if l.startswith(">")]
+        segment_headers = [ln for ln in lines if ln.startswith(">")]
         assert len(segment_headers) == simple_fault.n_patches
 
     def test_z_values_in_header(self, tmp_path):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=10e3,
-            strike=0.0, dip=45.0,
-            length=20e3, width=10e3,
-            n_length=2, n_width=1,
+            lat=0.0,
+            lon=100.0,
+            depth=10e3,
+            strike=0.0,
+            dip=45.0,
+            length=20e3,
+            width=10e3,
+            n_length=2,
+            n_width=1,
         )
         values = np.array([1.5, 3.0])
         fpath = tmp_path / "fault.gmt"
@@ -767,9 +839,13 @@ class TestFaultToGmt:
 
     def test_default_values_zeros(self, tmp_path):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=10e3,
-            strike=0.0, dip=45.0,
-            length=10e3, width=10e3,
+            lat=0.0,
+            lon=100.0,
+            depth=10e3,
+            strike=0.0,
+            dip=45.0,
+            length=10e3,
+            width=10e3,
         )
         fpath = tmp_path / "fault.gmt"
         fault.to_gmt(str(fpath))  # no values
@@ -778,15 +854,20 @@ class TestFaultToGmt:
 
     def test_polygon_vertices_are_lon_lat(self, tmp_path):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=10e3,
-            strike=0.0, dip=45.0,
-            length=10e3, width=10e3,
+            lat=0.0,
+            lon=100.0,
+            depth=10e3,
+            strike=0.0,
+            dip=45.0,
+            length=10e3,
+            width=10e3,
         )
         fpath = tmp_path / "fault.gmt"
         fault.to_gmt(str(fpath))
         data_lines = [
-            l for l in fpath.read_text().splitlines()
-            if l and not l.startswith(">") and not l.startswith("#")
+            ln
+            for ln in fpath.read_text().splitlines()
+            if ln and not ln.startswith(">") and not ln.startswith("#")
         ]
         assert len(data_lines) > 0
         for line in data_lines:
@@ -803,7 +884,7 @@ class TestFaultToGmt:
         fpath = tmp_path / "tri.gmt"
         fault.to_gmt(str(fpath), values=np.ones(fault.n_patches))
         lines = fpath.read_text().splitlines()
-        segment_headers = [l for l in lines if l.startswith(">")]
+        segment_headers = [ln for ln in lines if ln.startswith(">")]
         assert len(segment_headers) == fault.n_patches
 
     def test_values_wrong_length_raises(self, simple_fault, tmp_path):

@@ -12,7 +12,6 @@ import pytest
 
 from geodef.okada92 import okada92
 
-
 # Standard elastic parameters
 _G = 30.0
 _NU = 0.25
@@ -30,8 +29,19 @@ class TestOkada92Basic:
     def test_returns_displacement_and_strain(self) -> None:
         """okada92 should return displacement array and strain matrix."""
         disp, strain = okada92(
-            10.0, 10.0, -5.0, 50.0, 0.0, 45.0,
-            100.0, 50.0, 1.0, 0.0, 0.0, _G, _NU,
+            10.0,
+            10.0,
+            -5.0,
+            50.0,
+            0.0,
+            45.0,
+            100.0,
+            50.0,
+            1.0,
+            0.0,
+            0.0,
+            _G,
+            _NU,
         )
         assert disp.shape == (3, 1)
         assert strain.shape == (3, 3)
@@ -42,31 +52,66 @@ class TestOkada92Basic:
         """Positive Z should raise ValueError."""
         with pytest.raises(ValueError, match="z-coordinate is positive"):
             okada92(
-                10.0, 0.0, 1.0, 50.0, 0.0, 45.0,
-                100.0, 50.0, 1.0, 0.0, 0.0, _G, _NU,
+                10.0,
+                0.0,
+                1.0,
+                50.0,
+                0.0,
+                45.0,
+                100.0,
+                50.0,
+                1.0,
+                0.0,
+                0.0,
+                _G,
+                _NU,
             )
 
     @pytest.mark.parametrize("dip", [15.0, 45.0, 70.0, 90.0])
     def test_various_dips_finite(self, dip: float) -> None:
         """Displacements should be finite for various dip angles."""
         disp, strain = okada92(
-            20.0, 20.0, -5.0, 30.0, 0.0, dip,
-            50.0, 25.0, 1.0, 0.0, 0.0, _G, _NU,
+            20.0,
+            20.0,
+            -5.0,
+            30.0,
+            0.0,
+            dip,
+            50.0,
+            25.0,
+            1.0,
+            0.0,
+            0.0,
+            _G,
+            _NU,
         )
         assert np.all(np.isfinite(disp))
 
-    @pytest.mark.parametrize("slip_type", [
-        (1.0, 0.0, 0.0),  # strike-slip
-        (0.0, 1.0, 0.0),  # dip-slip
-        (0.0, 0.0, 1.0),  # tensile
-    ])
+    @pytest.mark.parametrize(
+        "slip_type",
+        [
+            (1.0, 0.0, 0.0),  # strike-slip
+            (0.0, 1.0, 0.0),  # dip-slip
+            (0.0, 0.0, 1.0),  # tensile
+        ],
+    )
     def test_individual_slip_components(
-        self, slip_type: tuple[float, float, float],
+        self,
+        slip_type: tuple[float, float, float],
     ) -> None:
         """Each slip component should produce finite results independently."""
         disp, strain = okada92(
-            15.0, 15.0, -3.0, 20.0, 0.0, 45.0,
-            40.0, 20.0, *slip_type, _G, _NU,
+            15.0,
+            15.0,
+            -3.0,
+            20.0,
+            0.0,
+            45.0,
+            40.0,
+            20.0,
+            *slip_type,
+            _G,
+            _NU,
         )
         assert np.all(np.isfinite(disp))
         assert np.all(np.isfinite(strain))
@@ -81,8 +126,19 @@ class TestOkada92DepthVariation:
         disps = []
         for z in depths:
             disp, _ = okada92(
-                20.0, 0.0, z, 30.0, 0.0, 45.0,
-                50.0, 25.0, 1.0, 0.0, 0.0, _G, _NU,
+                20.0,
+                0.0,
+                z,
+                30.0,
+                0.0,
+                45.0,
+                50.0,
+                25.0,
+                1.0,
+                0.0,
+                0.0,
+                _G,
+                _NU,
             )
             disps.append(disp.flatten())
         for i in range(len(depths) - 1):
@@ -91,12 +147,34 @@ class TestOkada92DepthVariation:
     def test_deep_displacement_decays(self) -> None:
         """Far from the fault, displacements should be small."""
         disp_near, _ = okada92(
-            10.0, 0.0, -5.0, 30.0, 0.0, 45.0,
-            50.0, 25.0, 1.0, 0.0, 0.0, _G, _NU,
+            10.0,
+            0.0,
+            -5.0,
+            30.0,
+            0.0,
+            45.0,
+            50.0,
+            25.0,
+            1.0,
+            0.0,
+            0.0,
+            _G,
+            _NU,
         )
         disp_far, _ = okada92(
-            200.0, 200.0, -5.0, 30.0, 0.0, 45.0,
-            50.0, 25.0, 1.0, 0.0, 0.0, _G, _NU,
+            200.0,
+            200.0,
+            -5.0,
+            30.0,
+            0.0,
+            45.0,
+            50.0,
+            25.0,
+            1.0,
+            0.0,
+            0.0,
+            _G,
+            _NU,
         )
         mag_near = np.linalg.norm(disp_near)
         mag_far = np.linalg.norm(disp_far)
@@ -112,14 +190,27 @@ class TestOkada92Linearity:
         disp1, _ = okada92(*args, 1.0, 0.0, 0.0, _G, _NU)
         disp2, _ = okada92(*args, 2.0, 0.0, 0.0, _G, _NU)
         np.testing.assert_allclose(
-            disp2.flatten(), 2 * disp1.flatten(), rtol=1e-12,
+            disp2.flatten(),
+            2 * disp1.flatten(),
+            rtol=1e-12,
         )
 
     def test_zero_slip_zero_displacement(self) -> None:
         """Zero slip should produce zero displacement."""
         disp, strain = okada92(
-            20.0, 10.0, -5.0, 30.0, 0.0, 45.0,
-            50.0, 25.0, 0.0, 0.0, 0.0, _G, _NU,
+            20.0,
+            10.0,
+            -5.0,
+            30.0,
+            0.0,
+            45.0,
+            50.0,
+            25.0,
+            0.0,
+            0.0,
+            0.0,
+            _G,
+            _NU,
         )
         np.testing.assert_allclose(disp.flatten(), 0.0, atol=1e-15)
         np.testing.assert_allclose(strain, 0.0, atol=1e-15)

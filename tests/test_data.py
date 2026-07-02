@@ -4,18 +4,15 @@ Covers: construction, validation, properties, project() methods,
 covariance, component filtering (GNSS), and file I/O.
 """
 
-import tempfile
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from geodef.data import GNSS, InSAR, Vertical, DataSet
-
+from geodef.data import GNSS, DataSet, InSAR, Vertical
 
 # ======================================================================
 # Fixtures
 # ======================================================================
+
 
 @pytest.fixture
 def gnss_3station():
@@ -70,6 +67,7 @@ def vertical_4pt():
 # 1. DataSet base class
 # ======================================================================
 
+
 class TestDataSetBase:
     """Test that DataSet is an abstract base."""
 
@@ -90,6 +88,7 @@ class TestDataSetBase:
 # ======================================================================
 # 2. GNSS construction and properties
 # ======================================================================
+
 
 class TestGNSSConstruction:
     """Test GNSS.__init__ validation and basic properties."""
@@ -127,12 +126,8 @@ class TestGNSSConstruction:
     def test_horizontal_only(self, gnss_horizontal):
         assert gnss_horizontal.n_stations == 2
         assert gnss_horizontal.n_obs == 4  # 2 components x 2 stations
-        np.testing.assert_array_equal(
-            gnss_horizontal.obs, [1.0, 0.5, 2.0, 1.5]
-        )
-        np.testing.assert_array_equal(
-            gnss_horizontal.sigma, [0.1, 0.1, 0.2, 0.2]
-        )
+        np.testing.assert_array_equal(gnss_horizontal.obs, [1.0, 0.5, 2.0, 1.5])
+        np.testing.assert_array_equal(gnss_horizontal.sigma, [0.1, 0.1, 0.2, 0.2])
 
     def test_components_property(self, gnss_3station, gnss_horizontal):
         assert gnss_3station.components == "enu"
@@ -211,6 +206,7 @@ class TestGNSSConstruction:
 # 3. GNSS project()
 # ======================================================================
 
+
 class TestGNSSProject:
     """Test GNSS.project() maps displacement components correctly."""
 
@@ -242,6 +238,7 @@ class TestGNSSProject:
 # 4. InSAR construction and properties
 # ======================================================================
 
+
 class TestInSARConstruction:
     """Test InSAR.__init__ validation and basic properties."""
 
@@ -251,14 +248,10 @@ class TestInSARConstruction:
         assert insar_5pixel.greens_type == "displacement"
 
     def test_obs(self, insar_5pixel):
-        np.testing.assert_array_equal(
-            insar_5pixel.obs, [0.01, 0.02, 0.03, 0.02, 0.01]
-        )
+        np.testing.assert_array_equal(insar_5pixel.obs, [0.01, 0.02, 0.03, 0.02, 0.01])
 
     def test_sigma(self, insar_5pixel):
-        np.testing.assert_array_equal(
-            insar_5pixel.sigma, np.full(5, 0.005)
-        )
+        np.testing.assert_array_equal(insar_5pixel.sigma, np.full(5, 0.005))
 
     def test_immutable_arrays(self, insar_5pixel):
         with pytest.raises(ValueError):
@@ -292,6 +285,7 @@ class TestInSARConstruction:
 # ======================================================================
 # 5. InSAR project()
 # ======================================================================
+
 
 class TestInSARProject:
     """Test InSAR.project() applies LOS projection."""
@@ -329,6 +323,7 @@ class TestInSARProject:
 # 6. Vertical construction and properties
 # ======================================================================
 
+
 class TestVerticalConstruction:
     """Test Vertical.__init__ validation and basic properties."""
 
@@ -338,14 +333,10 @@ class TestVerticalConstruction:
         assert vertical_4pt.greens_type == "displacement"
 
     def test_obs(self, vertical_4pt):
-        np.testing.assert_array_equal(
-            vertical_4pt.obs, [0.01, 0.02, 0.015, 0.005]
-        )
+        np.testing.assert_array_equal(vertical_4pt.obs, [0.01, 0.02, 0.015, 0.005])
 
     def test_sigma(self, vertical_4pt):
-        np.testing.assert_array_equal(
-            vertical_4pt.sigma, np.full(4, 0.003)
-        )
+        np.testing.assert_array_equal(vertical_4pt.sigma, np.full(4, 0.003))
 
     def test_immutable_arrays(self, vertical_4pt):
         with pytest.raises(ValueError):
@@ -364,6 +355,7 @@ class TestVerticalConstruction:
 # ======================================================================
 # 7. Vertical project()
 # ======================================================================
+
 
 class TestVerticalProject:
     """Test Vertical.project() extracts vertical component."""
@@ -385,13 +377,14 @@ class TestVerticalProject:
 # 8. Covariance matrix
 # ======================================================================
 
+
 class TestCovariance:
     """Test default and explicit covariance matrices."""
 
     def test_default_diagonal_gnss(self, gnss_3station):
         cov = gnss_3station.covariance
         assert cov.shape == (9, 9)
-        expected_diag = gnss_3station.sigma ** 2
+        expected_diag = gnss_3station.sigma**2
         np.testing.assert_allclose(np.diag(cov), expected_diag)
         # Off-diagonal should be zero
         np.testing.assert_array_equal(cov - np.diag(np.diag(cov)), 0.0)
@@ -399,7 +392,7 @@ class TestCovariance:
     def test_default_diagonal_insar(self, insar_5pixel):
         cov = insar_5pixel.covariance
         assert cov.shape == (5, 5)
-        np.testing.assert_allclose(np.diag(cov), insar_5pixel.sigma ** 2)
+        np.testing.assert_allclose(np.diag(cov), insar_5pixel.sigma**2)
 
     def test_explicit_covariance(self):
         """User-provided covariance matrix overrides sigma-based default."""
@@ -432,6 +425,7 @@ class TestCovariance:
 # 9. GNSS file I/O
 # ======================================================================
 
+
 class TestGNSSLoad:
     """Test GNSS.load() for .dat format."""
 
@@ -453,8 +447,7 @@ class TestGNSSLoad:
         """Load .dat file and select only horizontal components."""
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat uE uN uZ sigE sigN sigZ\n"
-            "100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
+            "# lon lat uE uN uZ sigE sigN sigZ\n100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
         )
         g = GNSS.load(dat_file, components="en")
         assert g.n_obs == 2
@@ -468,6 +461,7 @@ class TestGNSSLoad:
 # ======================================================================
 # 10. InSAR file I/O
 # ======================================================================
+
 
 class TestInSARLoad:
     """Test InSAR.load() for .dat format."""
@@ -493,15 +487,14 @@ class TestInSARLoad:
 # 11. Vertical file I/O
 # ======================================================================
 
+
 class TestVerticalLoad:
     """Test Vertical.load() for .dat format."""
 
     def test_load_dat_format(self, tmp_path):
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat uZ sigZ\n"
-            "100.0 0.0 0.01 0.003\n"
-            "100.0 1.0 0.02 0.003\n"
+            "# lon lat uZ sigZ\n100.0 0.0 0.01 0.003\n100.0 1.0 0.02 0.003\n"
         )
         d = Vertical.load(dat_file)
         assert d.n_stations == 2
@@ -516,6 +509,7 @@ class TestVerticalLoad:
 # ======================================================================
 # 12. GNSS save / to_gmt
 # ======================================================================
+
 
 class TestGNSSSave:
     """Test GNSS.save() round-trip and format behaviour."""
@@ -633,6 +627,7 @@ class TestGNSSToGmt:
 # 13. InSAR save / to_gmt
 # ======================================================================
 
+
 class TestInSARSave:
     """Test InSAR.save() round-trip."""
 
@@ -715,6 +710,7 @@ class TestInSARToGmt:
 # ======================================================================
 # 14. Vertical save / to_gmt
 # ======================================================================
+
 
 class TestVerticalSave:
     """Test Vertical.save() round-trip."""

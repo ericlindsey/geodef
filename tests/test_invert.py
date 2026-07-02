@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 import scipy.linalg
 
-import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
 from geodef.greens import greens, stack_obs, stack_weights
@@ -23,19 +22,24 @@ from geodef.invert import (
     model_uncertainty,
 )
 
-
 # ======================================================================
 # Fixtures
 # ======================================================================
+
 
 @pytest.fixture
 def fault_4x3():
     """A 4x3 planar fault (12 patches)."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=15e3,
-        strike=320.0, dip=15.0,
-        length=80e3, width=40e3,
-        n_length=4, n_width=3,
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=320.0,
+        dip=15.0,
+        length=80e3,
+        width=40e3,
+        n_length=4,
+        n_width=3,
     )
 
 
@@ -43,10 +47,15 @@ def fault_4x3():
 def single_patch():
     """A single-patch fault."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=10e3,
-        strike=0.0, dip=90.0,
-        length=10e3, width=10e3,
-        n_length=1, n_width=1,
+        lat=0.0,
+        lon=100.0,
+        depth=10e3,
+        strike=0.0,
+        dip=90.0,
+        length=10e3,
+        width=10e3,
+        n_length=1,
+        n_width=1,
     )
 
 
@@ -65,9 +74,14 @@ def _make_gnss(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return GNSS(
-        lon, lat,
-        ve=ue, vn=un, vu=uz,
-        se=np.full(n, sigma), sn=np.full(n, sigma), su=np.full(n, sigma),
+        lon,
+        lat,
+        ve=ue,
+        vn=un,
+        vu=uz,
+        se=np.full(n, sigma),
+        sn=np.full(n, sigma),
+        su=np.full(n, sigma),
     )
 
 
@@ -81,9 +95,13 @@ def _make_insar(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     look_u = np.full(n, 0.92)
     los = look_e * ue + look_n * un + look_u * uz
     return InSAR(
-        lon, lat,
-        los=los, sigma=np.full(n, sigma),
-        look_e=look_e, look_n=look_n, look_u=look_u,
+        lon,
+        lat,
+        los=los,
+        sigma=np.full(n, sigma),
+        look_e=look_e,
+        look_n=look_n,
+        look_u=look_u,
     )
 
 
@@ -93,14 +111,17 @@ def _make_vertical(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     _, _, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return Vertical(
-        lon, lat,
-        displacement=uz, sigma=np.full(n, sigma),
+        lon,
+        lat,
+        displacement=uz,
+        sigma=np.full(n, sigma),
     )
 
 
 # ======================================================================
 # InversionResult structure
 # ======================================================================
+
 
 class TestInversionResultStructure:
     """Verify result object has correct shapes and fields."""
@@ -148,7 +169,9 @@ class TestInversionResultStructure:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, gnss)
         np.testing.assert_allclose(
-            result.predicted + result.residuals, gnss.obs, atol=1e-10,
+            result.predicted + result.residuals,
+            gnss.obs,
+            atol=1e-10,
         )
 
     def test_scalar_fields(self, fault_4x3, obs_points):
@@ -170,6 +193,7 @@ class TestInversionResultStructure:
 # ======================================================================
 # Basic WLS solver (no regularization)
 # ======================================================================
+
 
 class TestWLS:
     """Weighted least-squares with noise-free data should recover slip."""
@@ -210,13 +234,14 @@ class TestWLS:
 
     def test_method_explicit_wls(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, method='wls')
+        result = invert(fault_4x3, gnss, method="wls")
         np.testing.assert_allclose(result.residuals, 0, atol=1e-8)
 
 
 # ======================================================================
 # Multiple datasets
 # ======================================================================
+
 
 class TestMultipleDatasets:
     """Joint inversions with multiple data types."""
@@ -258,6 +283,7 @@ class TestMultipleDatasets:
 # Solvers: NNLS and bounded_ls
 # ======================================================================
 
+
 class TestNNLS:
     """Non-negative least-squares solver."""
 
@@ -265,7 +291,7 @@ class TestNNLS:
         slip_ss = np.ones(12)
         slip_ds = np.ones(12) * 0.5
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss, method='nnls')
+        result = invert(fault_4x3, gnss, method="nnls")
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_nnls_enforces_nonnegativity(self, fault_4x3, obs_points):
@@ -273,8 +299,7 @@ class TestNNLS:
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result_wls = invert(fault_4x3, gnss, method='wls')
-        result_nnls = invert(fault_4x3, gnss, method='nnls')
+        result_nnls = invert(fault_4x3, gnss, method="nnls")
         # NNLS should have all non-negative values
         assert np.all(result_nnls.slip_vector >= -1e-10)
 
@@ -291,13 +316,13 @@ class TestBoundedLS:
         slip_ss = np.ones(12) * 2.0
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss, bounds=(0, 1.0), method='bounded_ls')
+        result = invert(fault_4x3, gnss, bounds=(0, 1.0), method="bounded_ls")
         assert np.all(result.slip_vector <= 1.0 + 1e-10)
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_bounded_ls_lower_bound_only(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, bounds=(-0.5, None), method='bounded_ls')
+        result = invert(fault_4x3, gnss, bounds=(-0.5, None), method="bounded_ls")
         assert np.all(result.slip_vector >= -0.5 - 1e-10)
 
     def test_auto_selects_bounded_ls_for_general_bounds(self, fault_4x3, obs_points):
@@ -310,11 +335,12 @@ class TestBoundedLS:
 # Regularization
 # ======================================================================
 
+
 class TestRegularization:
     """Regularization matrix types and smoothing_strength."""
 
     def test_laplacian_smoothing(self, fault_4x3, obs_points):
-        """Laplacian regularization should produce a smoother result than unregularized."""
+        """Laplacian regularization gives a smoother result than unregularized."""
         rng = np.random.default_rng(42)
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
@@ -325,13 +351,19 @@ class TestRegularization:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon, lat,
-            ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
-            se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
+            lon,
+            lat,
+            ve=noisy_obs[0::3],
+            vn=noisy_obs[1::3],
+            vu=noisy_obs[2::3],
+            se=np.full(n, 0.01),
+            sn=np.full(n, 0.01),
+            su=np.full(n, 0.01),
         )
         r_unreg = invert(fault_4x3, gnss_noisy)
-        r_smooth = invert(fault_4x3, gnss_noisy,
-                          smoothing='laplacian', smoothing_strength=1e6)
+        r_smooth = invert(
+            fault_4x3, gnss_noisy, smoothing="laplacian", smoothing_strength=1e6
+        )
         L = fault_4x3.laplacian
         norm_unreg = np.linalg.norm(L @ r_unreg.slip[:, 0])
         norm_smooth = np.linalg.norm(L @ r_smooth.slip[:, 0])
@@ -339,8 +371,8 @@ class TestRegularization:
 
     def test_damping_reduces_norm(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        r_weak = invert(fault_4x3, gnss, smoothing='damping', smoothing_strength=1.0)
-        r_strong = invert(fault_4x3, gnss, smoothing='damping', smoothing_strength=1e6)
+        r_weak = invert(fault_4x3, gnss, smoothing="damping", smoothing_strength=1.0)
+        r_strong = invert(fault_4x3, gnss, smoothing="damping", smoothing_strength=1e6)
         norm_weak = np.linalg.norm(r_weak.slip_vector)
         norm_strong = np.linalg.norm(r_strong.slip_vector)
         assert norm_strong < norm_weak
@@ -349,37 +381,40 @@ class TestRegularization:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         n = fault_4x3.n_patches
         custom_I = np.eye(2 * n)
-        r_damping = invert(fault_4x3, gnss,
-                           smoothing='damping', smoothing_strength=100.0)
-        r_custom = invert(fault_4x3, gnss,
-                          smoothing=custom_I, smoothing_strength=100.0)
+        r_damping = invert(
+            fault_4x3, gnss, smoothing="damping", smoothing_strength=100.0
+        )
+        r_custom = invert(fault_4x3, gnss, smoothing=custom_I, smoothing_strength=100.0)
         np.testing.assert_allclose(r_damping.slip, r_custom.slip, atol=1e-10)
 
     def test_zero_strength_equals_unregularized(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         r_unreg = invert(fault_4x3, gnss)
-        r_zero = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=0.0)
+        r_zero = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=0.0)
         np.testing.assert_allclose(r_unreg.slip, r_zero.slip, atol=1e-10)
 
     def test_smoothing_strength_stored_in_result(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=42.0)
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=42.0)
         assert result.smoothing_strength == 42.0
 
     def test_laplacian_with_nnls(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.ones(12) * 0.5)
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=100.0,
-                        method='nnls')
+        result = invert(
+            fault_4x3,
+            gnss,
+            smoothing="laplacian",
+            smoothing_strength=100.0,
+            method="nnls",
+        )
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_stress_kernel_runs(self, fault_4x3, obs_points):
         """Stress kernel regularization should complete without error."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='stresskernel', smoothing_strength=1e-6)
+        result = invert(
+            fault_4x3, gnss, smoothing="stresskernel", smoothing_strength=1e-6
+        )
         assert result.slip.shape == (12, 2)
 
     @pytest.mark.parametrize(
@@ -392,14 +427,18 @@ class TestRegularization:
         ],
     )
     def test_stress_kernel_projects_single_parameter_modes(
-        self, fault_4x3, obs_points, components, kwargs,
+        self,
+        fault_4x3,
+        obs_points,
+        components,
+        kwargs,
     ):
         """Stress-kernel smoothing should match the active slip basis."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(
             fault_4x3,
             gnss,
-            smoothing='stresskernel',
+            smoothing="stresskernel",
             smoothing_strength=1e-6,
             components=components,
             **kwargs,
@@ -411,6 +450,7 @@ class TestRegularization:
 # Smoothing target (regularize toward non-zero reference)
 # ======================================================================
 
+
 class TestSmoothingTarget:
     """Test smoothing_target parameter for non-zero regularization target."""
 
@@ -419,27 +459,38 @@ class TestSmoothingTarget:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         n = fault_4x3.n_patches
         target = np.full(2 * n, 5.0)
-        result = invert(fault_4x3, gnss,
-                        smoothing='damping', smoothing_strength=1e10,
-                        smoothing_target=target)
+        result = invert(
+            fault_4x3,
+            gnss,
+            smoothing="damping",
+            smoothing_strength=1e10,
+            smoothing_target=target,
+        )
         np.testing.assert_allclose(result.slip_vector, target, atol=0.1)
 
     def test_zero_target_same_as_no_target(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         n = fault_4x3.n_patches
-        r1 = invert(fault_4x3, gnss,
-                     smoothing='damping', smoothing_strength=100.0)
-        r2 = invert(fault_4x3, gnss,
-                     smoothing='damping', smoothing_strength=100.0,
-                     smoothing_target=np.zeros(2 * n))
+        r1 = invert(fault_4x3, gnss, smoothing="damping", smoothing_strength=100.0)
+        r2 = invert(
+            fault_4x3,
+            gnss,
+            smoothing="damping",
+            smoothing_strength=100.0,
+            smoothing_target=np.zeros(2 * n),
+        )
         np.testing.assert_allclose(r1.slip, r2.slip, atol=1e-10)
 
     def test_target_shape_mismatch_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="smoothing_target"):
-            invert(fault_4x3, gnss,
-                   smoothing='damping', smoothing_strength=1.0,
-                   smoothing_target=np.zeros(5))
+            invert(
+                fault_4x3,
+                gnss,
+                smoothing="damping",
+                smoothing_strength=1.0,
+                smoothing_target=np.zeros(5),
+            )
 
     def test_target_without_smoothing_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -451,6 +502,7 @@ class TestSmoothingTarget:
 # Fit statistics
 # ======================================================================
 
+
 class TestFitStatistics:
     """Moment, magnitude, chi2, rms."""
 
@@ -459,7 +511,7 @@ class TestFitStatistics:
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, gnss)
-        slip_mag = np.sqrt(result.slip[:, 0]**2 + result.slip[:, 1]**2)
+        slip_mag = np.sqrt(result.slip[:, 0] ** 2 + result.slip[:, 1] ** 2)
         expected_moment = fault_4x3.moment(slip_mag)
         np.testing.assert_allclose(result.moment, expected_moment, rtol=1e-6)
 
@@ -467,8 +519,11 @@ class TestFitStatistics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
         from geodef.fault import moment_to_magnitude
+
         np.testing.assert_allclose(
-            result.Mw, moment_to_magnitude(result.moment), rtol=1e-6,
+            result.Mw,
+            moment_to_magnitude(result.moment),
+            rtol=1e-6,
         )
 
     def test_chi2_nonnegative(self, fault_4x3, obs_points):
@@ -482,8 +537,7 @@ class TestFitStatistics:
         """With more params than obs, chi2 should be nan."""
         lat = np.array([0.5])
         lon = np.array([100.0])
-        gnss = _make_gnss(single_patch, (lat, lon), np.array([1.0]),
-                          np.array([0.0]))
+        gnss = _make_gnss(single_patch, (lat, lon), np.array([1.0]), np.array([0.0]))
         result = invert(single_patch, gnss)
         # 1 station x 3 comp = 3 obs, 2 params → dof=1, should work
         assert not np.isnan(result.chi2)
@@ -498,18 +552,19 @@ class TestFitStatistics:
 # Input validation
 # ======================================================================
 
+
 class TestValidation:
     """Input validation and error messages."""
 
     def test_invalid_method_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="method"):
-            invert(fault_4x3, gnss, method='invalid')
+            invert(fault_4x3, gnss, method="invalid")
 
     def test_invalid_smoothing_string_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="smoothing"):
-            invert(fault_4x3, gnss, smoothing='nonexistent')
+            invert(fault_4x3, gnss, smoothing="nonexistent")
 
     def test_smoothing_matrix_wrong_cols_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -521,6 +576,7 @@ class TestValidation:
 # ======================================================================
 # Components parameter
 # ======================================================================
+
 
 class TestComponents:
     """Test single-component inversions via the components parameter."""
@@ -576,22 +632,31 @@ class TestComponents:
     def test_strike_only_laplacian_shape(self, fault_4x3, obs_points):
         """Laplacian should be (N, N) not (2N, 2N) for single component."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components="strike",
-                        smoothing="laplacian", smoothing_strength=100.0)
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="strike",
+            smoothing="laplacian",
+            smoothing_strength=100.0,
+        )
         assert result.slip.shape == (12, 1)
 
     def test_dip_only_damping(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
-        result = invert(fault_4x3, gnss, components="dip",
-                        smoothing="damping", smoothing_strength=100.0)
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="dip",
+            smoothing="damping",
+            smoothing_strength=100.0,
+        )
         assert result.slip.shape == (12, 1)
 
     def test_strike_only_with_bounds(self, fault_4x3, obs_points):
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss, components="strike",
-                        bounds=(0, None))
+        result = invert(fault_4x3, gnss, components="strike", bounds=(0, None))
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_strike_only_smoothing_target(self, fault_4x3, obs_points):
@@ -599,18 +664,28 @@ class TestComponents:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         n = fault_4x3.n_patches
         target = np.full(n, 5.0)
-        result = invert(fault_4x3, gnss, components="strike",
-                        smoothing="damping", smoothing_strength=1e10,
-                        smoothing_target=target)
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="strike",
+            smoothing="damping",
+            smoothing_strength=1e10,
+            smoothing_target=target,
+        )
         np.testing.assert_allclose(result.slip_vector, target, atol=0.1)
 
     def test_smoothing_target_wrong_shape_single_component(self, fault_4x3, obs_points):
         """Target shape (2N,) should fail when components='strike'."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="smoothing_target"):
-            invert(fault_4x3, gnss, components="strike",
-                   smoothing="damping", smoothing_strength=1.0,
-                   smoothing_target=np.zeros(24))
+            invert(
+                fault_4x3,
+                gnss,
+                components="strike",
+                smoothing="damping",
+                smoothing_strength=1.0,
+                smoothing_target=np.zeros(24),
+            )
 
     def test_moment_correct_single_component(self, fault_4x3, obs_points):
         slip_ss = np.ones(12)
@@ -626,8 +701,13 @@ class TestComponents:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         n = fault_4x3.n_patches
         custom = np.eye(n)
-        result = invert(fault_4x3, gnss, components="strike",
-                        smoothing=custom, smoothing_strength=100.0)
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="strike",
+            smoothing=custom,
+            smoothing_strength=100.0,
+        )
         assert result.slip.shape == (12, 1)
 
 
@@ -635,14 +715,16 @@ class TestComponents:
 # ABIC hyperparameter tuning
 # ======================================================================
 
+
 class TestABIC:
     """Automatic smoothing strength via ABIC criterion."""
 
     def test_abic_returns_result(self, fault_4x3, obs_points):
         """ABIC should return an InversionResult with a positive smoothing_strength."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='abic')
+        result = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength="abic"
+        )
         assert isinstance(result, InversionResult)
         assert result.smoothing_strength is not None
         assert result.smoothing_strength > 0
@@ -652,15 +734,15 @@ class TestABIC:
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='abic')
+        result = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength="abic"
+        )
         np.testing.assert_allclose(result.slip[:, 0], slip_ss, atol=0.3)
 
     def test_abic_with_damping(self, fault_4x3, obs_points):
         """ABIC should work with any smoothing type."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='damping', smoothing_strength='abic')
+        result = invert(fault_4x3, gnss, smoothing="damping", smoothing_strength="abic")
         assert result.smoothing_strength > 0
 
     def test_abic_with_noisy_data(self, fault_4x3, obs_points):
@@ -674,29 +756,44 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon, lat,
-            ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
-            se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
+            lon,
+            lat,
+            ve=noisy_obs[0::3],
+            vn=noisy_obs[1::3],
+            vu=noisy_obs[2::3],
+            se=np.full(n, 0.01),
+            sn=np.full(n, 0.01),
+            su=np.full(n, 0.01),
         )
-        result = invert(fault_4x3, gnss_noisy,
-                        smoothing='laplacian', smoothing_strength='abic')
+        result = invert(
+            fault_4x3, gnss_noisy, smoothing="laplacian", smoothing_strength="abic"
+        )
         assert result.smoothing_strength > 0
         assert result.rms > 0
 
     def test_abic_with_single_component(self, fault_4x3, obs_points):
         """ABIC should work with components='strike'."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='strike',
-                        smoothing='laplacian', smoothing_strength='abic')
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="strike",
+            smoothing="laplacian",
+            smoothing_strength="abic",
+        )
         assert result.smoothing_strength > 0
         assert result.slip.shape == (12, 1)
 
     def test_abic_with_bounds(self, fault_4x3, obs_points):
         """ABIC should work with NNLS bounds."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.ones(12) * 0.5)
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='abic',
-                        bounds=(0, None))
+        result = invert(
+            fault_4x3,
+            gnss,
+            smoothing="laplacian",
+            smoothing_strength="abic",
+            bounds=(0, None),
+        )
         assert result.smoothing_strength > 0
         assert np.all(result.slip_vector >= -1e-10)
 
@@ -704,11 +801,12 @@ class TestABIC:
         """ABIC requires a smoothing type to be set."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="smoothing"):
-            invert(fault_4x3, gnss, smoothing_strength='abic')
+            invert(fault_4x3, gnss, smoothing_strength="abic")
 
     def test_compute_abic_value(self, fault_4x3, obs_points):
         """The compute_abic function should return a finite scalar."""
         from geodef.invert import compute_abic
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         G = greens(fault_4x3, [gnss])
         d = stack_obs([gnss])
@@ -718,8 +816,9 @@ class TestABIC:
         assert np.isfinite(abic_val)
 
     def test_abic_minimum_exists(self, fault_4x3, obs_points):
-        """ABIC should have a minimum: very low and very high lambda give higher values."""
+        """ABIC has a minimum: very low and very high lambda give higher values."""
         from geodef.invert import compute_abic
+
         rng = np.random.default_rng(99)
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
@@ -729,9 +828,14 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon, lat,
-            ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
-            se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
+            lon,
+            lat,
+            ve=noisy_obs[0::3],
+            vn=noisy_obs[1::3],
+            vu=noisy_obs[2::3],
+            se=np.full(n, 0.01),
+            sn=np.full(n, 0.01),
+            su=np.full(n, 0.01),
         )
         G = greens(fault_4x3, [gnss_noisy])
         d = stack_obs([gnss_noisy])
@@ -748,23 +852,28 @@ class TestABIC:
 # L-curve analysis
 # ======================================================================
 
+
 class TestLCurve:
     """L-curve sweep and optimal corner finding."""
 
     def test_lcurve_returns_result(self, fault_4x3, obs_points):
         """lcurve should return an LCurveResult."""
-        from geodef.invert import lcurve, LCurveResult
+        from geodef.invert import LCurveResult, lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=20)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert isinstance(lc, LCurveResult)
 
     def test_lcurve_has_arrays(self, fault_4x3, obs_points):
         """Result should have smoothing_values, misfits, and model_norms arrays."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=20)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert len(lc.smoothing_values) == 20
         assert len(lc.misfits) == 20
         assert len(lc.model_norms) == 20
@@ -772,54 +881,72 @@ class TestLCurve:
     def test_lcurve_misfit_increases_with_lambda(self, fault_4x3, obs_points):
         """Stronger regularization should generally increase misfit."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=20)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         # Overall trend: first misfit should be <= last misfit
         assert lc.misfits[0] <= lc.misfits[-1] + 1e-10
 
     def test_lcurve_model_norm_decreases_with_lambda(self, fault_4x3, obs_points):
         """Stronger regularization should reduce the model norm."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=20)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert lc.model_norms[0] >= lc.model_norms[-1] - 1e-10
 
     def test_lcurve_optimal_exists(self, fault_4x3, obs_points):
         """Optimal smoothing_strength should be within the swept range."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=20)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert 1e-2 <= lc.optimal <= 1e6
 
     def test_lcurve_with_damping(self, fault_4x3, obs_points):
         """lcurve should work with different smoothing types."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='damping',
-                     smoothing_range=(1e-2, 1e6), n=10)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="damping", smoothing_range=(1e-2, 1e6), n=10
+        )
         assert len(lc.smoothing_values) == 10
 
     def test_lcurve_with_bounds(self, fault_4x3, obs_points):
         """lcurve should support bounds."""
         from geodef.invert import lcurve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.ones(12) * 0.5)
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=10,
-                     bounds=(0, None))
+        lc = lcurve(
+            fault_4x3,
+            gnss,
+            smoothing="laplacian",
+            smoothing_range=(1e-2, 1e6),
+            n=10,
+            bounds=(0, None),
+        )
         assert len(lc.smoothing_values) == 10
 
     def test_lcurve_plot(self, fault_4x3, obs_points):
         """LCurveResult.plot() should return matplotlib axes."""
-        from geodef.invert import lcurve
         import matplotlib
-        matplotlib.use('Agg')
+
+        from geodef.invert import lcurve
+
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        lc = lcurve(fault_4x3, gnss, smoothing='laplacian',
-                     smoothing_range=(1e-2, 1e6), n=10)
+        lc = lcurve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=10
+        )
         ax = lc.plot()
         assert isinstance(ax, plt.Axes)
         plt.close(ax.figure)
@@ -829,43 +956,53 @@ class TestLCurve:
 # ABIC curve analysis
 # ======================================================================
 
+
 class TestABICCurve:
     """ABIC curve sweep and optimal point finding."""
 
     def test_abic_curve_returns_result(self, fault_4x3, obs_points):
-        from geodef.invert import abic_curve, ABICCurveResult
+        from geodef.invert import ABICCurveResult, abic_curve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e6), n=20)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert isinstance(ac, ABICCurveResult)
 
     def test_abic_curve_has_arrays(self, fault_4x3, obs_points):
         from geodef.invert import abic_curve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e6), n=20)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert len(ac.smoothing_values) == 20
         assert len(ac.abic_values) == 20
 
     def test_abic_curve_optimal_in_range(self, fault_4x3, obs_points):
         from geodef.invert import abic_curve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e6), n=20)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=20
+        )
         assert 1e-2 <= ac.optimal <= 1e6
 
     def test_abic_curve_has_misfits_and_norms(self, fault_4x3, obs_points):
         """Should also expose misfit and model norm arrays for context."""
         from geodef.invert import abic_curve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e6), n=15)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=15
+        )
         assert len(ac.misfits) == 15
         assert len(ac.model_norms) == 15
 
     def test_abic_curve_with_noisy_data(self, fault_4x3, obs_points):
         """With noisy data, optimal should sit between extremes."""
         from geodef.invert import abic_curve
+
         rng = np.random.default_rng(42)
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
@@ -875,34 +1012,52 @@ class TestABICCurve:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon, lat,
-            ve=noisy_obs[0::3], vn=noisy_obs[1::3], vu=noisy_obs[2::3],
-            se=np.full(n, 0.01), sn=np.full(n, 0.01), su=np.full(n, 0.01),
+            lon,
+            lat,
+            ve=noisy_obs[0::3],
+            vn=noisy_obs[1::3],
+            vu=noisy_obs[2::3],
+            se=np.full(n, 0.01),
+            sn=np.full(n, 0.01),
+            su=np.full(n, 0.01),
         )
-        ac = abic_curve(fault_4x3, gnss_noisy, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e8), n=30)
+        ac = abic_curve(
+            fault_4x3,
+            gnss_noisy,
+            smoothing="laplacian",
+            smoothing_range=(1e-2, 1e8),
+            n=30,
+        )
         # Optimal should be at the minimum ABIC
         idx_opt = np.argmin(np.abs(ac.smoothing_values - ac.optimal))
-        assert ac.abic_values[idx_opt] <= ac.abic_values[0] + 1e-6 or \
-               ac.abic_values[idx_opt] <= ac.abic_values[-1] + 1e-6
+        assert (
+            ac.abic_values[idx_opt] <= ac.abic_values[0] + 1e-6
+            or ac.abic_values[idx_opt] <= ac.abic_values[-1] + 1e-6
+        )
 
     def test_abic_curve_plot(self, fault_4x3, obs_points):
-        from geodef.invert import abic_curve
         import matplotlib
-        matplotlib.use('Agg')
+
+        from geodef.invert import abic_curve
+
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='laplacian',
-                        smoothing_range=(1e-2, 1e6), n=10)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-2, 1e6), n=10
+        )
         ax = ac.plot()
         assert isinstance(ax, plt.Axes)
         plt.close(ax.figure)
 
     def test_abic_curve_with_damping(self, fault_4x3, obs_points):
         from geodef.invert import abic_curve
+
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        ac = abic_curve(fault_4x3, gnss, smoothing='damping',
-                        smoothing_range=(1e-2, 1e6), n=10)
+        ac = abic_curve(
+            fault_4x3, gnss, smoothing="damping", smoothing_range=(1e-2, 1e6), n=10
+        )
         assert len(ac.smoothing_values) == 10
 
 
@@ -910,14 +1065,14 @@ class TestABICCurve:
 # Cross-validation
 # ======================================================================
 
+
 class TestCrossValidation:
     """K-fold cross-validation for smoothing strength selection."""
 
     def test_cv_returns_result(self, fault_4x3, obs_points):
         """CV should return an InversionResult with positive smoothing_strength."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='cv')
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength="cv")
         assert isinstance(result, InversionResult)
         assert result.smoothing_strength > 0
 
@@ -926,41 +1081,48 @@ class TestCrossValidation:
         slip_ss = np.ones(12)
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='cv')
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength="cv")
         np.testing.assert_allclose(result.slip[:, 0], slip_ss, atol=0.5)
 
     def test_cv_with_custom_folds(self, fault_4x3, obs_points):
         """cv_folds parameter should control the number of folds."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='cv',
-                        cv_folds=3)
+        result = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength="cv", cv_folds=3
+        )
         assert result.smoothing_strength > 0
 
     def test_cv_with_damping(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='damping', smoothing_strength='cv')
+        result = invert(fault_4x3, gnss, smoothing="damping", smoothing_strength="cv")
         assert result.smoothing_strength > 0
 
     def test_cv_with_bounds(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.ones(12) * 0.5)
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength='cv',
-                        bounds=(0, None))
+        result = invert(
+            fault_4x3,
+            gnss,
+            smoothing="laplacian",
+            smoothing_strength="cv",
+            bounds=(0, None),
+        )
         assert result.smoothing_strength > 0
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_cv_without_smoothing_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="smoothing"):
-            invert(fault_4x3, gnss, smoothing_strength='cv')
+            invert(fault_4x3, gnss, smoothing_strength="cv")
 
     def test_cv_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='strike',
-                        smoothing='laplacian', smoothing_strength='cv')
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="strike",
+            smoothing="laplacian",
+            smoothing_strength="cv",
+        )
         assert result.smoothing_strength > 0
         assert result.slip.shape == (12, 1)
 
@@ -969,20 +1131,19 @@ class TestCrossValidation:
 # Constrained solver (QP)
 # ======================================================================
 
+
 class TestConstrainedSolver:
     """Quadratic programming solver with inequality constraints."""
 
     def test_constrained_runs(self, fault_4x3, obs_points):
         """Constrained solver should run and return a result."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, method='constrained',
-                        bounds=(0, None))
+        result = invert(fault_4x3, gnss, method="constrained", bounds=(0, None))
         assert isinstance(result, InversionResult)
 
     def test_constrained_respects_bounds(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12) * 2.0, np.zeros(12))
-        result = invert(fault_4x3, gnss, method='constrained',
-                        bounds=(0, 1.5))
+        result = invert(fault_4x3, gnss, method="constrained", bounds=(0, 1.5))
         assert np.all(result.slip_vector >= -1e-10)
         assert np.all(result.slip_vector <= 1.5 + 1e-10)
 
@@ -993,15 +1154,19 @@ class TestConstrainedSolver:
         # Constraint: sum of all slip <= 10
         C = np.ones((1, n_params))
         d_ineq = np.array([10.0])
-        result = invert(fault_4x3, gnss, method='constrained',
-                        constraints=(C, d_ineq))
+        result = invert(fault_4x3, gnss, method="constrained", constraints=(C, d_ineq))
         assert C @ result.slip_vector <= 10.0 + 1e-6
 
     def test_constrained_with_regularization(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, method='constrained',
-                        smoothing='laplacian', smoothing_strength=100.0,
-                        bounds=(0, None))
+        result = invert(
+            fault_4x3,
+            gnss,
+            method="constrained",
+            smoothing="laplacian",
+            smoothing_strength=100.0,
+            bounds=(0, None),
+        )
         assert np.all(result.slip_vector >= -1e-10)
 
     def test_constrained_recovers_slip(self, fault_4x3, obs_points):
@@ -1009,8 +1174,7 @@ class TestConstrainedSolver:
         slip_ss = np.ones(12) * 0.5
         slip_ds = np.ones(12) * 0.3
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
-        result = invert(fault_4x3, gnss, method='constrained',
-                        bounds=(0, 5.0))
+        result = invert(fault_4x3, gnss, method="constrained", bounds=(0, 5.0))
         np.testing.assert_allclose(result.slip[:, 0], slip_ss, atol=0.2)
         np.testing.assert_allclose(result.slip[:, 1], slip_ds, atol=0.2)
 
@@ -1018,13 +1182,14 @@ class TestConstrainedSolver:
         """'constrained' should be a valid method string."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         # Should not raise ValueError for unknown method
-        result = invert(fault_4x3, gnss, method='constrained')
+        result = invert(fault_4x3, gnss, method="constrained")
         assert isinstance(result, InversionResult)
 
 
 # ======================================================================
 # Per-dataset diagnostics
 # ======================================================================
+
 
 class TestDatasetDiagnostics:
     """Per-dataset fit diagnostics via hat matrix."""
@@ -1111,8 +1276,7 @@ class TestDatasetDiagnostics:
     def test_with_regularization(self, fault_4x3, obs_points):
         """Regularized hat matrix should have trace < n_params."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=1e3)
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
         diags = dataset_diagnostics(result, fault_4x3, gnss)
         n_params = 2 * fault_4x3.n_patches
         assert diags[0].leverage < n_params
@@ -1121,15 +1285,16 @@ class TestDatasetDiagnostics:
         """Regularization reduces effective parameters, increasing DOF."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result_unreg = invert(fault_4x3, gnss)
-        result_reg = invert(fault_4x3, gnss,
-                            smoothing='laplacian', smoothing_strength=1e3)
+        result_reg = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3
+        )
         diags_unreg = dataset_diagnostics(result_unreg, fault_4x3, gnss)
         diags_reg = dataset_diagnostics(result_reg, fault_4x3, gnss)
         assert diags_reg[0].dof > diags_unreg[0].dof
 
     def test_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='strike')
+        result = invert(fault_4x3, gnss, components="strike")
         diags = dataset_diagnostics(result, fault_4x3, gnss)
         assert diags[0].n_obs == gnss.n_obs
         assert diags[0].leverage < fault_4x3.n_patches + 1
@@ -1158,6 +1323,7 @@ class TestDatasetDiagnostics:
 # Model covariance, resolution, and uncertainty
 # ======================================================================
 
+
 class TestModelCovariance:
     """Model covariance matrix Cm."""
 
@@ -1185,15 +1351,16 @@ class TestModelCovariance:
         """Regularization should reduce diagonal elements of Cm."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result_unreg = invert(fault_4x3, gnss)
-        result_reg = invert(fault_4x3, gnss,
-                            smoothing='laplacian', smoothing_strength=1e3)
+        result_reg = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3
+        )
         Cm_unreg = model_covariance(result_unreg, fault_4x3, gnss)
         Cm_reg = model_covariance(result_reg, fault_4x3, gnss)
         assert np.mean(np.diag(Cm_reg)) < np.mean(np.diag(Cm_unreg))
 
     def test_single_component_shape(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='dip')
+        result = invert(fault_4x3, gnss, components="dip")
         Cm = model_covariance(result, fault_4x3, gnss)
         assert Cm.shape == (12, 12)
 
@@ -1224,8 +1391,7 @@ class TestModelResolution:
     def test_regularized_trace_less_than_n_params(self, fault_4x3, obs_points):
         """Regularization reduces trace(R) below n_params."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=1e3)
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
         R = model_resolution(result, fault_4x3, gnss)
         n_params = 2 * fault_4x3.n_patches
         assert np.trace(R) < n_params - 0.1
@@ -1233,8 +1399,7 @@ class TestModelResolution:
     def test_diagonal_between_0_and_1(self, fault_4x3, obs_points):
         """Resolution diagonal should be between 0 and 1."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=1e3)
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
         R = model_resolution(result, fault_4x3, gnss)
         diag = np.diag(R)
         assert np.all(diag >= -1e-10)
@@ -1242,7 +1407,7 @@ class TestModelResolution:
 
     def test_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='strike')
+        result = invert(fault_4x3, gnss, components="strike")
         R = model_resolution(result, fault_4x3, gnss)
         assert R.shape == (12, 12)
 
@@ -1266,8 +1431,9 @@ class TestModelUncertainty:
     def test_regularization_reduces_uncertainty(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result_unreg = invert(fault_4x3, gnss)
-        result_reg = invert(fault_4x3, gnss,
-                            smoothing='laplacian', smoothing_strength=1e3)
+        result_reg = invert(
+            fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3
+        )
         unc_unreg = model_uncertainty(result_unreg, fault_4x3, gnss)
         unc_reg = model_uncertainty(result_reg, fault_4x3, gnss)
         assert np.mean(unc_reg) < np.mean(unc_unreg)
@@ -1275,15 +1441,14 @@ class TestModelUncertainty:
     def test_consistent_with_covariance(self, fault_4x3, obs_points):
         """Uncertainty should be sqrt of covariance diagonal."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss,
-                        smoothing='laplacian', smoothing_strength=1e3)
+        result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
         Cm = model_covariance(result, fault_4x3, gnss)
         unc = model_uncertainty(result, fault_4x3, gnss)
         np.testing.assert_allclose(unc, np.sqrt(np.diag(Cm)), atol=1e-12)
 
     def test_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
-        result = invert(fault_4x3, gnss, components='strike')
+        result = invert(fault_4x3, gnss, components="strike")
         unc = model_uncertainty(result, fault_4x3, gnss)
         assert unc.shape == (12,)
 
@@ -1292,13 +1457,15 @@ class TestModelUncertainty:
 # InversionResult I/O
 # ======================================================================
 
+
 class TestInversionResultIO:
     """Test InversionResult.save(), .load(), and .save_table()."""
 
     def _make_result(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         return invert(
-            fault_4x3, gnss,
+            fault_4x3,
+            gnss,
             smoothing="laplacian",
             smoothing_strength=10.0,
         )
@@ -1372,8 +1539,7 @@ class TestInversionResultIO:
         result.save_table(fpath, fault_4x3)
         # Data lines (non-comment) should have at least 9 columns
         data_lines = [
-            l for l in fpath.read_text().splitlines()
-            if l and not l.startswith("#")
+            ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
         ]
         assert len(data_lines) == fault_4x3.n_patches
         cols = len(data_lines[0].split())
@@ -1381,6 +1547,7 @@ class TestInversionResultIO:
 
     def test_save_table_tri_fault(self, obs_points, tmp_path):
         from geodef.mesh import Mesh
+
         lon = np.array([100.0, 100.2, 100.0, 100.2])
         lat = np.array([0.0, 0.0, 0.2, 0.2])
         depth = np.array([5e3, 5e3, 15e3, 15e3])
@@ -1393,8 +1560,7 @@ class TestInversionResultIO:
         fpath = tmp_path / "tri_result.dat"
         result.save_table(fpath, fault)
         data_lines = [
-            l for l in fpath.read_text().splitlines()
-            if l and not l.startswith("#")
+            ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
         ]
         assert len(data_lines) == fault.n_patches
         cols = len(data_lines[0].split())
@@ -1405,38 +1571,43 @@ class TestInversionResultIO:
 # Fixed-rake inversion
 # ======================================================================
 
+
 class TestComponentsRake:
     """Test fixed-rake inversions (components='rake')."""
 
     def test_slip_shape(self, fault_4x3, obs_points):
         rake = 30.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         assert result.slip.shape == (12, 1)
 
     def test_slip_vector_shape(self, fault_4x3, obs_points):
         rake = 30.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         assert result.slip_vector.shape == (12,)
 
     def test_components_field(self, fault_4x3, obs_points):
         rake = 45.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         assert result.components == "rake"
 
     def test_rake_field(self, fault_4x3, obs_points):
         rake = 45.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         assert result.rake == pytest.approx(rake)
 
@@ -1450,8 +1621,7 @@ class TestComponentsRake:
         rake = 30.0
         r = np.deg2rad(rake)
         amp = np.ones(12)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          amp * np.cos(r), amp * np.sin(r))
+        gnss = _make_gnss(fault_4x3, obs_points, amp * np.cos(r), amp * np.sin(r))
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         np.testing.assert_allclose(result.slip[:, 0], amp, atol=0.1)
 
@@ -1462,8 +1632,9 @@ class TestComponentsRake:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         result_rake = invert(fault_4x3, gnss, components="rake", rake=0.0)
         result_ss = invert(fault_4x3, gnss, components="strike")
-        np.testing.assert_allclose(result_rake.slip_vector,
-                                   result_ss.slip_vector, atol=1e-10)
+        np.testing.assert_allclose(
+            result_rake.slip_vector, result_ss.slip_vector, atol=1e-10
+        )
 
     def test_rake_90_matches_dip(self, fault_4x3, obs_points):
         """rake=90 should produce same G as components='dip'."""
@@ -1472,8 +1643,9 @@ class TestComponentsRake:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         result_rake = invert(fault_4x3, gnss, components="rake", rake=90.0)
         result_ds = invert(fault_4x3, gnss, components="dip")
-        np.testing.assert_allclose(result_rake.slip_vector,
-                                   result_ds.slip_vector, atol=1e-10)
+        np.testing.assert_allclose(
+            result_rake.slip_vector, result_ds.slip_vector, atol=1e-10
+        )
 
     def test_missing_rake_raises(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -1497,17 +1669,25 @@ class TestComponentsRake:
     def test_smoothing_laplacian(self, fault_4x3, obs_points):
         rake = 45.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
-        result = invert(fault_4x3, gnss, components="rake", rake=rake,
-                        smoothing="laplacian", smoothing_strength=100.0)
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="rake",
+            rake=rake,
+            smoothing="laplacian",
+            smoothing_strength=100.0,
+        )
         assert result.slip.shape == (12, 1)
 
     def test_save_load_roundtrip(self, fault_4x3, obs_points, tmp_path):
         rake = 30.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.npz"
         result.save(fpath)
@@ -1519,8 +1699,9 @@ class TestComponentsRake:
     def test_save_table_column_name(self, fault_4x3, obs_points, tmp_path):
         rake = 45.0
         r = np.deg2rad(rake)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.dat"
         result.save_table(fpath, fault_4x3)
@@ -1542,6 +1723,7 @@ class TestComponentsRake:
 # Fixed slip-azimuth inversion
 # ======================================================================
 
+
 class TestComponentsAzimuth:
     """Test fixed geographic slip-azimuth inversions (components='azimuth').
 
@@ -1551,7 +1733,7 @@ class TestComponentsAzimuth:
     """
 
     def test_slip_shape(self, fault_4x3, obs_points):
-        az = fault_4x3.strike[0]   # azimuth == strike → pure strike-slip
+        az = fault_4x3.strike[0]  # azimuth == strike → pure strike-slip
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         assert result.slip.shape == (12, 1)
@@ -1571,8 +1753,9 @@ class TestComponentsAzimuth:
     def test_slip_azimuth_field(self, fault_4x3, obs_points):
         az = 45.0
         r = np.deg2rad(az - fault_4x3.strike[0])
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         assert result.slip_azimuth == pytest.approx(az)
 
@@ -1587,8 +1770,9 @@ class TestComponentsAzimuth:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         result_ss = invert(fault_4x3, gnss, components="strike")
-        np.testing.assert_allclose(result_az.slip_vector,
-                                   result_ss.slip_vector, atol=1e-10)
+        np.testing.assert_allclose(
+            result_az.slip_vector, result_ss.slip_vector, atol=1e-10
+        )
 
     def test_azimuth_equals_strike_plus_90_matches_dip(self, fault_4x3, obs_points):
         """slip_azimuth == fault strike + 90° → same G as components='dip'."""
@@ -1596,20 +1780,22 @@ class TestComponentsAzimuth:
         gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
         result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         result_ds = invert(fault_4x3, gnss, components="dip")
-        np.testing.assert_allclose(result_az.slip_vector,
-                                   result_ds.slip_vector, atol=1e-10)
+        np.testing.assert_allclose(
+            result_az.slip_vector, result_ds.slip_vector, atol=1e-10
+        )
 
     def test_azimuth_per_patch_varies_on_curved_mesh(self, obs_points):
         """On a fault with non-uniform strike, azimuth produces per-patch
         local rake. Use an L-shaped fault: one N-S patch (strike~0°) and
         one E-W patch (strike~90°), sharing a corner node."""
         from geodef.mesh import Mesh
+
         # Patch 1: N-S vertical fault — all at lon=100.0 → strike ~0°
         # Patch 2: E-W vertical fault — all at lat=0.0  → strike ~90°
         # Node 0 at corner, node 3 at depth (shared anchor)
-        lon   = np.array([100.0, 100.0, 100.1, 100.0])
-        lat   = np.array([0.0,   0.1,   0.0,   0.0])
-        depth = np.array([5e3,   5e3,   5e3,   15e3])
+        lon = np.array([100.0, 100.0, 100.1, 100.0])
+        lat = np.array([0.0, 0.1, 0.0, 0.0])
+        depth = np.array([5e3, 5e3, 5e3, 15e3])
         triangles = np.array([[0, 1, 3], [0, 2, 3]])
         mesh = Mesh(lon=lon, lat=lat, depth=depth, triangles=triangles)
         fault = Fault.from_mesh(mesh)
@@ -1618,16 +1804,16 @@ class TestComponentsAzimuth:
         assert strike_diff > 30.0 or abs(strike_diff - 360.0) > 30.0
         lat_pts, lon_pts = obs_points
         gnss = _make_gnss(fault, (lat_pts, lon_pts), np.ones(2), np.zeros(2))
-        result = invert(fault, gnss, components="azimuth",
-                        slip_azimuth=float(fault.strike.mean()))
+        result = invert(
+            fault, gnss, components="azimuth", slip_azimuth=float(fault.strike.mean())
+        )
         assert result.slip.shape == (fault.n_patches, 1)
 
     def test_recovers_amplitude(self, fault_4x3, obs_points):
         az = 45.0
         r = np.deg2rad(az - fault_4x3.strike[0])
         amp = np.ones(12)
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          amp * np.cos(r), amp * np.sin(r))
+        gnss = _make_gnss(fault_4x3, obs_points, amp * np.cos(r), amp * np.sin(r))
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         np.testing.assert_allclose(result.slip[:, 0], amp, atol=0.1)
 
@@ -1636,7 +1822,9 @@ class TestComponentsAzimuth:
         with pytest.raises(ValueError, match="slip_azimuth"):
             invert(fault_4x3, gnss, components="azimuth")
 
-    def test_slip_azimuth_without_components_azimuth_raises(self, fault_4x3, obs_points):
+    def test_slip_azimuth_without_components_azimuth_raises(
+        self, fault_4x3, obs_points
+    ):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         with pytest.raises(ValueError, match="slip_azimuth"):
             invert(fault_4x3, gnss, components="both", slip_azimuth=45.0)
@@ -1644,8 +1832,9 @@ class TestComponentsAzimuth:
     def test_save_load_roundtrip(self, fault_4x3, obs_points, tmp_path):
         az = 45.0
         r = np.deg2rad(az - fault_4x3.strike[0])
-        gnss = _make_gnss(fault_4x3, obs_points,
-                          np.cos(r) * np.ones(12), np.sin(r) * np.ones(12))
+        gnss = _make_gnss(
+            fault_4x3, obs_points, np.cos(r) * np.ones(12), np.sin(r) * np.ones(12)
+        )
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         fpath = tmp_path / "az_result.npz"
         result.save(fpath)

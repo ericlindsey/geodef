@@ -11,7 +11,6 @@ from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
 from geodef.greens import greens
 
-
 # ====================================================================
 # Group 1: compute_hash (pure function)
 # ====================================================================
@@ -238,10 +237,15 @@ class TestInfo:
 def fault_small() -> Fault:
     """A small 2x2 fault for fast integration tests."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=15e3,
-        strike=0.0, dip=45.0,
-        length=20e3, width=10e3,
-        n_length=2, n_width=2,
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=0.0,
+        dip=45.0,
+        length=20e3,
+        width=10e3,
+        n_length=2,
+        n_width=2,
     )
 
 
@@ -252,9 +256,14 @@ def gnss_data() -> GNSS:
     lon = np.array([100.0, 100.0])
     n = len(lat)
     return GNSS(
-        lon, lat,
-        ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
-        se=np.ones(n), sn=np.ones(n), su=np.ones(n),
+        lon,
+        lat,
+        ve=np.zeros(n),
+        vn=np.zeros(n),
+        vu=np.zeros(n),
+        se=np.ones(n),
+        sn=np.ones(n),
+        su=np.ones(n),
     )
 
 
@@ -265,9 +274,12 @@ def insar_data() -> InSAR:
     lon = np.array([100.0, 100.0])
     n = len(lat)
     return InSAR(
-        lon, lat,
-        los=np.zeros(n), sigma=np.ones(n),
-        look_e=np.full(n, 0.1), look_n=np.full(n, 0.1),
+        lon,
+        lat,
+        los=np.zeros(n),
+        sigma=np.ones(n),
+        look_e=np.full(n, 0.1),
+        look_n=np.full(n, 0.1),
         look_u=np.full(n, 0.98),
     )
 
@@ -275,9 +287,7 @@ def insar_data() -> InSAR:
 class TestGreensIntegration:
     """Tests for caching integration with greens()."""
 
-    def test_greens_caches_result(
-        self, fault_small: Fault, gnss_data: GNSS
-    ) -> None:
+    def test_greens_caches_result(self, fault_small: Fault, gnss_data: GNSS) -> None:
         """First call creates cache file, second call uses it."""
         G1 = greens(fault_small, gnss_data)
         assert cache.info()["n_files"] == 1
@@ -286,35 +296,59 @@ class TestGreensIntegration:
         # Still only 1 file (reused, not duplicated)
         assert cache.info()["n_files"] == 1
 
-    def test_greens_invalidates_on_fault_change(
-        self, gnss_data: GNSS
-    ) -> None:
+    def test_greens_invalidates_on_fault_change(self, gnss_data: GNSS) -> None:
         """Different fault geometry produces a different cache entry."""
         fault_a = Fault.planar(
-            lat=0.0, lon=100.0, depth=15e3,
-            strike=0.0, dip=45.0,
-            length=20e3, width=10e3, n_length=2, n_width=2,
+            lat=0.0,
+            lon=100.0,
+            depth=15e3,
+            strike=0.0,
+            dip=45.0,
+            length=20e3,
+            width=10e3,
+            n_length=2,
+            n_width=2,
         )
         fault_b = Fault.planar(
-            lat=0.0, lon=100.0, depth=15e3,
-            strike=90.0, dip=45.0,  # different strike
-            length=20e3, width=10e3, n_length=2, n_width=2,
+            lat=0.0,
+            lon=100.0,
+            depth=15e3,
+            strike=90.0,
+            dip=45.0,  # different strike
+            length=20e3,
+            width=10e3,
+            n_length=2,
+            n_width=2,
         )
         greens(fault_a, gnss_data)
         greens(fault_b, gnss_data)
         assert cache.info()["n_files"] == 2
 
-    def test_greens_invalidates_on_data_change(
-        self, fault_small: Fault
-    ) -> None:
+    def test_greens_invalidates_on_data_change(self, fault_small: Fault) -> None:
         """Different observation locations produce a different cache entry."""
         lat_a = np.array([0.2, -0.2])
         lat_b = np.array([0.3, -0.3])
         lon = np.array([100.0, 100.0])
-        data_a = GNSS(lon, lat_a, np.zeros(2), np.zeros(2), np.zeros(2),
-                       np.ones(2), np.ones(2), np.ones(2))
-        data_b = GNSS(lon, lat_b, np.zeros(2), np.zeros(2), np.zeros(2),
-                       np.ones(2), np.ones(2), np.ones(2))
+        data_a = GNSS(
+            lon,
+            lat_a,
+            np.zeros(2),
+            np.zeros(2),
+            np.zeros(2),
+            np.ones(2),
+            np.ones(2),
+            np.ones(2),
+        )
+        data_b = GNSS(
+            lon,
+            lat_b,
+            np.zeros(2),
+            np.zeros(2),
+            np.zeros(2),
+            np.ones(2),
+            np.ones(2),
+            np.ones(2),
+        )
         greens(fault_small, data_a)
         greens(fault_small, data_b)
         assert cache.info()["n_files"] == 2
@@ -326,9 +360,7 @@ class TestGreensIntegration:
         greens(fault_small, [gnss_data, insar_data])
         assert cache.info()["n_files"] == 2
 
-    def test_greens_disabled(
-        self, fault_small: Fault, gnss_data: GNSS
-    ) -> None:
+    def test_greens_disabled(self, fault_small: Fault, gnss_data: GNSS) -> None:
         """No files created when caching is disabled."""
         cache.disable()
         greens(fault_small, gnss_data)
@@ -346,8 +378,10 @@ class TestStressKernel:
     def test_greens_matrix_obs_depth_param(self, fault_small: Fault) -> None:
         """greens_matrix accepts obs_depth and returns a result."""
         G = fault_small.greens_matrix(
-            fault_small._lat, fault_small._lon,
-            kind="strain", obs_depth=fault_small._depth,
+            fault_small._lat,
+            fault_small._lon,
+            kind="strain",
+            obs_depth=fault_small._depth,
         )
         assert G.shape[0] > 0
         assert G.shape[1] == 2 * fault_small.n_patches

@@ -7,31 +7,35 @@ the okada dispatcher works correctly, and the top-level API is usable.
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # 1. Package importability
 # ---------------------------------------------------------------------------
+
 
 class TestPackageImports:
     """Verify that geodef and its submodules are importable."""
 
     def test_import_geodef(self):
         import geodef
+
         assert hasattr(geodef, "__version__")
 
     def test_import_okada85(self):
         from geodef import okada85
+
         assert callable(okada85.displacement)
         assert callable(okada85.tilt)
         assert callable(okada85.strain)
 
     def test_import_okada92(self):
         from geodef import okada92
+
         assert callable(okada92.okada92)
         assert callable(okada92.DC3D)
 
     def test_import_tri(self):
         from geodef import tri
+
         assert callable(tri.TDdispFS)
         assert callable(tri.TDdispHS)
         assert callable(tri.TDstrainFS)
@@ -39,6 +43,7 @@ class TestPackageImports:
 
     def test_import_okada_dispatcher(self):
         from geodef import okada
+
         assert callable(okada.displacement)
 
 
@@ -46,33 +51,46 @@ class TestPackageImports:
 # 2. Top-level convenience API
 # ---------------------------------------------------------------------------
 
+
 class TestTopLevelAPI:
     """Verify that key names are accessible directly from `import geodef`."""
 
     def test_version_string(self):
         import geodef
+
         assert isinstance(geodef.__version__, str)
         assert geodef.__version__ == "0.1.0"
 
     def test_dataset_classes_importable(self):
         import geodef
+
         assert hasattr(geodef, "DataSet")
         assert hasattr(geodef, "GNSS")
         assert hasattr(geodef, "InSAR")
         assert hasattr(geodef, "Vertical")
 
     def test_dataset_isinstance(self):
-        import geodef
         import numpy as np
+
+        import geodef
+
         lat = np.array([0.0])
         lon = np.array([100.0])
-        g = geodef.GNSS(lat, lon, np.array([1.0]), np.array([0.5]),
-                        np.array([-0.1]), np.array([0.1]),
-                        np.array([0.1]), np.array([0.5]))
+        g = geodef.GNSS(
+            lat,
+            lon,
+            np.array([1.0]),
+            np.array([0.5]),
+            np.array([-0.1]),
+            np.array([0.1]),
+            np.array([0.1]),
+            np.array([0.5]),
+        )
         assert isinstance(g, geodef.DataSet)
 
     def test_import_data_module(self):
         from geodef import data
+
         assert hasattr(data, "GNSS")
         assert hasattr(data, "InSAR")
         assert hasattr(data, "Vertical")
@@ -82,6 +100,7 @@ class TestTopLevelAPI:
 # ---------------------------------------------------------------------------
 # 3. Okada dispatcher tests
 # ---------------------------------------------------------------------------
+
 
 class TestOkadaDispatcher:
     """Test that okada.displacement auto-selects okada85 vs okada92."""
@@ -109,13 +128,12 @@ class TestOkadaDispatcher:
         n = np.array([2000.0, -1000.0, 7000.0])
 
         # Dispatcher at z=0
-        ue_d, un_d, uz_d = okada.displacement(
-            e, n, z=0.0, **fault_params
-        )
+        ue_d, un_d, uz_d = okada.displacement(e, n, z=0.0, **fault_params)
 
         # Direct okada85 (uses L/W parameter names)
         ue_85, un_85, uz_85 = okada85.displacement(
-            e, n,
+            e,
+            n,
             depth=fault_params["depth"],
             strike=fault_params["strike"],
             dip=fault_params["dip"],
@@ -138,9 +156,7 @@ class TestOkadaDispatcher:
         e = np.array([5000.0])
         n = np.array([2000.0])
 
-        ue, un, uz = okada.displacement(
-            e, n, z=-1000.0, **fault_params
-        )
+        ue, un, uz = okada.displacement(e, n, z=-1000.0, **fault_params)
 
         assert ue.shape == (1,)
         assert un.shape == (1,)
@@ -158,12 +174,19 @@ class TestOkadaDispatcher:
 
         # Direct okada92 call (scalar interface)
         disp_92, _ = okada92.okada92(
-            e_val, n_val, z_val, p["depth"], p["strike"], p["dip"],
-            p["length"], p["width"],
+            e_val,
+            n_val,
+            z_val,
+            p["depth"],
+            p["strike"],
+            p["dip"],
+            p["length"],
+            p["width"],
             p["slip"] * np.cos(np.radians(p["rake"])),
             p["slip"] * np.sin(np.radians(p["rake"])),
             p["opening"],
-            G=1.0, nu=p["nu"],
+            G=1.0,
+            nu=p["nu"],
         )
 
         # Dispatcher
@@ -230,6 +253,7 @@ class TestOkadaDispatcher:
 # 4. Module-level function signatures preserved
 # ---------------------------------------------------------------------------
 
+
 class TestOkada85API:
     """Verify okada85 functions work through the new package."""
 
@@ -293,17 +317,26 @@ class TestOkada92API:
         from geodef.okada92 import okada92
 
         disp, strain = okada92(
-            X=10000.0, Y=0.0, Z=-1000.0,
-            depth=5000.0, strike=0.0, dip=70.0,
-            length=10000.0, width=5000.0,
-            strike_slip=1.0, dip_slip=0.0, opening=0.0,
-            G=1.0, nu=0.25,
+            X=10000.0,
+            Y=0.0,
+            Z=-1000.0,
+            depth=5000.0,
+            strike=0.0,
+            dip=70.0,
+            length=10000.0,
+            width=5000.0,
+            strike_slip=1.0,
+            dip_slip=0.0,
+            opening=0.0,
+            G=1.0,
+            nu=0.25,
         )
         assert disp.shape == (3, 1)
         assert strain.shape == (3, 3)
 
     def test_dc3d_accessible(self):
         from geodef.okada92 import DC3D
+
         assert callable(DC3D)
 
 
@@ -313,11 +346,13 @@ class TestTriAPI:
     @pytest.fixture
     def triangle_setup(self):
         """Simple triangle + observation points for testing."""
-        tri = np.array([
-            [-1000.0, 0.0, 0.0],
-            [1000.0, 0.0, 0.0],
-            [0.0, 0.0, -3000.0],
-        ])
+        tri = np.array(
+            [
+                [-1000.0, 0.0, 0.0],
+                [1000.0, 0.0, 0.0],
+                [0.0, 0.0, -3000.0],
+            ]
+        )
         obs = np.array([[5000.0, 5000.0, 0.0]])
         slip = np.array([1.0, 0.0, 0.0])
         nu = 0.25
@@ -325,24 +360,28 @@ class TestTriAPI:
 
     def test_TDdispHS(self, triangle_setup):
         from geodef import tri
+
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDdispHS(obs, triangle, slip, nu)
         assert result.shape == (1, 3)
 
     def test_TDdispFS(self, triangle_setup):
         from geodef import tri
+
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDdispFS(obs, triangle, slip, nu)
         assert result.shape == (1, 3)
 
     def test_TDstrainHS(self, triangle_setup):
         from geodef import tri
+
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDstrainHS(obs, triangle, slip, nu)
         assert result.shape == (1, 6)
 
     def test_TDstrainFS(self, triangle_setup):
         from geodef import tri
+
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDstrainFS(obs, triangle, slip, nu)
         assert result.shape == (1, 6)
