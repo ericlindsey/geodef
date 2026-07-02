@@ -421,6 +421,79 @@ class TestCovariance:
         assert cov1 is cov2
 
 
+class TestGNSSCorrelation:
+    """Test the optional East-North correlation (rho) on GNSS."""
+
+    def _gnss(self, rho, vu=True):
+        n = 3
+        lon = np.zeros(n)
+        lat = np.zeros(n)
+        return GNSS(
+            lon,
+            lat,
+            ve=np.ones(n),
+            vn=np.ones(n),
+            vu=np.ones(n) if vu else None,
+            se=np.full(n, 2.0),
+            sn=np.full(n, 3.0),
+            su=np.full(n, 1.0) if vu else None,
+            rho=rho,
+        )
+
+    def test_scalar_rho_enu(self):
+        g = self._gnss(0.5)
+        cov = g.covariance
+        assert cov.shape == (9, 9)
+        # station-0 E-N block
+        np.testing.assert_allclose(cov[:3, :3], [[4, 3, 0], [3, 9, 0], [0, 0, 1]])
+
+    def test_rho_zero_matches_diagonal(self):
+        g = self._gnss(0.0)
+        np.testing.assert_allclose(g.covariance, np.diag(g.sigma**2))
+
+    def test_per_station_rho(self):
+        g = self._gnss(np.array([0.1, 0.2, 0.3]))
+        cov = g.covariance
+        np.testing.assert_allclose(cov[0, 1], 0.1 * 2 * 3)
+        np.testing.assert_allclose(cov[3, 4], 0.2 * 2 * 3)
+        np.testing.assert_allclose(cov[6, 7], 0.3 * 2 * 3)
+
+    def test_horizontal_only(self):
+        g = self._gnss(0.5, vu=False)
+        assert g.covariance.shape == (6, 6)
+        np.testing.assert_allclose(g.covariance[0, 1], 3.0)
+
+    def test_up_stays_uncorrelated(self):
+        g = self._gnss(0.9)
+        cov = g.covariance
+        assert cov[0, 2] == 0.0  # E-U
+        assert cov[1, 2] == 0.0  # N-U
+
+    def test_covariance_is_positive_definite(self):
+        g = self._gnss(0.9)
+        assert np.all(np.linalg.eigvalsh(g.covariance) > 0)
+
+    def test_rho_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="rho"):
+            self._gnss(1.5)
+
+    def test_rho_and_covariance_mutually_exclusive(self):
+        n = 3
+        with pytest.raises(ValueError, match="rho or covariance"):
+            GNSS(
+                np.zeros(n),
+                np.zeros(n),
+                ve=np.ones(n),
+                vn=np.ones(n),
+                vu=None,
+                se=np.ones(n),
+                sn=np.ones(n),
+                su=None,
+                rho=0.5,
+                covariance=np.eye(2 * n),
+            )
+
+
 class TestSpatialCovariance:
     """Test the spatially-correlated covariance builder."""
 

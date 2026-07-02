@@ -148,6 +148,10 @@ class GNSS(DataSet):
         se: East component 1-sigma, shape (n_stations,).
         sn: North component 1-sigma, shape (n_stations,).
         su: Up component 1-sigma, shape (n_stations,), or None for horizontal-only.
+        rho: Optional East-North correlation coefficient in [-1, 1], scalar
+            or shape (n_stations,). When given, a block covariance with the
+            correct per-station E-N correlation is built automatically.
+            Mutually exclusive with ``covariance``.
         covariance: Optional full covariance matrix, shape (n_obs, n_obs).
     """
 
@@ -164,8 +168,11 @@ class GNSS(DataSet):
         sn: np.ndarray,
         su: np.ndarray | None,
         *,
+        rho: np.ndarray | float | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
+        if rho is not None and covariance is not None:
+            raise ValueError("Provide either rho or covariance, not both")
         super().__init__(lon, lat, covariance=covariance)
 
         ve = np.asarray(ve, dtype=float)
@@ -204,7 +211,41 @@ class GNSS(DataSet):
         self._sn = _make_readonly(sn)
         self._su = _make_readonly(su) if su is not None else None
 
+        if rho is not None:
+            self._covariance_explicit = self._build_en_covariance(rho)
+
         self._validate_covariance_shape()
+
+    def _build_en_covariance(self, rho: np.ndarray | float) -> np.ndarray:
+        """Build a block covariance with per-station East-North correlation.
+
+        Diagonal entries are the component variances; each station's E-N pair
+        gets an off-diagonal ``rho * se * sn``. The Up component (if present)
+        stays uncorrelated.
+
+        Args:
+            rho: East-North correlation coefficient in [-1, 1], scalar or
+                shape (n_stations,).
+
+        Returns:
+            Covariance matrix, shape (n_obs, n_obs).
+
+        Raises:
+            ValueError: If ``rho`` has the wrong shape or lies outside [-1, 1].
+        """
+        n = self.n_stations
+        rho_arr = np.broadcast_to(np.asarray(rho, dtype=float), (n,))
+        if np.any(np.abs(rho_arr) > 1.0):
+            raise ValueError("rho must lie in [-1, 1]")
+
+        n_comp = 3 if self._vu is not None else 2
+        cov = np.diag(self.sigma**2)
+        e_idx = np.arange(n) * n_comp
+        n_idx = e_idx + 1
+        off = rho_arr * self._se * self._sn
+        cov[e_idx, n_idx] = off
+        cov[n_idx, e_idx] = off
+        return cov
 
     @property
     def components(self) -> str:

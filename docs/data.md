@@ -20,6 +20,9 @@ from geodef import GNSS
 gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su)          # full 3-component
 gnss = GNSS(lon, lat, ve, vn, None, se, sn, None)      # horizontal-only
 
+# Optional per-station East-North correlation (scalar or per-station array)
+gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, rho=0.4)
+
 # Load from file (columns: lon lat uE uN uZ sigE sigN sigZ)
 gnss = GNSS.load("stations.dat")
 gnss = GNSS.load("stations.dat", components="en")       # horizontal-only
@@ -28,6 +31,11 @@ gnss = GNSS.load("stations.dat", components="en")       # horizontal-only
 gnss.save("out.dat")
 gnss.to_gmt("out_gmt.dat")   # lon lat uE uN sigE sigN (for psvelo)
 ```
+
+Pass `rho` to build a block covariance whose per-station East-North pair has
+off-diagonal `rho * se * sn` (the Up component stays uncorrelated). `rho` may be
+a scalar or a `(n_stations,)` array and is mutually exclusive with an explicit
+`covariance=`.
 
 **Properties:** `lat`, `lon`, `obs`, `sigma`, `covariance`, `n_stations`,
 `n_obs`, `components` (`'enu'` or `'en'`)
