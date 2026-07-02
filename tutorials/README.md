@@ -13,23 +13,28 @@ exactly what the library does for you without turning it into a black box.
 
 ## Available notebooks
 
+A ten-part course in geodetic inverse methods. Work through them in order; the
+recurring synthetic scenario introduced in notebook 03 is reused through 09.
+
 | Notebook | What it covers |
 |----------|----------------|
 | `01_forward_model.ipynb` | Fault creation, the linear forward model `d = G m`, predicting displacements (`G @ m` vs. `fault.displacement()`), moment magnitude |
 | `02_discretization_and_g_matrix.ipynb` | Discretization, `G` as a design matrix, building `G` column by column vs. `greens_matrix()`, blocked-column / interleaved-row layout |
+| `03_unregularized_inversion.ipynb` | The linear inverse problem, (weighted) least squares, ill-conditioning, and the overfitting catastrophe |
+| `04_regularization.ipynb` | Tikhonov regularization; smoothing, damping, and stress-kernel operators; the effect of the strength `λ` |
+| `05_choosing_regularization.ipynb` | Selecting `λ` with the L-curve, ABIC, and cross-validation |
+| `06_multiple_datasets.ipynb` | Joint GNSS + InSAR inversion, the line-of-sight projection, relative weighting |
+| `07_correlated_noise.ipynb` | Spatially-correlated InSAR noise, building a full `C_d` with `spatial_covariance()`, its effect on uncertainty |
+| `08_bounds_and_constraints.ipynb` | NNLS, bounded least squares, inequality constraints, fixed-rake bases |
+| `09_uncertainty_and_resolution.ipynb` | Posterior covariance, the resolution matrix, checkerboard tests, `M_w` with error bars |
+| `10_nonlinear_geometry.ipynb` | Searching for fault geometry: variable projection, grid search, `scipy.optimize`, an MCMC outlook |
 
-The full planned sequence (03 unregularized inversion, 04 regularization, 05
-choosing regularization strength, 06 multiple datasets, 07 correlated noise, 08
-bounds/constraints, 09 uncertainty/assessment, 10 nonlinear geometry) is tracked
-in `PLAN.md` and added here as each notebook is written.
+## Reference material
 
-## Previous-generation notebooks (`old_*`)
-
-`old_01_forward_model`, `old_02_caching`, `old_03_plotting`, and
-`old_04_mesh_generation` are the earlier feature-oriented notebooks, kept as
-reference while the progressive sequence above is built out. They are **not**
-part of the executed test suite and may be removed once their material has been
-folded into the new sequence or into dedicated reference notebooks.
+- `reference_plots.ipynb` — an exhaustive gallery of every `geodef.plot`
+  function, kept outside the numbered methods path (not executed in CI).
+- Real mesh building (traces, polygons, slab2.0) lives as a worked example in
+  `examples/mesh_generation.ipynb`.
 
 ## Running the execution checks
 

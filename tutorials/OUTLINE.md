@@ -6,6 +6,13 @@ introduced, the math that must appear, and the (deliberately small) code each
 notebook uses. Write or revise notebooks against this outline; revise this
 outline first if the plan changes.
 
+> **Status: delivered.** All ten notebooks (01–10) are written and executed by
+> `tests/test_tutorials.py`. The retired introduction-era notebooks have been
+> removed — their content migrated into tutorials 01–02, the plotting gallery
+> became `tutorials/reference_plots.ipynb`, and mesh generation moved to
+> `examples/mesh_generation.ipynb`. This outline is retained as the design
+> reference for future revisions.
+
 ---
 
 ## 1. Purpose and Audience
