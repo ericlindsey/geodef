@@ -32,7 +32,7 @@ result = geodef.invert(fault, gnss,
 | `smoothing` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
 | `smoothing_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
 | `smoothing_target` | `None` | Reference model for `(m - m_ref)` regularization |
-| `bounds` | `None` | Scalar `(lower, upper)` bounds; use `None` for an unbounded side |
+| `bounds` | `None` | `(lower, upper)` slip bounds; each side is a scalar, a per-component array, a per-parameter array, or `None` |
 | `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, or `'azimuth'` |
 | `rake` | `None` | Fixed local rake angle in degrees; required for `components='rake'` |
 | `slip_azimuth` | `None` | Fixed geographic slip azimuth in degrees clockwise from north; required for `components='azimuth'` |
@@ -40,7 +40,20 @@ result = geodef.invert(fault, gnss,
 | `constraints` | `None` | `(C, d)` for `C @ m <= d` (constrained solver only) |
 
 Auto-selection of `method`: `bounds=None` → WLS; `bounds=(0, None)` →
-NNLS; general scalar bounds → `bounded_ls`.
+NNLS; general bounds → `bounded_ls`.
+
+Each side of `bounds` may be:
+
+- a **scalar** applied to every slip parameter, e.g. `bounds=(0, None)`;
+- a **per-component** array of length `n_components` (`2` for `'both'`,
+  else `1`), broadcast across all patches — e.g.
+  `bounds=(np.array([0.0, -1.0]), np.array([np.inf, 1.0]))` forces
+  strike-slip ≥ 0 while allowing dip-slip in `[-1, 1]`;
+- a **per-parameter** array of length `n_params` (`n_components * N`) giving
+  an individual bound for every parameter;
+- `None` for an unbounded side.
+
+The same forms work with `method='bounded_ls'` and `method='constrained'`.
 
 `components='rake'` solves one slip-amplitude parameter per patch using the
 same local rake angle on every patch. `components='azimuth'` also solves one

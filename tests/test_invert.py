@@ -331,6 +331,54 @@ class TestBoundedLS:
         assert result.slip_vector is not None  # just ensure it runs
 
 
+class TestBoundsSemantics:
+    """Scalar, per-component, and per-parameter bounds forms."""
+
+    def test_per_component_bounds(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        # strike-slip >= 0, dip-slip in [-1, 1]
+        result = invert(
+            fault_4x3,
+            gnss,
+            bounds=(np.array([0.0, -1.0]), np.array([np.inf, 1.0])),
+        )
+        s = result.slip_vector
+        assert np.all(s[:12] >= -1e-9)
+        assert np.all(s[12:] >= -1 - 1e-9)
+        assert np.all(s[12:] <= 1 + 1e-9)
+
+    def test_per_parameter_bounds(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12) * 3.0, np.zeros(12))
+        lb = np.full(24, -2.0)
+        ub = np.full(24, 2.0)
+        result = invert(fault_4x3, gnss, bounds=(lb, ub))
+        assert np.all(result.slip_vector <= 2 + 1e-9)
+        assert np.all(result.slip_vector >= -2 - 1e-9)
+
+    def test_per_component_bounds_constrained(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(
+            fault_4x3,
+            gnss,
+            method="constrained",
+            bounds=(np.array([0.0, 0.0]), np.array([2.0, 1.0])),
+        )
+        s = result.slip_vector
+        assert np.all(s >= -1e-8)
+        assert np.all(s[:12] <= 2 + 1e-6)
+        assert np.all(s[12:] <= 1 + 1e-6)
+
+    def test_scalar_zero_lower_still_selects_nnls(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        result = invert(fault_4x3, gnss, bounds=(0, None))
+        assert np.all(result.slip_vector >= -1e-10)
+
+    def test_bad_bounds_length_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="bounds array"):
+            invert(fault_4x3, gnss, bounds=(np.zeros(3), None))
+
+
 # ======================================================================
 # Regularization
 # ======================================================================

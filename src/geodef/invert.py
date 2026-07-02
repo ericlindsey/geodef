@@ -27,6 +27,14 @@ _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
 _VALID_STRENGTH_STRINGS = {"abic", "cv"}
 _VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth"}
 
+# A bound may be a scalar (all parameters), an array of length n_components
+# (one value per slip component, broadcast over patches), or an array of
+# length n_params (one value per parameter). ``None`` means unbounded.
+_BoundValue = float | np.ndarray | None
+BoundsSpec = tuple[_BoundValue, _BoundValue] | None
+# Internal fully-expanded form: per-parameter lower/upper arrays.
+_ExpandedBounds = tuple[np.ndarray, np.ndarray] | None
+
 
 @dataclasses.dataclass(frozen=True)
 class InversionResult:
@@ -635,14 +643,14 @@ class LinearSystem:
 
     def _optimal_cv(
         self,
-        bounds: tuple[float | None, float | None] | None,
+        bounds: _ExpandedBounds,
         method: str | None,
         cv_folds: int,
     ) -> float:
         """Find optimal smoothing strength by K-fold cross-validation.
 
         Args:
-            bounds: Per-component slip bounds.
+            bounds: Expanded per-parameter slip bounds.
             method: Solver method.
             cv_folds: Number of folds.
 
@@ -704,7 +712,7 @@ class LinearSystem:
     def invert(
         self,
         smoothing_strength: float | str = 0.0,
-        bounds: tuple[float | None, float | None] | None = None,
+        bounds: BoundsSpec = None,
         method: str | None = None,
         smoothing_target: np.ndarray | None = None,
         constraints: tuple[np.ndarray, np.ndarray] | None = None,
@@ -743,11 +751,15 @@ class LinearSystem:
             self.slip_azimuth,
         )
 
+        exp_bounds = _expand_bounds(
+            bounds, self._n_patches, self._n_params // self._n_patches
+        )
+
         if isinstance(smoothing_strength, str):
             if smoothing_strength == "abic":
                 strength = self._optimal_abic()
             elif smoothing_strength == "cv":
-                strength = self._optimal_cv(bounds, method, cv_folds)
+                strength = self._optimal_cv(exp_bounds, method, cv_folds)
             else:
                 raise ValueError(
                     "smoothing_strength string must be 'abic' or 'cv', "
@@ -767,9 +779,9 @@ class LinearSystem:
             reg_strength = None if strength == 0.0 else strength
 
         if method is None:
-            method = _auto_select_method(bounds)
+            method = _auto_select_method(exp_bounds)
 
-        m = _solve(G_aug, d_aug, bounds, method, constraints)
+        m = _solve(G_aug, d_aug, exp_bounds, method, constraints)
 
         predicted = self.G @ m
         residuals = self.d - predicted
@@ -805,7 +817,7 @@ class LinearSystem:
         self,
         smoothing_range: tuple[float, float] = (1e-2, 1e6),
         n: int = 50,
-        bounds: tuple[float | None, float | None] | None = None,
+        bounds: BoundsSpec = None,
         method: str | None = None,
     ) -> LCurveResult:
         """Sweep smoothing strength and compute the L-curve.
@@ -835,7 +847,10 @@ class LinearSystem:
         misfits = np.empty(n)
         model_norms = np.empty(n)
 
-        solve_method = method if method is not None else _auto_select_method(bounds)
+        exp_bounds = _expand_bounds(
+            bounds, self._n_patches, self._n_params // self._n_patches
+        )
+        solve_method = method if method is not None else _auto_select_method(exp_bounds)
 
         if solve_method == "wls":
             for i, lam in enumerate(lambdas):
@@ -848,7 +863,7 @@ class LinearSystem:
             for i, lam in enumerate(lambdas):
                 G_aug = np.vstack([self.G_w, np.sqrt(lam) * self.L])
                 d_aug = np.concatenate([self.d_w, np.zeros(self.L.shape[0])])
-                m = _solve(G_aug, d_aug, bounds, solve_method, None)
+                m = _solve(G_aug, d_aug, exp_bounds, solve_method, None)
                 residuals = self.d - self.G @ m
                 misfits[i] = float(np.sqrt(residuals @ residuals))
                 model_norms[i] = float(np.sqrt((self.L @ m) @ (self.L @ m)))
@@ -1010,7 +1025,7 @@ def invert(
     datasets: DataSet | list[DataSet],
     smoothing: str | np.ndarray | None = None,
     smoothing_strength: float | str = 0.0,
-    bounds: tuple[float | None, float | None] | None = None,
+    bounds: BoundsSpec = None,
     method: str | None = None,
     smoothing_target: np.ndarray | None = None,
     components: str = "both",
@@ -1116,7 +1131,7 @@ def lcurve(
     smoothing: str | np.ndarray = "laplacian",
     smoothing_range: tuple[float, float] = (1e-2, 1e6),
     n: int = 50,
-    bounds: tuple[float | None, float | None] | None = None,
+    bounds: BoundsSpec = None,
     method: str | None = None,
     components: str = "both",
     rake: float | None = None,
@@ -1314,7 +1329,7 @@ def _validate_args(
     components: str,
     smoothing: str | np.ndarray | None,
     smoothing_strength: float | str,
-    bounds: tuple[float | None, float | None] | None,
+    bounds: BoundsSpec,
     method: str | None,
     smoothing_target: np.ndarray | None,
     n_params: int,
@@ -1471,14 +1486,60 @@ def _build_reg_rhs(
     return np.sqrt(smoothing_strength) * (L @ smoothing_target)
 
 
-def _auto_select_method(
-    bounds: tuple[float | None, float | None] | None,
-) -> str:
-    """Choose solver based on bounds."""
+def _expand_bounds(
+    bounds: BoundsSpec,
+    n_patches: int,
+    n_components: int,
+) -> _ExpandedBounds:
+    """Expand bounds to per-parameter lower/upper arrays.
+
+    Each of ``(lower, upper)`` may be ``None`` (unbounded), a scalar (applied
+    to every parameter), an array of length ``n_components`` (one value per
+    slip component, broadcast across all patches), or an array of length
+    ``n_params = n_patches * n_components`` (one value per parameter).
+
+    Args:
+        bounds: The user bounds specification, or None.
+        n_patches: Number of patches N.
+        n_components: Number of slip components solved for (1 or 2).
+
+    Returns:
+        ``(lower, upper)`` per-parameter arrays with ``-inf``/``+inf`` for
+        unbounded entries, or None if ``bounds`` is None.
+
+    Raises:
+        ValueError: If an array bound has an unsupported length.
+    """
+    if bounds is None:
+        return None
+    n_params = n_patches * n_components
+
+    def _expand(val: _BoundValue, fill: float) -> np.ndarray:
+        if val is None:
+            return np.full(n_params, fill)
+        arr = np.asarray(val, dtype=float)
+        if arr.ndim == 0:
+            return np.full(n_params, float(arr))
+        if arr.shape == (n_params,):
+            return arr
+        if n_components > 1 and arr.shape == (n_components,):
+            return np.repeat(arr, n_patches)
+        raise ValueError(
+            "bounds array must be a scalar, length n_components "
+            f"({n_components}), or length n_params ({n_params}); "
+            f"got shape {arr.shape}"
+        )
+
+    lower_raw, upper_raw = bounds
+    return _expand(lower_raw, -np.inf), _expand(upper_raw, np.inf)
+
+
+def _auto_select_method(bounds: _ExpandedBounds) -> str:
+    """Choose solver based on expanded per-parameter bounds."""
     if bounds is None:
         return "wls"
     lower, upper = bounds
-    if lower == 0 and upper is None:
+    if np.all(lower == 0.0) and np.all(np.isposinf(upper)):
         return "nnls"
     return "bounded_ls"
 
@@ -1486,7 +1547,7 @@ def _auto_select_method(
 def _solve(
     G: np.ndarray,
     d: np.ndarray,
-    bounds: tuple[float | None, float | None] | None,
+    bounds: _ExpandedBounds,
     method: str,
     constraints: tuple[np.ndarray, np.ndarray] | None,
 ) -> np.ndarray:
@@ -1509,8 +1570,7 @@ def _solve(
         return m
 
     if method == "bounded_ls":
-        lower = -np.inf if bounds is None or bounds[0] is None else bounds[0]
-        upper = np.inf if bounds is None or bounds[1] is None else bounds[1]
+        lower, upper = (-np.inf, np.inf) if bounds is None else bounds
         result = scipy.optimize.lsq_linear(G, d, bounds=(lower, upper))
         return result.x
 
@@ -1523,7 +1583,7 @@ def _solve(
 def _solve_constrained(
     G: np.ndarray,
     d: np.ndarray,
-    bounds: tuple[float | None, float | None] | None,
+    bounds: _ExpandedBounds,
     constraints: tuple[np.ndarray, np.ndarray] | None,
 ) -> np.ndarray:
     """Solve via quadratic programming (minimize ||Gm - d||^2 subject to constraints).
@@ -1540,7 +1600,6 @@ def _solve_constrained(
     Returns:
         Solution vector m.
     """
-    n_params = G.shape[1]
     GtG = G.T @ G
     Gtd = G.T @ d
 
@@ -1552,9 +1611,8 @@ def _solve_constrained(
         return GtG @ m - Gtd
 
     if bounds is not None:
-        lower = -np.inf if bounds[0] is None else bounds[0]
-        upper = np.inf if bounds[1] is None else bounds[1]
-        scipy_bounds = [(lower, upper)] * n_params
+        lower, upper = bounds
+        scipy_bounds = list(zip(lower, upper))
     else:
         scipy_bounds = None
 
@@ -1571,9 +1629,7 @@ def _solve_constrained(
 
     m0, _, _, _ = np.linalg.lstsq(G, d, rcond=None)
     if bounds is not None:
-        lower_val = -np.inf if bounds[0] is None else bounds[0]
-        upper_val = np.inf if bounds[1] is None else bounds[1]
-        m0 = np.clip(m0, lower_val, upper_val)
+        m0 = np.clip(m0, bounds[0], bounds[1])
 
     result = scipy.optimize.minimize(
         objective,
