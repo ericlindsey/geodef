@@ -1,0 +1,356 @@
+#!/usr/local/bin/python
+# Eric Lindsey, 01/2014
+
+from matplotlib.collections import LineCollection
+import numpy as np
+import geod_transform
+import okada_greens
+import sys
+
+class FaultModel:
+    
+    def __init__(self):
+        self.latc = np.array([])
+        self.lonc = np.array([])
+        self.depth= np.array([])
+        self.strike = np.array([])
+        self.dip = np.array([])
+        self.L = np.array([])
+        self.W = np.array([])        
+        self.strikeid = np.array([])
+        self.dipid = np.array([])
+        self.npatches = 0
+        #future options - rake, slip? or add this to "slip_model (extends fault_model)"
+
+    def add_patch(self,latc,lonc,depth,strike,dip,L,W,strikeid,dipid):
+        #given parameters for a single fault patch (or several patches), add them to the overall fault model
+        self.latc = np.append(self.latc,latc)
+        self.lonc = np.append(self.lonc,lonc)
+        self.depth = np.append(self.depth,depth)
+        self.strike = np.append(self.strike,strike)
+        self.dip = np.append(self.dip,dip)
+        self.L = np.append(self.L,L)
+        self.W = np.append(self.W,W)      
+        self.strikeid = np.append(self.strikeid,strikeid)
+        self.dipid = np.append(self.dipid,dipid)
+        self.npatches = len(self.W)
+            
+    def load_patches_topleft(self,fname):
+        # supply patches with one corner and the width/length
+        # load file containing sub-dividable fault segments for a fault model:
+        # columns are [lat0 lon0 lat1 lon1 depth width dip nL nW] [optional: patchstrike, patchdip]
+        filedata=np.loadtxt(fname,ndmin=2)
+        
+        dipid=filedata[:,1]
+        strikeid=filedata[:,2]
+        lon=filedata[:,3]
+        lat=filedata[:,4]
+        depth=filedata[:,5]
+        L=filedata[:,6]
+        W=filedata[:,7]
+        strike=filedata[:,8]
+        dip=filedata[:,9]
+        
+        # transform into patch-centered coordinates
+        # compute East and North offsets from "top left" corner to patch center
+        eoffset=(L/2.)*np.sin(np.radians(strike))+(W/2.)*np.cos(np.radians(dip))*np.cos(np.radians(strike))
+        noffset=(L/2.)*np.cos(np.radians(strike))+(W/2.)*np.cos(np.radians(dip))*np.sin(np.radians(strike))
+        uoffset=(W/2.)*np.sin(np.radians(dip))
+        latc=[]
+        lonc=[]
+        depthc=[]
+        for i in range(len(lat)):
+            latci,lonci,depthci = geod_transform.translate_flat(lat[i],lon[i],depth[i],eoffset[i],noffset[i],uoffset[i])
+            latc.append(latci)
+            lonc.append(lonci)
+            depthc.append(depthci)
+        
+        # create fault model. first look for this object stored as a pickle, 
+        # using hash name determined by the contents of filedata
+        #filedatahash = hashlib.sha1(filedata.view(np.uint8)).hexdigest()
+        #if not os.path.isdir('hash'):
+        #        os.mkdir('hash')
+        #picklename="hash/load_patches_topleft_" + filedatahash + ".npy"
+        #if os.path.isfile(picklename):
+        #    print("loading saved copy of fault object")
+        #    self.load_pickle(picklename)
+        #else:
+        #    print("saved fault object not found, creating new fault object")
+        self.add_patch(latc,lonc,depthc,strike,dip,L,W,strikeid,dipid)           
+        #self.save_pickle(picklename)
+        
+    def load_patches_center(self,fname):
+        # supply patches with one corner and the width/length
+        # load file containing sub-dividable fault segments for a fault model:
+        # columns are [lat0 lon0 lat1 lon1 depth width dip nL nW] [optional: patchstrike, patchdip]
+        filedata=np.loadtxt(fname,ndmin=2)
+        
+        dipid=filedata[:,1]
+        strikeid=filedata[:,2]
+        lonc=filedata[:,3]
+        latc=filedata[:,4]
+        depth=filedata[:,5]
+        L=filedata[:,6]
+        W=filedata[:,7]
+        strike=filedata[:,8]
+        dip=filedata[:,9]
+
+        self.add_patch(latc,lonc,depth,strike,dip,L,W,strikeid,dipid)  
+
+    def load_patches_comsol(self,fname):
+        # supply patches with one corner and the width/length
+        # load file containing sub-dividable fault segments for a fault model:
+        # columns are [lat0 lon0 lat1 lon1 depth width dip nL nW] [optional: patchstrike, patchdip]
+        filedata=np.loadtxt(fname,ndmin=2)
+       
+        lonc=filedata[:,1]
+        latc=filedata[:,2]
+        depth=filedata[:,5]
+        L=filedata[:,3]
+        W=filedata[:,4]
+        strike=filedata[:,6]
+        dip=filedata[:,7]
+        dipid=filedata[:,8]
+        strikeid=filedata[:,9]
+
+        self.add_patch(latc,lonc,depth,strike,dip,L,W,strikeid,dipid)       
+        
+    def create_planar_model(self,latcorner,loncorner,depthcorner,strike,dip,L,W,nL,nW):
+        #compute coordinates of every patch center and add this patch
+        patchL=L/nL
+        patchW=W/nW  
+        sindip=np.sin(np.radians(dip))
+        cosdip=np.cos(np.radians(dip))
+        sinstr=np.sin(np.radians(strike))
+        cosstr=np.cos(np.radians(strike))
+        for i in range(nL):
+            for j in range(nW):
+                tot_eoffset=(i+0.5)*patchL*sinstr+(j+0.5)*patchW*cosdip*cosstr
+                tot_noffset=(i+0.5)*patchL*cosstr-(j+0.5)*patchW*cosdip*sinstr
+                tot_uoffset=(j+0.5)*patchW*sindip                
+                
+                #get next patch-centered coordinate
+                latcij,loncij,depthcij = geod_transform.translate_flat(latcorner,loncorner,depthcorner,tot_eoffset,tot_noffset,tot_uoffset)
+                self.add_patch(latcij,loncij,depthcij,strike,dip,patchL,patchW,i,j)
+                
+    # specify the center of the fault instead of the top-left corner            
+    def create_planar_model_centered(self,latc,lonc,depthc,strike,dip,L,W,nL,nW):
+        #compute coordinates of every patch center and add this patch
+        patchL=L/nL
+        patchW=W/nW  
+        sindip=np.sin(dip*np.pi/180.)
+        cosdip=np.cos(dip*np.pi/180.)
+        sinstr=np.sin(strike*np.pi/180.)
+        cosstr=np.cos(strike*np.pi/180.)
+        # simplest way: first, compute offset to the top-left corner, then compute individual offsets relative to that
+        fault_eoffset = -0.5*L*sinstr - 0.5*W*cosdip*cosstr
+        fault_noffset = -0.5*L*cosstr + 0.5*W*cosdip*sinstr
+        fault_uoffset = -0.5*W*sindip
+        for i in range(nL):
+            for j in range(nW):
+                tot_eoffset = fault_eoffset + (i+0.5)*patchL*sinstr + (j+0.5)*patchW*cosdip*cosstr
+                tot_noffset = fault_noffset + (i+0.5)*patchL*cosstr - (j+0.5)*patchW*cosdip*sinstr
+                tot_uoffset = fault_uoffset + (j+0.5)*patchW*sindip           
+                
+                #get next patch-centered coordinate
+                latcij,loncij,depthcij = geod_transform.translate_flat(latc,lonc,depthc,tot_eoffset,tot_noffset,tot_uoffset)
+                self.add_patch(latcij,loncij,depthcij,strike,dip,patchL,patchW,i,j)
+                
+    def find_patch(self,patchid,strikeoffset,dipoffset):
+        '''given a patch index, find the patch offset by strikeoffset,dipoffset and
+        return its index, e.g. (n,0,1) returns the next patch down-dip from n. 
+        Attempting to access indices beyond the edge of the fault returns the edge.'''
+        strid=min(max(self.strikeid),max(0,self.strikeid[patchid]+strikeoffset))
+        dipid=min(max(self.dipid),max(0,self.dipid[patchid]+dipoffset))
+        try:
+            newid=np.logical_and(self.strikeid==strid, self.dipid==dipid).nonzero()[0][0]
+            return newid
+        except IndexError:
+            print('Error in find_patch: element not found')
+            
+    def get_greens(self,lat,lon,kind='displacement'):
+        # return the greens function matrix at specified input points
+        #layout of displacement G is:
+        #      ...patch1....
+        #    . uE_str uE_dip
+        # pt1. uN_str uN_dip
+        #    . uU_str uU_dip
+        #layout of strain G is:
+        #      ....patch1.....
+        #    . eNN_str eNN_dip
+        # pt1. eNE_str eNE_dip
+        #    . eEN_str eEN_dip
+        #    . eEE_str eEE_dip
+        if kind=='displacement': #default value
+            G = okada_greens.displacement_greens(lat,lon,self.latc,self.lonc,self.depth,self.strike,self.dip,self.L,self.W)
+        elif kind=='strain':
+            G = okada_greens.strain_greens(lat,lon,self.latc,self.lonc,self.depth,self.strike,self.dip,self.L,self.W)    
+        else:
+            print("didn't understand 'kind' argument for get_greens:", kind, " exiting.")
+            sys.exit(1)
+        return G
+
+    def get_selfstress(self,mu=30e3):
+        # NOTE: THIS IS INCORRECT for actual stress computations. The current Okada greens function does not accept depths for the receiver faults.
+        # Need to replace okada85 by okada92 computations.
+        # But, this may work OK for a simple smoothing matrix, for a shallowly dipping fault.
+        # return the stress interaction kernel for the fault.
+        # this is the strain greens function for slip on each patch, computed at each patch center
+        K = okada_greens.strain_greens(self.latc,self.lonc,self.latc,self.lonc,self.depth,self.strike,self.dip,self.L,self.W)    
+        return mu*K
+
+    def load_pickle(self,fname):
+        #get pickled arrays
+        savearray=np.load(fname)
+        #add them to self
+        self.latc = np.append(self.latc,savearray[:,0])
+        self.lonc = np.append(self.lonc,savearray[:,1])
+        self.depth = np.append(self.depth,savearray[:,2])
+        self.strike = np.append(self.strike,savearray[:,3])
+        self.dip = np.append(self.dip,savearray[:,4])
+        self.L = np.append(self.L,savearray[:,5])
+        self.W = np.append(self.W,savearray[:,6])        
+        self.strikeid = np.append(self.strikeid,savearray[:,7])
+        self.dipid = np.append(self.dipid,savearray[:,8])
+        self.npatches = len(self.W)
+
+    def save_pickle(self,fname):
+        print(np.shape(self.latc),np.shape(self.lonc),np.shape(self.depth),np.shape(self.strike),np.shape(self.dip),np.shape(self.L),np.shape(self.W),np.shape(self.strikeid),np.shape(self.dipid))
+        savearray=np.column_stack((self.latc,self.lonc,self.depth,self.strike,self.dip,self.L,self.W,self.strikeid,self.dipid))
+        np.save(fname,savearray)
+
+    #def get_Ghashid(self,lat,lon,kind='displacement'):
+    #    #using current object data compute the hash id 
+    #    temparray=np.hstack((lat,lon,np.fromstring(kind,dtype=np.uint8), self.latc,self.lonc,self.depth,self.strike,self.dip,self.L,self.W,self.patchid,self.strikeid,self.dipid))
+    #    return hashlib.sha1(temparray.view(np.uint8)).hexdigest()
+
+    def get_patch_verts_center_3d(self):
+        verts3d,verts2d=self.get_patch_verts_center_both()
+        return verts3d
+        
+    def get_patch_verts_center_2d(self):
+        verts3d,verts2d=self.get_patch_verts_center_both()
+        return verts2d
+                
+    def get_patch_verts_center_both(self):
+        verts3d=[]
+        verts2d=[]
+        #print(self.latc)
+        for i in range(len(self.latc)):
+            sindip=np.sin(np.radians(self.dip[i]))
+            cosdip=np.cos(np.radians(self.dip[i]))
+            sinstr=np.sin(np.radians(self.strike[i]))
+            cosstr=np.cos(np.radians(self.strike[i]))
+            ztop=1.e-3*(self.depth[i]+(self.W[i]/2.)*sindip)
+            zbot=1.e-3*(self.depth[i]-(self.W[i]/2.)*sindip)
+            zs=[ztop,ztop,zbot,zbot]
+            y1,x1,z1=geod_transform.translate_flat(self.latc[i],self.lonc[i],0,
+                     -(self.L[i]/2.)*sinstr + (self.W[i]/2.)*cosdip*cosstr,
+                     -(self.L[i]/2.)*cosstr - (self.W[i]/2.)*cosdip*sinstr,0)
+            y2,x2,z2=geod_transform.translate_flat(self.latc[i],self.lonc[i],0,
+                     +(self.L[i]/2.)*sinstr + (self.W[i]/2.)*cosdip*cosstr,
+                     +(self.L[i]/2.)*cosstr - (self.W[i]/2.)*cosdip*sinstr,0)
+            y3,x3,z3=geod_transform.translate_flat(self.latc[i],self.lonc[i],0,
+                     +(self.L[i]/2.)*sinstr - (self.W[i]/2.)*cosdip*cosstr,
+                     +(self.L[i]/2.)*cosstr + (self.W[i]/2.)*cosdip*sinstr,0)
+            y4,x4,z4=geod_transform.translate_flat(self.latc[i],self.lonc[i],0,
+                     -(self.L[i]/2.)*sinstr - (self.W[i]/2.)*cosdip*cosstr,
+                     -(self.L[i]/2.)*cosstr + (self.W[i]/2.)*cosdip*sinstr,0)
+            xs=[x1,x2,x3,x4]
+            ys=[y1,y2,y3,y4]
+            verts3d.append(list(zip(xs, ys, zs)))
+            verts2d.append(list(zip(xs, ys)))
+        return verts3d,verts2d
+
+
+    def plot_patch_outlines(
+        self,
+        ax=None,
+        indices=None,
+        outline_color='k',
+        outline_lw=1.2,
+        outline_ls='-',
+        top_color='tab:red',
+        top_lw=2.5,
+        top_ls='-',
+        **kwargs
+    ):
+        """
+        Draw rectangular patch outlines, emphasizing the shallow (top) edge.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+        indices : iterable of int, optional
+            Which patches to draw (default: all).
+        outline_color, outline_lw, outline_ls : appearance of the non-top edges.
+        top_color, top_lw, top_ls : appearance of the shallow/top edge.
+        **kwargs : passed to LineCollection (e.g., zorder, alpha)
+
+        Returns
+        -------
+        outline_lc, top_lc : LineCollection
+        """
+        import matplotlib.pyplot as plt
+        if ax is None:
+            ax = plt.gca()
+
+        verts3d, verts2d = self.get_patch_verts_center_both()  # each is list of 4-vertex polygons
+        if indices is None:
+            indices = range(len(verts2d))
+
+        outline_segments = []
+        top_segments = []
+
+        for i in indices:
+            v2 = verts2d[i]                 # [(lon,lat)*4], order matches verts3d
+            v3 = verts3d[i]                 # [(lon,lat,depth)*4]
+
+            # Find the two vertices with minimum depth (shallower edge)
+            zs = np.array([p[2] for p in v3])
+            zmin = zs.min()
+            top_idx = np.where(np.isclose(zs, zmin))[0]  # two indices
+
+            # Build all four edges in order
+            edges = [
+                np.array([v2[0], v2[1]]),
+                np.array([v2[1], v2[2]]),
+                np.array([v2[2], v2[3]]),
+                np.array([v2[3], v2[0]]),
+            ]
+
+            # Map which edge is the shallow/top one based on the vertex pair
+            top_edge = None
+            if set(top_idx.tolist()) == {0, 1}:
+                top_edge = edges[0]
+            elif set(top_idx.tolist()) == {1, 2}:
+                top_edge = edges[1]
+            elif set(top_idx.tolist()) == {2, 3}:
+                top_edge = edges[2]
+            elif set(top_idx.tolist()) == {3, 0}:
+                top_edge = edges[3]
+            else:
+                # Fallback: if geometry degenerates, just pick the shortest edge
+                lens = [np.hypot(*(e[1] - e[0])) for e in edges]
+                top_edge = edges[int(np.argmin(lens))]
+
+            # Collect segments
+            top_segments.append(top_edge)
+            # add the other three edges to outline
+            for e in edges:
+                if not (np.allclose(e, top_edge)):
+                    outline_segments.append(e)
+
+        # Thin outline for non-top edges
+        outline_kwargs = dict(colors=outline_color, linewidths=outline_lw, linestyles=outline_ls)
+        outline_kwargs.update({k: v for k, v in kwargs.items() if k not in outline_kwargs})
+        outline_lc = LineCollection(outline_segments, **outline_kwargs)
+        ax.add_collection(outline_lc)
+
+        # Thicker, colored shallow/top edges
+        top_kwargs = dict(colors=top_color, linewidths=top_lw, linestyles=top_ls)
+        top_kwargs.update({k: v for k, v in kwargs.items() if k not in top_kwargs})
+        top_lc = LineCollection(top_segments, **top_kwargs)
+        ax.add_collection(top_lc)
+
+        return outline_lc, top_lc
