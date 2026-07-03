@@ -78,10 +78,11 @@ same process.
 
 ## Engine coverage
 
-The `okada85` (surface deformation) and `tri` (triangular dislocation)
-engines run fully on the selected backend. The `okada92` (internal
-deformation, DC3D) engine is a faithful scalar port of the Fortran
-reference and always runs on NumPy, regardless of the selected backend.
+All three engines — `okada85` (surface deformation), `okada92` (internal
+deformation, DC3D), and `tri` (triangular dislocation) — run fully on the
+selected backend. `okada92` is vectorized over observation points, so
+strain Green's functions and fault self-stress kernels evaluate all
+observation points per patch in a single call on either backend.
 
 On the JAX backend, `greens.displacement_greens` (rectangular patches,
 surface data) evaluates all patches in one JIT-compiled batched kernel

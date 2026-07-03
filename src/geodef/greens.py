@@ -279,55 +279,38 @@ def strain_greens(
         from geodef import okada92
 
         obs_depth = np.asarray(obs_depth, dtype=float)
+        z_obs = -obs_depth  # okada92 convention: Z <= 0
         G_mu = 1.0  # unit shear modulus; actual scaling done by caller
         for ipatch in range(npatch):
             e, n, _ = transforms.geod2enu(
                 lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
             )
-            for iobs in range(nobs):
-                z_obs = -float(obs_depth[iobs])  # okada92 convention: Z <= 0
-                _, strain_ss = okada92.okada92(
-                    float(e[iobs]),
-                    float(n[iobs]),
-                    z_obs,
-                    float(depth[ipatch]),
-                    float(strike[ipatch]),
-                    float(dip[ipatch]),
-                    float(L[ipatch]),
-                    float(W[ipatch]),
-                    1.0,
-                    0.0,
-                    0.0,
-                    G_mu,
-                    nu,
-                    allow_singular=True,
-                )
-                _, strain_ds = okada92.okada92(
-                    float(e[iobs]),
-                    float(n[iobs]),
-                    z_obs,
-                    float(depth[ipatch]),
-                    float(strike[ipatch]),
-                    float(dip[ipatch]),
-                    float(L[ipatch]),
-                    float(W[ipatch]),
-                    0.0,
-                    1.0,
-                    0.0,
-                    G_mu,
-                    nu,
-                    allow_singular=True,
-                )
-                row = 4 * iobs
-                # NN, NE, EN, EE from the 3x3 gradient tensor
-                G[row, ipatch] = strain_ss[1, 1]
-                G[row + 1, ipatch] = strain_ss[1, 0]
-                G[row + 2, ipatch] = strain_ss[0, 1]
-                G[row + 3, ipatch] = strain_ss[0, 0]
-                G[row, npatch + ipatch] = strain_ds[1, 1]
-                G[row + 1, npatch + ipatch] = strain_ds[1, 0]
-                G[row + 2, npatch + ipatch] = strain_ds[0, 1]
-                G[row + 3, npatch + ipatch] = strain_ds[0, 0]
+            patch_args = (
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+            )
+            _, strain_ss = okada92.okada92(
+                e, n, z_obs, *patch_args, 1.0, 0.0, 0.0, G_mu, nu,
+                allow_singular=True,
+            )
+            _, strain_ds = okada92.okada92(
+                e, n, z_obs, *patch_args, 0.0, 1.0, 0.0, G_mu, nu,
+                allow_singular=True,
+            )
+            strain_ss = backend.to_numpy(strain_ss)
+            strain_ds = backend.to_numpy(strain_ds)
+            # NN, NE, EN, EE from the 3x3 gradient tensor
+            G[0::4, ipatch] = strain_ss[:, 1, 1]
+            G[1::4, ipatch] = strain_ss[:, 1, 0]
+            G[2::4, ipatch] = strain_ss[:, 0, 1]
+            G[3::4, ipatch] = strain_ss[:, 0, 0]
+            G[0::4, npatch + ipatch] = strain_ds[:, 1, 1]
+            G[1::4, npatch + ipatch] = strain_ds[:, 1, 0]
+            G[2::4, npatch + ipatch] = strain_ds[:, 0, 1]
+            G[3::4, npatch + ipatch] = strain_ds[:, 0, 0]
 
     return G
 

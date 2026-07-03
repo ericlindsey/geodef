@@ -9,7 +9,7 @@ not installed.
 import numpy as np
 import pytest
 
-from geodef import backend, greens, okada85
+from geodef import backend, greens, okada85, okada92
 from geodef import tri as tdcalc
 from tests.test_okada85 import (
     _REFERENCE_PARAMS,
@@ -120,6 +120,26 @@ class TestTriJaxReference:
 
 class TestBackendEquivalence:
     """NumPy and JAX backends agree on a general dipping-fault case."""
+
+    def test_okada92_matches_numpy(self) -> None:
+        rng = np.random.default_rng(11)
+        n = 100
+        X = rng.uniform(-3e4, 3e4, n)
+        Y = rng.uniform(-3e4, 3e4, n)
+        Z = -rng.uniform(0.0, 2e4, n)
+        args = (12e3, 37.0, 55.0, 15e3, 8e3, 1.0, 0.7, 0.3, 30e9, 0.25)
+
+        backend.set_backend("numpy")
+        disp_np, strain_np = okada92.okada92(X, Y, Z, *args)
+        backend.set_backend("jax")
+        disp_jax, strain_jax = okada92.okada92(X, Y, Z, *args)
+
+        np.testing.assert_allclose(
+            backend.to_numpy(disp_jax), disp_np, rtol=1e-10, atol=1e-18
+        )
+        np.testing.assert_allclose(
+            backend.to_numpy(strain_jax), strain_np, rtol=1e-10, atol=1e-20
+        )
 
     def test_okada85_displacement_matches_numpy(self) -> None:
         rng = np.random.default_rng(42)

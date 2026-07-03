@@ -81,19 +81,34 @@ autodiff rewards.
   10-50x steady-state speedup for rectangular displacement assembly, with
   JIT compilation (~1.5-3 s) paid once per problem shape.
 
-**Scope note (okada92).** The `okada92`/DC3D engine is a faithful scalar
-port of the Fortran reference (per-point control flow, module-level state),
-so it cannot be backend-routed by the namespace shim. It stays on the NumPy
-path; a vectorized, trace-safe DC3D rewrite — cross-validated against the
-same reference data — is its own future roadmap item. Surface-data
-workflows (the dominant use) go through `okada85` and `tri`, which are
-fully routed.
+- [x] Vectorized DC3D rewrite (`okada92`): the scalar Fortran-style port
+  (per-point control flow, module-level common blocks) was rewritten as
+  pure, vectorized, `where`-based array math routed through the backend
+  namespace, keeping line-by-line formula correspondence with the
+  published DC3D.f. Anchored to golden data generated from the scalar
+  port (shear), validated by finite-difference displacement gradients
+  (all components), and equivalence-tested on JAX. The rewrite also
+  restored the tensile-fault DU entries that the scalar port had
+  truncated (opening-mode strains previously omitted the z-derivative
+  and part of the y-derivative terms). `greens.strain_greens` and the
+  `okada` dispatcher now evaluate all observation points per patch in
+  one call — the 100-patch fault self-stress kernel assembles ~11x
+  faster on NumPy, and the kernel is now available to the JAX backend
+  for the stress-shadows / earthquake-cycle path.
 
 ### Phase 2 — Differentiable forward model
 - Express `G(θ)` assembly as a JAX-traceable function of the geometry parameters
   `θ` (position, strike, dip, length, width for rectangles; vertices for
   triangles) and expose `jax.jacobian`/`jax.grad` of the predicted data with
   respect to `θ` and slip, for **both** engines.
+- **Differentiation variables (settled 2026-07).** The `tri` engine
+  differentiates with respect to the **vertex coordinates** — its native
+  parameterization, well-defined for any mesh including non-planar ones.
+  Gradients in terms of derived parameters (trace position, dip, depth of
+  a planar mesh) come free via the chain rule through a small
+  `θ → vertices` builder traced by JAX. The rectangular engine
+  differentiates its own native parameters (position, strike, dip,
+  length, width) directly.
 - Validate gradients against finite differences on small problems in tests;
   take care near the `tri` angular-dislocation branch boundaries where the
   `where`-selected configuration switches.
