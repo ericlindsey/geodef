@@ -108,10 +108,18 @@ autodiff rewards.
   against central finite differences (`tests/test_gradients.py`); the `tri`
   path needed setupTDCS's construction asserts skipped under tracing and
   the image-triangle mirror rewritten without `np.copy`/in-place writes.
-- [ ] Extend the differentiable path from single-source displacement to
-  full `G(θ)` assembly for a fault + dataset (projection, multi-patch
-  meshes via a traced `θ → patches`/`θ → vertices` builder), and to the
-  strain/stress kernels.
+- [x] Full `G(θ)` assembly: `gradients.rect_greens(theta, ...)` builds the
+  (3*nobs, 2*N) displacement Green's matrix for a discretized planar
+  fault via a traced mirror of `Fault.planar` (same patch ordering and
+  layout as `greens.displacement_greens`, validated against that
+  pipeline); `gradients.tri_greens(vertices, ...)` does the same for a
+  triangular mesh (differentiable eagerly; jit/vmap over the mesh axis
+  still open). `gradients.los_project` maps displacement G onto InSAR
+  look vectors, matching `InSAR.project`. G(θ) Jacobians validated
+  against finite differences.
+- [ ] Remaining Phase 2: differentiable strain/stress kernels, and
+  jit/vmap support for the triangular mesh axis (needs the remaining
+  geometry-scalar branches in `tri.py` expressed as `where`).
 - **Differentiation variables (settled 2026-07).** The `tri` engine
   differentiates with respect to the **vertex coordinates** — its native
   parameterization, well-defined for any mesh including non-planar ones.

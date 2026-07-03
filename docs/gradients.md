@@ -74,6 +74,33 @@ All Jacobians are validated against central finite differences in
 
 ---
 
+## Full Green's matrix assembly `G(θ)`
+
+```python
+G = geodef.gradients.rect_greens(theta, e_obs, n_obs, n_length=8, n_width=4)
+# (3*nobs, 2*N): rows [E, N, U] per point; columns [:N] strike-slip,
+# [N:] dip-slip — same layout and patch ordering as Fault.planar +
+# greens.displacement_greens, but flat-Cartesian and traceable in theta.
+
+G = geodef.gradients.tri_greens(vertices, obs)
+# vertices: (ntri, 3, 3) — traceable in every vertex coordinate.
+# (Triangles run in a Python loop: differentiable eagerly, but not yet
+# jit/vmap-compatible over the mesh axis.)
+```
+
+`jax.jacfwd(rect_greens)(theta)` gives the sensitivity of every Green's
+coefficient to the fault geometry — the core ingredient for
+variable-projection geometry inversion, where slip is solved linearly
+inside a nonlinear search over `theta`.
+
+Project onto InSAR line-of-sight (matches `InSAR.project`):
+
+```python
+G_los = geodef.gradients.los_project(G, look)   # look: (nobs, 3) [E,N,U]
+```
+
+---
+
 ## Composing with a geometry builder
 
 ```python
