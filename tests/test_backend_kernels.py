@@ -179,6 +179,49 @@ class TestBackendEquivalence:
         # slightly looser than eager op-by-op evaluation
         np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-12)
 
+    def test_strain_greens_surface_matches_numpy(self) -> None:
+        rng = np.random.default_rng(9)
+        nobs, npatch = 30, 10
+        lat = rng.uniform(-0.3, 0.3, nobs)
+        lon = rng.uniform(-0.3, 0.3, nobs)
+        lat0 = rng.uniform(-0.15, 0.15, npatch)
+        lon0 = rng.uniform(-0.15, 0.15, npatch)
+        depth = rng.uniform(5e3, 2e4, npatch)
+        strike = rng.uniform(0.0, 360.0, npatch)
+        dip = rng.uniform(10.0, 90.0, npatch)
+        L = np.full(npatch, 8e3)
+        W = np.full(npatch, 5e3)
+        args = (lat, lon, lat0, lon0, depth, strike, dip, L, W)
+
+        backend.set_backend("numpy")
+        expected = greens.strain_greens(*args)
+        backend.set_backend("jax")
+        result = greens.strain_greens(*args)
+
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-16)
+
+    def test_strain_greens_depth_matches_numpy(self) -> None:
+        rng = np.random.default_rng(13)
+        npatch = 8
+        lat0 = rng.uniform(-0.15, 0.15, npatch)
+        lon0 = rng.uniform(-0.15, 0.15, npatch)
+        depth = rng.uniform(5e3, 2e4, npatch)
+        strike = rng.uniform(0.0, 360.0, npatch)
+        dip = rng.uniform(10.0, 90.0, npatch)
+        L = np.full(npatch, 8e3)
+        W = np.full(npatch, 5e3)
+        # self-stress configuration: observe at the patch centroids
+        args = (lat0, lon0, lat0, lon0, depth, strike, dip, L, W)
+
+        backend.set_backend("numpy")
+        expected = greens.strain_greens(*args, obs_depth=depth)
+        backend.set_backend("jax")
+        result = greens.strain_greens(*args, obs_depth=depth)
+
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-16)
+
     def test_tri_displacement_matches_numpy(self) -> None:
         rng = np.random.default_rng(42)
         n = 200

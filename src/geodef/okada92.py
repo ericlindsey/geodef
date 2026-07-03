@@ -112,12 +112,14 @@ def okada92(X, Y, Z, depth, strike, dip, length, width,
     if np.any(iret_np == 1):
         n_sing = int(np.sum(iret_np == 1))
         if not allow_singular:
-            bad = int(np.argmax(iret_np == 1))
-            x_np = backend.to_numpy(X)
-            y_np = backend.to_numpy(Y)
+            bad = int(np.argmax(iret_np.ravel() == 1))
+            x_np = backend.to_numpy(X).ravel()
+            y_np = backend.to_numpy(Y).ravel()
             z_np = np.broadcast_to(
-                np.atleast_1d(backend.to_numpy(xp.asarray(Z))), x_np.shape
-            )
+                np.atleast_1d(backend.to_numpy(xp.asarray(Z))),
+                backend.to_numpy(X).shape,
+            ).ravel()
+            bad = min(bad, x_np.size - 1)
             raise ValueError(
                 f"Singular result encountered at point "
                 f"(X: {x_np[bad]}, Y: {y_np[bad]}, Z: {z_np[bad]}). "
@@ -127,21 +129,40 @@ def okada92(X, Y, Z, depth, strike, dip, length, width,
             f"Singular result at {n_sing} point(s). Outputs set to NaN."
         )
 
-    # Rotate displacements from fault-aligned (x=strike, y=perp) to
-    # geographic (E, N), same rotation as okada85
-    ux = displacement[:, 0]
-    uy = displacement[:, 1]
-    uz = displacement[:, 2]
+    disp_geo, strain_geo = _rotate_to_geographic(displacement, strain, ss, cs)
+
+    if scalar_input:
+        return disp_geo[0].reshape(3, 1), strain_geo[0]
+    return disp_geo, strain_geo
+
+
+def _rotate_to_geographic(displacement, strain, ss, cs):
+    """Rotate DC3D outputs from fault-aligned to geographic coordinates.
+
+    Handles scalar strike (``ss``/``cs`` 0-d) as well as batched strike
+    arrays broadcast against leading axes of the outputs. Uses the same
+    rotation as okada85: ue = sin(strike)*ux - cos(strike)*uy.
+    """
+    ux = displacement[..., 0]
+    uy = displacement[..., 1]
+    uz = displacement[..., 2]
     ue = ss * ux - cs * uy
     un = cs * ux + ss * uy
     disp_geo = xp.stack([ue, un, uz], axis=-1)
 
     # Rotate strain tensor from fault coords to geographic: S_geo = R S R^T
-    R = xp.asarray([[ss, -cs, 0.0], [cs, ss, 0.0], [0.0, 0.0, 1.0]])
-    strain_geo = xp.einsum("ab,nbc,dc->nad", R, strain, R)
-
-    if scalar_input:
-        return disp_geo[0].reshape(3, 1), strain_geo[0]
+    ss_b, cs_b = xp.broadcast_arrays(xp.asarray(ss), xp.asarray(cs))
+    zero = xp.zeros_like(ss_b)
+    one = xp.ones_like(ss_b)
+    R = xp.stack(
+        [
+            xp.stack([ss_b, -cs_b, zero], axis=-1),
+            xp.stack([cs_b, ss_b, zero], axis=-1),
+            xp.stack([zero, zero, one], axis=-1),
+        ],
+        axis=-2,
+    )
+    strain_geo = xp.einsum("...ab,...bc,...dc->...ad", R, strain, R)
     return disp_geo, strain_geo
 
 

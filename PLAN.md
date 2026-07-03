@@ -70,11 +70,15 @@ autodiff rewards.
 - [x] Cross-validate JAX output against the existing Matlab reference `.npz`
   files to the same tolerances the CPU engines meet
   (`tests/test_backend_kernels.py`, skipped when JAX is absent).
-- [x] Batched Green's assembly for the JAX path: `displacement_greens`
-  broadcasts the okada85 kernel over a leading patch axis and JIT-compiles
-  the batched call (the NumPy loop path is untouched). Strain and
-  triangular assembly still loop; batching them is the next Phase 1 step
-  (`tri` needs its geometry setup made trace-safe first).
+- [x] Batched Green's assembly for the JAX path: `displacement_greens`,
+  `strain_greens` (surface okada85 path), and `strain_greens` at depth
+  (DC3D path, used by `Fault.stress_kernel`) broadcast their kernels over
+  a leading patch axis and JIT-compile the batched call; the NumPy loop
+  paths are untouched. Measured: a 100x100 self-stress kernel assembles
+  in ~12 ms steady-state on JAX/CPU vs ~550 ms on NumPy (~46x), after a
+  one-time ~6 s DC3D compile per problem shape. Triangular assembly
+  still loops; batching it needs the `tri` geometry setup made
+  trace-safe first (Phase 2 work).
 - [x] Deliverable: a `geodef[jax]` extra and `benchmarks/bench_greens.py`
   (caching disabled, sequential runs) comparing NumPy vs JAX assembly for a
   range of patch/observation counts. Measured on a plain multi-core CPU:

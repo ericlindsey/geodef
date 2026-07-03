@@ -84,12 +84,13 @@ selected backend. `okada92` is vectorized over observation points, so
 strain Green's functions and fault self-stress kernels evaluate all
 observation points per patch in a single call on either backend.
 
-On the JAX backend, `greens.displacement_greens` (rectangular patches,
-surface data) evaluates all patches in one JIT-compiled batched kernel
-call instead of looping — typically 10-50x faster than the NumPy loop even
-on a plain CPU, after a one-time JIT compilation per problem shape. Strain
-and triangular Green's assembly currently still loop per patch and see no
-speedup yet. Benchmark with:
+On the JAX backend, rectangular Green's assembly — `displacement_greens`,
+`strain_greens` at the surface, and `strain_greens` at depth (the
+`Fault.stress_kernel` / stress-shadows path) — evaluates all patches in
+one JIT-compiled batched kernel call instead of looping, typically
+10-50x faster than the NumPy loop even on a plain CPU after a one-time
+JIT compilation per problem shape. Triangular Green's assembly currently
+still loops per patch and sees no speedup yet. Benchmark with:
 
 ```bash
 uv run python benchmarks/bench_greens.py
