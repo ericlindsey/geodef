@@ -25,6 +25,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+from collections.abc import Callable, Sequence
 from types import ModuleType
 
 import numpy as np
@@ -149,6 +150,49 @@ def to_numpy(array: npt.ArrayLike) -> np.ndarray:
         The equivalent ``np.ndarray`` (zero-copy where possible).
     """
     return np.asarray(array)
+
+
+def masked_eval(
+    func: Callable[..., tuple],
+    mask: npt.NDArray[np.bool_],
+    args: Sequence[npt.ArrayLike],
+    n_out: int,
+    fill: float = np.nan,
+) -> tuple:
+    """Evaluate a vectorized function only on the lanes where ``mask`` is True.
+
+    The dislocation kernels select between artefact-free formula
+    configurations per observation point. On the NumPy backend the True
+    lanes are gathered, ``func`` runs once on the compressed arrays, and
+    the results are scattered back, so no work is spent on masked-out
+    lanes. On the JAX backend ``func`` runs on the full arrays and the
+    result is selected with ``where``, because data-dependent shapes
+    cannot be traced or JIT-compiled.
+
+    Args:
+        func: Vectorized callable returning a tuple of ``n_out`` arrays
+            whose trailing axis matches its inputs'.
+        mask: Boolean mask over the trailing axis of each argument.
+        args: Arrays passed to ``func``, each maskable along its trailing
+            axis.
+        n_out: Number of arrays ``func`` returns.
+        fill: Value assigned to lanes where ``mask`` is False.
+
+    Returns:
+        Tuple of ``n_out`` arrays shaped like ``mask``, holding ``func``'s
+        results on the True lanes and ``fill`` elsewhere.
+    """
+    if _config.name == "jax":
+        xp = namespace()
+        outs = func(*(xp.asarray(a) for a in args))
+        return tuple(xp.where(mask, out, fill) for out in outs)
+    mask = np.asarray(mask, dtype=bool)
+    full = tuple(np.full(mask.shape, fill) for _ in range(n_out))
+    if mask.any():
+        outs = func(*(np.asarray(a)[..., mask] for a in args))
+        for dst, src in zip(full, outs):
+            dst[mask] = src
+    return full
 
 
 def _apply_jax_precision() -> None:

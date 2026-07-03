@@ -117,6 +117,78 @@ class TestToNumpy:
 
 
 # ======================================================================
+# Masked evaluation
+# ======================================================================
+
+
+class TestMaskedEval:
+    def test_numpy_gathers_masked_lanes_only(self):
+        seen = {}
+
+        def func(x):
+            seen["shape"] = x.shape
+            return (2.0 * x,)
+
+        x = np.arange(5.0)
+        mask = np.array([True, False, True, False, True])
+        (out,) = backend.masked_eval(func, mask, (x,), n_out=1, fill=0.0)
+        assert seen["shape"] == (3,)
+        np.testing.assert_array_equal(out, [0.0, 0.0, 4.0, 0.0, 8.0])
+
+    def test_numpy_skips_func_when_mask_empty(self):
+        calls = []
+
+        def func(x):
+            calls.append(1)
+            return (x,)
+
+        mask = np.zeros(4, dtype=bool)
+        (out,) = backend.masked_eval(func, mask, (np.arange(4.0),), n_out=1)
+        assert calls == []
+        assert np.isnan(out).all()
+
+    def test_numpy_masks_along_last_axis(self):
+        def func(x):
+            return (x[0] + x[1], x[0] - x[1])
+
+        x = np.arange(8.0).reshape(2, 4)
+        mask = np.array([True, True, False, True])
+        s, d = backend.masked_eval(func, mask, (x,), n_out=2, fill=0.0)
+        np.testing.assert_array_equal(s, [4.0, 6.0, 0.0, 10.0])
+        np.testing.assert_array_equal(d, [-4.0, -4.0, 0.0, -4.0])
+
+    def test_disjoint_masks_sum_to_full_selection(self):
+        x = np.arange(6.0)
+        pos = x < 3
+        (a,) = backend.masked_eval(lambda v: (v + 10,), pos, (x,), 1, fill=0.0)
+        (b,) = backend.masked_eval(lambda v: (v - 10,), ~pos, (x,), 1, fill=0.0)
+        np.testing.assert_array_equal(a + b, np.where(pos, x + 10, x - 10))
+
+    @requires_jax
+    def test_jax_matches_numpy(self):
+        def func(x, y):
+            return (x * y, x - y)
+
+        x = np.linspace(0.0, 1.0, 7)
+        y = np.linspace(2.0, 3.0, 7)
+        mask = x > 0.5
+        expected = backend.masked_eval(func, mask, (x, y), n_out=2, fill=0.0)
+
+        backend.set_backend("jax")
+        result = backend.masked_eval(func, mask, (x, y), n_out=2, fill=0.0)
+        for r, e in zip(result, expected):
+            np.testing.assert_allclose(backend.to_numpy(r), e)
+
+    @requires_jax
+    def test_jax_where_discards_nan_lanes(self):
+        backend.set_backend("jax")
+        x = np.array([1.0, 0.0, 4.0])
+        mask = x > 0
+        (out,) = backend.masked_eval(lambda v: (1.0 / v,), mask, (x,), 1, fill=0.0)
+        np.testing.assert_array_equal(backend.to_numpy(out), [1.0, 0.0, 0.25])
+
+
+# ======================================================================
 # Environment variable
 # ======================================================================
 

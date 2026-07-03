@@ -88,6 +88,8 @@
 
 import numpy as np
 
+from geodef import backend
+
 ########################################################################
 ################## General-purpose functions ###########################
 ########################################################################
@@ -143,6 +145,8 @@ def trimodefinder(obs, tri):
     # The components of the output (trimode) corresponding to each calculation
     # points, are 1 for the first configuration, -1 for the second
     # configuration and 0 for the calculation point that lie on the TD sides.
+    # The output here is that selection expressed as three boolean masks
+    # (Ipos, Ineg, Inan) so the downstream selection stays trace-safe.
 
     a = ((tri[1,1]-tri[2,1])*(obs[0]-tri[2,0])+(tri[2,0]-tri[1,0])*(obs[1]-tri[2,1]))/ \
         ((tri[1,1]-tri[2,1])*(tri[0,0]-tri[2,0])+(tri[2,0]-tri[1,0])*(tri[0,1]-tri[2,1]))
@@ -151,19 +155,17 @@ def trimodefinder(obs, tri):
     c = 1-a-b
 
     trimode = np.ones(len(obs[0]),dtype=int)
-    trimode[np.logical_and(np.logical_and(a<=0 , b>c) , c>a)] = -1
-    trimode[np.logical_and(np.logical_and(b<=0 , c>a) , a>b)] = -1
-    trimode[np.logical_and(np.logical_and(c<=0 , a>b) , b>c)] = -1
-    trimode[np.logical_and(np.logical_and(a==0 , b>=0) , c>=0)] = 0
-    trimode[np.logical_and(np.logical_and(a>=0 , b==0) , c>=0)] = 0
-    trimode[np.logical_and(np.logical_and(a>=0 , b>=0) , c==0)] = 0
-    trimode[np.logical_and(trimode==0 , obs[2]!=0)] = 1
+    trimode = np.where(np.logical_and(np.logical_and(a<=0 , b>c) , c>a), -1, trimode)
+    trimode = np.where(np.logical_and(np.logical_and(b<=0 , c>a) , a>b), -1, trimode)
+    trimode = np.where(np.logical_and(np.logical_and(c<=0 , a>b) , b>c), -1, trimode)
+    trimode = np.where(np.logical_and(np.logical_and(a==0 , b>=0) , c>=0), 0, trimode)
+    trimode = np.where(np.logical_and(np.logical_and(a>=0 , b==0) , c>=0), 0, trimode)
+    trimode = np.where(np.logical_and(np.logical_and(a>=0 , b>=0) , c==0), 0, trimode)
+    trimode = np.where(np.logical_and(trimode==0 , obs[2]!=0), 1, trimode)
 
-    # flatnonzero is similar to np.where()[0]
-    # but this directly returns an array instead of tuple
-    Ipos = np.flatnonzero(trimode==1)
-    Ineg = np.flatnonzero(trimode==-1)
-    Inan = np.flatnonzero(trimode==0)
+    Ipos = trimode==1
+    Ineg = trimode==-1
+    Inan = trimode==0
 
     return Ipos,Ineg,Inan
 
@@ -256,35 +258,25 @@ def TDdispFS(obs, tri, slip, nu):
                                              transformed_obs[2],transformed_obs[0]]),\
                                              transformed_tri[:,1:])
 
-    # initialize output array - shape is (3,n) but note it will be transposed before output
-    out = np.empty((3,len(transformed_obs[0])),dtype='float')
+    # sign=+1 selects configuration I, sign=-1 configuration II
+    def disp_config(tobs, sign):
+        # Calculate first angular dislocation contribution
+        u1T,v1T,w1T = TDSetupD(tobs,A,slip_b,nu,transformed_tri[0],-sign*e13)
+        # Calculate second angular dislocation contribution
+        u2T,v2T,w2T = TDSetupD(tobs,B,slip_b,nu,transformed_tri[1], sign*e12)
+        # Calculate third angular dislocation contribution
+        u3T,v3T,w3T = TDSetupD(tobs,C,slip_b,nu,transformed_tri[2], sign*e23)
+        return u1T+u2T+u3T, v1T+v2T+v3T, w1T+w2T+w3T
 
-    if len(Ipos)>0:
-        # Calculate first angular dislocation contribution
-        u1Tp,v1Tp,w1Tp = TDSetupD(transformed_obs[:,Ipos],A,slip_b,nu,transformed_tri[0], -e13)
-        # Calculate second angular dislocation contribution
-        u2Tp,v2Tp,w2Tp = TDSetupD(transformed_obs[:,Ipos],B,slip_b,nu,transformed_tri[1], e12)
-        # Calculate third angular dislocation contribution
-        u3Tp,v3Tp,w3Tp = TDSetupD(transformed_obs[:,Ipos],C,slip_b,nu,transformed_tri[2], e23)
-        out[:,Ipos] = np.array([
-            u1Tp+u2Tp+u3Tp,
-            v1Tp+v2Tp+v3Tp,
-            w1Tp+w2Tp+w3Tp
-        ])
-    if len(Ineg)>0:
-        # Calculate first angular dislocation contribution
-        u1Tn,v1Tn,w1Tn = TDSetupD(transformed_obs[:,Ineg],A,slip_b,nu,transformed_tri[0],e13)
-        # Calculate second angular dislocation contribution
-        u2Tn,v2Tn,w2Tn = TDSetupD(transformed_obs[:,Ineg],B,slip_b,nu,transformed_tri[1],-e12)
-        # Calculate third angular dislocation contribution
-        u3Tn,v3Tn,w3Tn = TDSetupD(transformed_obs[:,Ineg],C,slip_b,nu,transformed_tri[2],-e23)
-        out[:,Ineg] = np.array([
-            u1Tn+u2Tn+u3Tn,
-            v1Tn+v2Tn+v3Tn,
-            w1Tn+w2Tn+w3Tn
-        ])
-    if len(Inan)>0:
-        out[:,Inan] = np.nan
+    # Ipos and Ineg are disjoint, so with fill=0 the two halves sum to the
+    # full selection; output shape is (3,n) but it is transposed before output
+    uTp,vTp,wTp = backend.masked_eval(
+        lambda o: disp_config(o, 1), Ipos, (transformed_obs,), 3, fill=0.0)
+    uTn,vTn,wTn = backend.masked_eval(
+        lambda o: disp_config(o, -1), Ineg, (transformed_obs,), 3, fill=0.0)
+    out = np.array([uTp+uTn, vTp+vTn, wTp+wTn])
+    # points located exactly on the dislocation edge
+    out = np.where(Inan, np.nan, out)
 
     a = np.array([
         -transformed_obs[0],
@@ -344,10 +336,8 @@ def AngDisDisp(x, y, z, alpha, bx, by, bz, nu):
     r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
 
     # Avoid complex results for the logarithmic terms
-    Izeta = np.flatnonzero(zeta>r)
-    Iz = np.flatnonzero(z>r)
-    zeta[Izeta] = r[Izeta]
-    z[Iz] = r[Iz]
+    zeta = np.where(zeta>r, r, zeta)
+    z = np.where(z>r, r, z)
 
     ux = bx/8/np.pi/(1-nu)*(x*y/r/(r-z)-x*eta/r/(r-zeta))
     vx = bx/8/np.pi/(1-nu)*(eta*sinA/(r-zeta)-y*eta/r/(r-zeta)+\
@@ -461,29 +451,23 @@ def AngSetupFSC(obs,bX,bY,bZ,PA,PB,nu):
         Ipos = (beta*y1A >= 0)
         Ineg = np.logical_not(Ipos)
 
-        v1A=np.empty(npts)
-        v1B=np.empty(npts)
-        v2A=np.empty(npts)
-        v2B=np.empty(npts)
-        v3A=np.empty(npts)
-        v3B=np.empty(npts)
-
-        # Configuration I
-        v1A[Ipos],v2A[Ipos],v3A[Ipos] = AngDisDispFSC(y1A[Ipos],y2A[Ipos],y3A[Ipos],
-                                                      -np.pi+beta,b1,b2,b3,nu,-PA[2])
-        v1B[Ipos],v2B[Ipos],v3B[Ipos] = AngDisDispFSC(y1B[Ipos],y2B[Ipos],y3B[Ipos],
-                                                      -np.pi+beta,b1,b2,b3,nu,-PB[2])
-
-        # Configuration II
-        v1A[Ineg],v2A[Ineg],v3A[Ineg] = AngDisDispFSC(y1A[Ineg],y2A[Ineg],y3A[Ineg],
-                                                      beta,b1,b2,b3,nu,-PA[2])
-        v1B[Ineg],v2B[Ineg],v3B[Ineg] = AngDisDispFSC(y1B[Ineg],y2B[Ineg],y3B[Ineg],
-                                                      beta,b1,b2,b3,nu,-PB[2])
+        # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
+        # masks with fill=0 sum to the full per-lane selection
+        vA_p = backend.masked_eval(
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-np.pi+beta,b1,b2,b3,nu,-PA[2]),
+            Ipos, (y1A,y2A,y3A), 3, fill=0.0)
+        vB_p = backend.masked_eval(
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-np.pi+beta,b1,b2,b3,nu,-PB[2]),
+            Ipos, (y1B,y2B,y3B), 3, fill=0.0)
+        vA_n = backend.masked_eval(
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PA[2]),
+            Ineg, (y1A,y2A,y3A), 3, fill=0.0)
+        vB_n = backend.masked_eval(
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PB[2]),
+            Ineg, (y1B,y2B,y3B), 3, fill=0.0)
 
         # Calculate total Free Surface Correction to displacements in ADCS
-        v1 = v1B-v1A
-        v2 = v2B-v2A
-        v3 = v3B-v3A
+        v1,v2,v3 = (bp+bn-ap-an for ap,bp,an,bn in zip(vA_p,vB_p,vA_n,vB_n))
 
         # Transform total Free Surface Correction to displacements from ADCS to EFCS
         ue,un,uv = CoordTrans(v1,v2,v3,A.T)
@@ -590,60 +574,25 @@ def TDstrainFS(obs,tri,slip,nu):
                                              transformed_obs[2],transformed_obs[0]]),\
                                              transformed_tri[:,1:])
 
-    exx=np.empty(len(transformed_obs[0]))
-    eyy=np.empty(len(transformed_obs[0]))
-    ezz=np.empty(len(transformed_obs[0]))
-    exy=np.empty(len(transformed_obs[0]))
-    exz=np.empty(len(transformed_obs[0]))
-    eyz=np.empty(len(transformed_obs[0]))
-
     # Calculate the strain tensor components in TDCS
-    # Configuration I
-    if len(Ipos)>0:
+    # sign=+1 selects configuration I, sign=-1 configuration II
+    def strain_config(tobs, sign):
         # Calculate first angular dislocation contribution
-        Exx1Tp,Eyy1Tp,Ezz1Tp,Exy1Tp,Exz1Tp,Eyz1Tp = \
-            TDSetupS(transformed_obs[:,Ipos],A,slip_b,nu,transformed_tri[0],-e13)
+        E1 = TDSetupS(tobs,A,slip_b,nu,transformed_tri[0],-sign*e13)
         # Calculate second angular dislocation contribution
-        Exx2Tp,Eyy2Tp,Ezz2Tp,Exy2Tp,Exz2Tp,Eyz2Tp = \
-            TDSetupS(transformed_obs[:,Ipos],B,slip_b,nu,transformed_tri[1],e12)
+        E2 = TDSetupS(tobs,B,slip_b,nu,transformed_tri[1], sign*e12)
         # Calculate third angular dislocation contribution
-        Exx3Tp,Eyy3Tp,Ezz3Tp,Exy3Tp,Exz3Tp,Eyz3Tp = \
-            TDSetupS(transformed_obs[:,Ipos],C,slip_b,nu,transformed_tri[2],e23)
+        E3 = TDSetupS(tobs,C,slip_b,nu,transformed_tri[2], sign*e23)
+        return tuple(e1+e2+e3 for e1,e2,e3 in zip(E1,E2,E3))
 
-        exx[Ipos] = Exx1Tp+Exx2Tp+Exx3Tp
-        eyy[Ipos] = Eyy1Tp+Eyy2Tp+Eyy3Tp
-        ezz[Ipos] = Ezz1Tp+Ezz2Tp+Ezz3Tp
-        exy[Ipos] = Exy1Tp+Exy2Tp+Exy3Tp
-        exz[Ipos] = Exz1Tp+Exz2Tp+Exz3Tp
-        eyz[Ipos] = Eyz1Tp+Eyz2Tp+Eyz3Tp
-
-    # Configuration II
-    if len(Ineg)>0:
-        # Calculate first angular dislocation contribution
-        Exx1Tn,Eyy1Tn,Ezz1Tn,Exy1Tn,Exz1Tn,Eyz1Tn = \
-            TDSetupS(transformed_obs[:,Ineg],A,slip_b,nu,transformed_tri[0],e13)
-        # Calculate second angular dislocation contribution
-        Exx2Tn,Eyy2Tn,Ezz2Tn,Exy2Tn,Exz2Tn,Eyz2Tn = \
-            TDSetupS(transformed_obs[:,Ineg],B,slip_b,nu,transformed_tri[1],-e12)
-        # Calculate third angular dislocation contribution
-        Exx3Tn,Eyy3Tn,Ezz3Tn,Exy3Tn,Exz3Tn,Eyz3Tn = \
-            TDSetupS(transformed_obs[:,Ineg],C,slip_b,nu,transformed_tri[2],-e23)
-
-        exx[Ineg] = Exx1Tn+Exx2Tn+Exx3Tn
-        eyy[Ineg] = Eyy1Tn+Eyy2Tn+Eyy3Tn
-        ezz[Ineg] = Ezz1Tn+Ezz2Tn+Ezz3Tn
-        exy[Ineg] = Exy1Tn+Exy2Tn+Exy3Tn
-        exz[Ineg] = Exz1Tn+Exz2Tn+Exz3Tn
-        eyz[Ineg] = Eyz1Tn+Eyz2Tn+Eyz3Tn
-
-    # points located exactly on the dislocation edge
-    if len(Inan)>0:
-        exx[Inan] = np.nan
-        eyy[Inan] = np.nan
-        ezz[Inan] = np.nan
-        exy[Inan] = np.nan
-        exz[Inan] = np.nan
-        eyz[Inan] = np.nan
+    # Ipos and Ineg are disjoint, so with fill=0 the two halves sum to the
+    # full selection
+    Ep = backend.masked_eval(
+        lambda o: strain_config(o, 1), Ipos, (transformed_obs,), 6, fill=0.0)
+    En = backend.masked_eval(
+        lambda o: strain_config(o, -1), Ineg, (transformed_obs,), 6, fill=0.0)
+    # points located exactly on the dislocation edge get NaN
+    exx,eyy,ezz,exy,exz,eyz = (np.where(Inan, np.nan, p+n) for p,n in zip(Ep,En))
 
     # Transform the strain tensor components from TDCS into EFCS
     Exx,Eyy,Ezz,Exy,Exz,Eyz = TensTrans(exx,eyy,ezz,exy,exz,eyz,transform.T)
@@ -839,50 +788,31 @@ def AngSetupFSC_S(obs,bX,bY,bZ,PA,PB,nu):
         Ipos = (beta*y1A >= 0)
         Ineg = np.logical_not(Ipos)
 
-        # For singularities at surface
-        v11A = np.empty(npts)
-        v22A = np.empty(npts)
-        v33A = np.empty(npts)
-        v12A = np.empty(npts)
-        v13A = np.empty(npts)
-        v23A = np.empty(npts)
+        # Configuration I evaluates at mirrored coordinates and slip, then
+        # flips the 13/23 shear components back
+        def fsc_pos(p1,p2,p3,depth):
+            v11,v22,v33,v12,v13,v23 = AngDisStrainFSC(-p1,-p2,p3,\
+                np.pi-beta,-b1,-b2,b3,nu,depth)
+            return v11,v22,v33,v12,-v13,-v23
 
-        v11B = np.empty(npts)
-        v22B = np.empty(npts)
-        v33B = np.empty(npts)
-        v12B = np.empty(npts)
-        v13B = np.empty(npts)
-        v23B = np.empty(npts)
-
-        # Configuration I
-        [v11A[Ipos],v22A[Ipos],v33A[Ipos],v12A[Ipos],v13A[Ipos],v23A[Ipos]] = \
-            AngDisStrainFSC(-y1A[Ipos],-y2A[Ipos],y3A[Ipos],\
-            np.pi-beta,-b1,-b2,b3,nu,-PA[2])
-        v13A[Ipos] = -v13A[Ipos]
-        v23A[Ipos] = -v23A[Ipos]
-
-        [v11B[Ipos],v22B[Ipos],v33B[Ipos],v12B[Ipos],v13B[Ipos],v23B[Ipos]] = \
-            AngDisStrainFSC(-y1B[Ipos],-y2B[Ipos],y3B[Ipos],\
-            np.pi-beta,-b1,-b2,b3,nu,-PB[2])
-        v13B[Ipos] = -v13B[Ipos]
-        v23B[Ipos] = -v23B[Ipos]
-
-        # Configuration II
-        [v11A[Ineg],v22A[Ineg],v33A[Ineg],v12A[Ineg],v13A[Ineg],v23A[Ineg]] = \
-            AngDisStrainFSC(y1A[Ineg],y2A[Ineg],y3A[Ineg],\
-            beta,b1,b2,b3,nu,-PA[2])
-
-        [v11B[Ineg],v22B[Ineg],v33B[Ineg],v12B[Ineg],v13B[Ineg],v23B[Ineg]] = \
-            AngDisStrainFSC(y1B[Ineg],y2B[Ineg],y3B[Ineg],\
-            beta,b1,b2,b3,nu,-PB[2])
+        # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
+        # masks with fill=0 sum to the full per-lane selection
+        vA_p = backend.masked_eval(
+            lambda p1,p2,p3: fsc_pos(p1,p2,p3,-PA[2]),
+            Ipos, (y1A,y2A,y3A), 6, fill=0.0)
+        vB_p = backend.masked_eval(
+            lambda p1,p2,p3: fsc_pos(p1,p2,p3,-PB[2]),
+            Ipos, (y1B,y2B,y3B), 6, fill=0.0)
+        vA_n = backend.masked_eval(
+            lambda p1,p2,p3: AngDisStrainFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PA[2]),
+            Ineg, (y1A,y2A,y3A), 6, fill=0.0)
+        vB_n = backend.masked_eval(
+            lambda p1,p2,p3: AngDisStrainFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PB[2]),
+            Ineg, (y1B,y2B,y3B), 6, fill=0.0)
 
         # Calculate total Free Surface Correction to strains in ADCS
-        v11 = v11B-v11A
-        v22 = v22B-v22A
-        v33 = v33B-v33A
-        v12 = v12B-v12A
-        v13 = v13B-v13A
-        v23 = v23B-v23A
+        v11,v22,v33,v12,v13,v23 = \
+            (bp+bn-ap-an for ap,bp,an,bn in zip(vA_p,vB_p,vA_n,vB_n))
 
         # Transform total Free Surface Correction to strains from ADCS to EFCS
         Exx,Eyy,Ezz,Exy,Exz,Eyz = TensTrans(v11,v22,v33,v12,v13,v23,A.T)
