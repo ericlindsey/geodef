@@ -83,6 +83,17 @@ engines run fully on the selected backend. The `okada92` (internal
 deformation, DC3D) engine is a faithful scalar port of the Fortran
 reference and always runs on NumPy, regardless of the selected backend.
 
+On the JAX backend, `greens.displacement_greens` (rectangular patches,
+surface data) evaluates all patches in one JIT-compiled batched kernel
+call instead of looping — typically 10-50x faster than the NumPy loop even
+on a plain CPU, after a one-time JIT compilation per problem shape. Strain
+and triangular Green's assembly currently still loop per patch and see no
+speedup yet. Benchmark with:
+
+```bash
+uv run python benchmarks/bench_greens.py
+```
+
 ---
 
 ## Module boundaries

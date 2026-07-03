@@ -16,8 +16,8 @@ import numpy as np
 import scipy.linalg
 import scipy.sparse
 
+from geodef import backend, okada85, transforms, tri
 from geodef import cache as _cache
-from geodef import okada85, transforms, tri
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -29,6 +29,56 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 # Green's matrix assembly (geographic coordinates)
 # ======================================================================
+
+
+def _displacement_batch(
+    e: np.ndarray,
+    n: np.ndarray,
+    depth: np.ndarray,
+    strike: np.ndarray,
+    dip: np.ndarray,
+    L: np.ndarray,
+    W: np.ndarray,
+    rake: float,
+    nu: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate okada85.displacement for all patches at once.
+
+    The kernel is pure elementwise math, so it broadcasts over a leading
+    patch axis: ``e``/``n`` are (npatch, nobs) patch-relative coordinates
+    and the patch parameters are (npatch,) columns.
+
+    Returns:
+        Tuple of (ue, un, uz), each of shape (npatch, nobs).
+    """
+    return okada85.displacement(
+        e,
+        n,
+        depth[:, None],
+        strike[:, None],
+        dip[:, None],
+        L[:, None],
+        W[:, None],
+        rake,
+        1.0,
+        0.0,
+        nu,
+    )
+
+
+_jitted_displacement_batch = None
+
+
+def _get_displacement_batch():
+    """Return the batched displacement kernel, JIT-compiled on JAX."""
+    global _jitted_displacement_batch
+    if backend.get_backend() != "jax":
+        return _displacement_batch
+    if _jitted_displacement_batch is None:
+        import jax
+
+        _jitted_displacement_batch = jax.jit(_displacement_batch)
+    return _jitted_displacement_batch
 
 
 def displacement_greens(
@@ -69,6 +119,29 @@ def displacement_greens(
     nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
 
     G = np.zeros((3 * nobs, 2 * npatch))
+
+    if backend.get_backend() == "jax":
+        # Batched path: evaluate all patches in one JIT-compiled kernel call
+        # instead of looping. The geodetic transform stays on NumPy.
+        e2 = np.empty((npatch, nobs))
+        n2 = np.empty((npatch, nobs))
+        for ipatch in range(npatch):
+            e2[ipatch], n2[ipatch], _ = transforms.geod2enu(
+                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
+            )
+        patch_args = tuple(
+            np.asarray(a, dtype=float) for a in (depth, strike, dip, L, W)
+        )
+        kernel = _get_displacement_batch()
+        str_e, str_n, str_u = kernel(e2, n2, *patch_args, 0.0, nu)
+        dip_e, dip_n, dip_u = kernel(e2, n2, *patch_args, 90.0, nu)
+        G[0::3, :npatch] = backend.to_numpy(str_e).T
+        G[1::3, :npatch] = backend.to_numpy(str_n).T
+        G[2::3, :npatch] = backend.to_numpy(str_u).T
+        G[0::3, npatch:] = backend.to_numpy(dip_e).T
+        G[1::3, npatch:] = backend.to_numpy(dip_n).T
+        G[2::3, npatch:] = backend.to_numpy(dip_u).T
+        return G
 
     for ipatch in range(npatch):
         e, n, _ = transforms.geod2enu(lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0)

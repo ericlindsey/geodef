@@ -9,7 +9,7 @@ not installed.
 import numpy as np
 import pytest
 
-from geodef import backend, okada85
+from geodef import backend, greens, okada85
 from geodef import tri as tdcalc
 from tests.test_okada85 import (
     _REFERENCE_PARAMS,
@@ -134,6 +134,30 @@ class TestBackendEquivalence:
 
         for r, x in zip(result, expected):
             np.testing.assert_allclose(backend.to_numpy(r), x, rtol=1e-12, atol=1e-15)
+
+    def test_displacement_greens_matches_numpy(self) -> None:
+        rng = np.random.default_rng(7)
+        nobs, npatch = 40, 12
+        lat = rng.uniform(-0.3, 0.3, nobs)
+        lon = rng.uniform(-0.3, 0.3, nobs)
+        lat0 = rng.uniform(-0.15, 0.15, npatch)
+        lon0 = rng.uniform(-0.15, 0.15, npatch)
+        depth = rng.uniform(5e3, 2e4, npatch)
+        strike = rng.uniform(0.0, 360.0, npatch)
+        dip = rng.uniform(10.0, 90.0, npatch)
+        L = np.full(npatch, 8e3)
+        W = np.full(npatch, 5e3)
+        args = (lat, lon, lat0, lon0, depth, strike, dip, L, W)
+
+        backend.set_backend("numpy")
+        expected = greens.displacement_greens(*args)
+        backend.set_backend("jax")
+        result = greens.displacement_greens(*args)
+
+        assert isinstance(result, np.ndarray)
+        # JIT fusion reassociates the Chinnery differences, so agreement is
+        # slightly looser than eager op-by-op evaluation
+        np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-12)
 
     def test_tri_displacement_matches_numpy(self) -> None:
         rng = np.random.default_rng(42)
