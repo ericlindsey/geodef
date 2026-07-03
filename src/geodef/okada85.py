@@ -42,7 +42,7 @@
 #
 # Copyright (c) 2014, Eric Lindsey, covered by BSD License (see text below).
 # All rights reserved.
-# 
+#
 # Version history:
 # [01/2014] Converted to python from [08/2012] matlab version by Francois Beauducel:
 # available http://www.ipgp.fr/~beaudu/matlab.html
@@ -50,31 +50,32 @@
 # Matlab version:
 # Copyright (c) 1997-2012, Francois Beauducel, covered by BSD License (see text below).
 # All rights reserved.
-# 
-# Redistribution and use in source and binary forms, with or without 
-# modification, are permitted provided that the following conditions are 
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
 # met:
-# 
-#    * Redistributions of source code must retain the above copyright 
+#
+#    * Redistributions of source code must retain the above copyright
 #      notice, this list of conditions and the following disclaimer.
-#    * Redistributions in binary form must reproduce the above copyright 
-#      notice, this list of conditions and the following disclaimer in 
+#    * Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in
 #      the documentation and/or other materials provided with the distribution
-#                            
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE 
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # =================================================================
 
 import numpy as np
+
 
 # =================================================================
 def setup_args(e,n,depth,strike,dip,L,W,rake,slip,open):
@@ -98,7 +99,7 @@ def setup_args(e,n,depth,strike,dip,L,W,rake,slip,open):
     U1s = np.cos(rake)*slip/(2*np.pi)
     U2s = np.sin(rake)*slip/(2*np.pi)
     U3s = open/(2*np.pi)
-    
+
     # Converts fault coordinates (E,N,DEPTH) relative to centroid
     # into Okada's reference system (X,Y,D)
     d = depth + np.sin(dip)*W/2    # d is fault's top edge
@@ -106,7 +107,7 @@ def setup_args(e,n,depth,strike,dip,L,W,rake,slip,open):
     nc = n - np.sin(strike)*np.cos(dip)*W/2
     x = np.cos(strike)*nc + np.sin(strike)*ec + L/2
     y = np.sin(strike)*nc - np.cos(strike)*ec + np.cos(dip)*W
-    
+
     # Variable substitution (independent from xi and eta)
     p = y*np.cos(dip) + d*np.sin(dip)
     q = y*np.sin(dip) - d*np.cos(dip)
@@ -145,7 +146,7 @@ def tilt(e,n,depth,strike,dip,L,W,rake,slip,open,nu=0.25):
 
     #convert coordinate systems, radians, ensure array_like, etc.
     x,p,L,W,q,strike,dip,U1s,U2s,U3s = setup_args(e,n,depth,strike,dip,L,W,rake,slip,open)
-    
+
     uzx = ( -U1s * chinnery(uzx_ss,x,p,L,W,q,dip,nu)   # strike-slip
             -U2s * chinnery(uzx_ds,x,p,L,W,q,dip,nu)   # dip-slip
             +U3s * chinnery(uzx_tf,x,p,L,W,q,dip,nu) ) # tensile fault
@@ -167,7 +168,7 @@ def strain(e,n,depth,strike,dip,L,W,rake,slip,open,nu=0.25):
 
     #convert coordinate systems, radians, ensure array_like, etc.
     x,p,L,W,q,strike,dip,U1s,U2s,U3s = setup_args(e,n,depth,strike,dip,L,W,rake,slip,open)
-    
+
     uxx = ( -U1s * chinnery(uxx_ss,x,p,L,W,q,dip,nu)   # strike-slip
             -U2s * chinnery(uxx_ds,x,p,L,W,q,dip,nu)   # dip-slip
             +U3s * chinnery(uxx_tf,x,p,L,W,q,dip,nu) ) # tensile fault
@@ -175,7 +176,7 @@ def strain(e,n,depth,strike,dip,L,W,rake,slip,open,nu=0.25):
     uxy = ( -U1s * chinnery(uxy_ss,x,p,L,W,q,dip,nu)   # strike-slip
             -U2s * chinnery(uxy_ds,x,p,L,W,q,dip,nu)   # dip-slip
             +U3s * chinnery(uxy_tf,x,p,L,W,q,dip,nu) ) # tensile fault
-            
+
     uyx = ( -U1s * chinnery(uyx_ss,x,p,L,W,q,dip,nu)   # strike-slip
             -U2s * chinnery(uyx_ds,x,p,L,W,q,dip,nu)   # dip-slip
             +U3s * chinnery(uyx_tf,x,p,L,W,q,dip,nu) ) # tensile fault
@@ -415,7 +416,7 @@ def uyy_ss(xi,eta,q,dip,nu):
     yb = eta*np.cos(dip) + q*np.sin(dip)
     u = yb*q/np.power(R,3)*np.cos(dip) + (np.power(q,3)*A(eta,R)*np.sin(dip) - 2*q*np.sin(dip)/(R*(R + eta)) - (np.square(xi) + np.square(eta))/np.power(R,3)*np.cos(dip) - J4(xi,eta,q,dip,nu,R))*np.sin(dip)
     return u
-    
+
 # dip-slip strain subfunctions [equation (32) p. 1146]
 # -----------------------------------------------------------------
 def uxx_ds(xi,eta,q,dip,nu):

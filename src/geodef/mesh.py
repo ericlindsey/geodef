@@ -12,6 +12,7 @@ Requires optional dependencies for mesh generation:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,9 +49,7 @@ class Mesh:
         object.__setattr__(self, "lon", np.asarray(self.lon, dtype=float))
         object.__setattr__(self, "lat", np.asarray(self.lat, dtype=float))
         object.__setattr__(self, "depth", np.asarray(self.depth, dtype=float))
-        object.__setattr__(
-            self, "triangles", np.asarray(self.triangles, dtype=int)
-        )
+        object.__setattr__(self, "triangles", np.asarray(self.triangles, dtype=int))
 
     @property
     def n_nodes(self) -> int:
@@ -81,9 +80,7 @@ class Mesh:
         edge2 = verts[:, 2, :] - verts[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
 
-    def vertices_enu(
-        self, ref_lat: float, ref_lon: float
-    ) -> np.ndarray:
+    def vertices_enu(self, ref_lat: float, ref_lon: float) -> np.ndarray:
         """Triangle vertices in local ENU meters, shape (M, 3, 3).
 
         Each triangle has 3 vertices, each with [east, north, up] coordinates
@@ -97,8 +94,12 @@ class Mesh:
             Array of shape (M, 3, 3) suitable for ``Fault.__init__(vertices=...)``.
         """
         e, n, u = transforms.geod2enu(
-            self.lat, self.lon, -self.depth,
-            ref_lat, ref_lon, 0.0,
+            self.lat,
+            self.lon,
+            -self.depth,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
         tri = self.triangles
         verts = np.empty((self.n_triangles, 3, 3), dtype=float)
@@ -138,9 +139,7 @@ class Mesh:
             ValueError: If ``format`` or ``coord_order`` is not supported.
         """
         if format != "ned":
-            raise ValueError(
-                f"Unsupported format {format!r}; only 'ned' is supported"
-            )
+            raise ValueError(f"Unsupported format {format!r}; only 'ned' is supported")
         if coord_order not in ("latlon", "lonlat"):
             raise ValueError(
                 f"Invalid coord_order {coord_order!r}; "
@@ -193,9 +192,7 @@ class Mesh:
             ValueError: If ``format`` or ``coord_order`` is not supported.
         """
         if format != "ned":
-            raise ValueError(
-                f"Unsupported format {format!r}; only 'ned' is supported"
-            )
+            raise ValueError(f"Unsupported format {format!r}; only 'ned' is supported")
         if coord_order not in ("latlon", "lonlat"):
             raise ValueError(
                 f"Invalid coord_order {coord_order!r}; "
@@ -360,9 +357,7 @@ def _snap_boundary_nodes(
     n_boundary = len(boundary_2d)
 
     # Scale tolerance relative to boundary size
-    bbox_diag = np.sqrt(
-        np.ptp(boundary_2d[:, 0]) ** 2 + np.ptp(boundary_2d[:, 1]) ** 2
-    )
+    bbox_diag = np.sqrt(np.ptp(boundary_2d[:, 0]) ** 2 + np.ptp(boundary_2d[:, 1]) ** 2)
     abs_tol = tolerance * bbox_diag
 
     for i in range(len(mesh_pts_2d)):
@@ -387,17 +382,16 @@ def _snap_boundary_nodes(
             dist = np.linalg.norm(pt - closest)
 
             if dist < best_dist:
-                best_dist = dist
+                best_dist = float(dist)
                 if dist < abs_tol:
                     # Interpolate along the original 3D boundary edge
                     a3 = boundary_3d[j]
                     b3 = boundary_3d[j_next]
                     best_pos = (1.0 - t) * a3 + t * b3
                     # Interpolate depth from original boundary depths
-                    best_depth = (
-                        (1.0 - t) * boundary_depth[j]
-                        + t * boundary_depth[j_next]
-                    )
+                    best_depth = (1.0 - t) * boundary_depth[j] + t * boundary_depth[
+                        j_next
+                    ]
 
         if best_pos is not None:
             snapped[i] = best_pos
@@ -435,10 +429,7 @@ def _trace_grid_boundary(
     # Find boundary cells: valid with at least one 4-neighbor invalid/off-grid
     padded = np.pad(valid, 1, constant_values=False)
     neighbor_invalid = (
-        ~padded[:-2, 1:-1]
-        | ~padded[2:, 1:-1]
-        | ~padded[1:-1, :-2]
-        | ~padded[1:-1, 2:]
+        ~padded[:-2, 1:-1] | ~padded[2:, 1:-1] | ~padded[1:-1, :-2] | ~padded[1:-1, 2:]
     )
     boundary_mask = valid & neighbor_invalid
     boundary_coords = np.argwhere(boundary_mask)
@@ -454,8 +445,7 @@ def _trace_grid_boundary(
 
     # Moore neighborhood tracing (clockwise).
     # Directions indexed 0-7: E, SE, S, SW, W, NW, N, NE
-    dirs = [(0, 1), (1, 1), (1, 0), (1, -1),
-            (0, -1), (-1, -1), (-1, 0), (-1, 1)]
+    dirs = [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)]
 
     ordered = [start]
     current = start
@@ -586,9 +576,10 @@ def _fix_vertical_edges(
         if abs(x_fixed[j] - x_fixed[i]) < tolerance:
             x_fixed[j] = x_fixed[i] + offset
             logger.debug(
-                "Adjusted vertex %d x from %.8f to %.8f to avoid "
-                "vertical segment",
-                j, x[j], x_fixed[j],
+                "Adjusted vertex %d x from %.8f to %.8f to avoid vertical segment",
+                j,
+                x[j],
+                x_fixed[j],
             )
     return x_fixed, np.asarray(y, dtype=float)
 
@@ -612,9 +603,7 @@ def _mesh_polygon_2d(
     """
     tri_mod = _require_meshpy()
 
-    x_fixed, y_fixed = _fix_vertical_edges(
-        boundary_xy[:, 0], boundary_xy[:, 1]
-    )
+    x_fixed, y_fixed = _fix_vertical_edges(boundary_xy[:, 0], boundary_xy[:, 1])
     points = list(zip(x_fixed, y_fixed))
     facets = _polygon_to_facets(len(points))
 
@@ -733,14 +722,10 @@ def from_polygon(
         raise ValueError("target_length and max_area are mutually exclusive")
 
     if depth is None and depth_func is None:
-        raise ValueError(
-            "Either depth array or depth_func must be provided"
-        )
+        raise ValueError("Either depth array or depth_func must be provided")
 
     if depth is not None and depth_func is not None:
-        raise ValueError(
-            "Provide either depth or depth_func, not both"
-        )
+        raise ValueError("Provide either depth or depth_func, not both")
 
     if depth is not None:
         depth = np.asarray(depth, dtype=float)
@@ -748,6 +733,7 @@ def from_polygon(
             lon, lat, depth, target_length, max_area, max_refinements
         )
     else:
+        assert depth_func is not None  # guaranteed by the checks above
         return _from_polygon_2d(
             lon, lat, depth_func, target_length, max_area, max_refinements
         )
@@ -781,7 +767,9 @@ def _from_polygon_3d(
     area = _resolve_area(target_length, max_area, boundary_2d)
 
     # Mesh in 2D
-    pts_2d, tris = _mesh_polygon_2d(boundary_2d, max_area=area, max_refinements=max_refinements)
+    pts_2d, tris = _mesh_polygon_2d(
+        boundary_2d, max_area=area, max_refinements=max_refinements
+    )
 
     # Unproject to 3D ENU
     pts_3d = _unproject_from_plane(pts_2d, basis, origin)
@@ -793,8 +781,12 @@ def _from_polygon_3d(
 
     # Convert back to geographic
     out_lat, out_lon, _ = transforms.enu2geod(
-        pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
-        ref_lat, ref_lon, 0.0,
+        pts_3d[:, 0],
+        pts_3d[:, 1],
+        pts_3d[:, 2],
+        ref_lat,
+        ref_lon,
+        0.0,
     )
 
     return Mesh(lon=out_lon, lat=out_lat, depth=out_depth, triangles=tris)
@@ -901,8 +893,12 @@ def from_trace(
 
     # Convert trace to local ENU
     e, n, u = transforms.geod2enu(
-        trace_lat, trace_lon, np.zeros_like(trace_lat),
-        ref_lat, ref_lon, 0.0,
+        trace_lat,
+        trace_lon,
+        np.zeros_like(trace_lat),
+        ref_lat,
+        ref_lon,
+        0.0,
     )
     trace_e = np.asarray(e, dtype=float)
     trace_n = np.asarray(n, dtype=float)
@@ -930,13 +926,12 @@ def from_trace(
     dip_n = np.cos(dip_dir_rad)
 
     # Compute down-dip horizontal offset profile
-    is_callable = callable(dip)
     depths = np.linspace(0, max_depth, n_downdip + 1)
     horiz_offsets = np.zeros(n_downdip + 1)
     for i in range(n_downdip):
         z_mid = 0.5 * (depths[i] + depths[i + 1])
         dz = depths[i + 1] - depths[i]
-        dip_angle = float(dip(z_mid)) if is_callable else float(dip)
+        dip_angle = float(dip(z_mid)) if callable(dip) else float(dip)
         dip_rad = np.radians(dip_angle)
         if abs(np.tan(dip_rad)) > 1e-10:
             horiz_offsets[i + 1] = horiz_offsets[i] + dz / np.tan(dip_rad)
@@ -951,12 +946,14 @@ def from_trace(
     downdip_length = cum_downdip[-1]
 
     # Meshing domain: rectangle [0, trace_length] × [0, downdip_length]
-    rect = np.array([
-        [0.0, 0.0],
-        [trace_length, 0.0],
-        [trace_length, downdip_length],
-        [0.0, downdip_length],
-    ])
+    rect = np.array(
+        [
+            [0.0, 0.0],
+            [trace_length, 0.0],
+            [trace_length, downdip_length],
+            [0.0, downdip_length],
+        ]
+    )
 
     # Convert target_length to max_area in the rectangle coordinate system
     if target_length is not None:
@@ -988,11 +985,18 @@ def from_trace(
     # Convert to geographic (use out_depth directly to avoid ellipsoid
     # curvature artifacts in the enu2geod round-trip)
     out_lat, out_lon, _ = transforms.enu2geod(
-        out_e, out_n, out_u, ref_lat, ref_lon, 0.0,
+        out_e,
+        out_n,
+        out_u,
+        ref_lat,
+        ref_lon,
+        0.0,
     )
 
     return Mesh(
-        lon=out_lon, lat=out_lat, depth=out_depth,
+        lon=out_lon,
+        lat=out_lat,
+        depth=out_depth,
         triangles=tris,
     )
 
@@ -1042,20 +1046,23 @@ def _splice_surface_trace(
     trace_pts = np.column_stack([trace_lon, trace_lat])
     if arc1_len <= arc2_len:
         # Replace arc a→b with trace; keep arc b→...→a
-        kept = np.vstack([
-            boundary_xy[idx_b:],
-            boundary_xy[:idx_a + 1],
-        ])
-        return np.vstack([boundary_xy[idx_a:idx_a + 1], trace_pts,
-                          boundary_xy[idx_b:idx_b + 1],
-                          boundary_xy[idx_b + 1:],
-                          boundary_xy[:idx_a]])
+        return np.vstack(
+            [
+                boundary_xy[idx_a : idx_a + 1],
+                trace_pts,
+                boundary_xy[idx_b : idx_b + 1],
+                boundary_xy[idx_b + 1 :],
+                boundary_xy[:idx_a],
+            ]
+        )
     else:
         # Replace arc b→...→a with trace (reversed); keep arc a→b
-        return np.vstack([
-            boundary_xy[idx_a:idx_b + 1],
-            trace_pts[::-1],
-        ])
+        return np.vstack(
+            [
+                boundary_xy[idx_a : idx_b + 1],
+                trace_pts[::-1],
+            ]
+        )
 
 
 def _km_to_deg(km: float, lat: float) -> float:
@@ -1123,9 +1130,7 @@ def from_slab2(
         ValueError: If ``depth_growth`` is less than 1.
     """
     if depth_growth < 1.0:
-        raise ValueError(
-            f"depth_growth must be >= 1.0, got {depth_growth}"
-        )
+        raise ValueError(f"depth_growth must be >= 1.0, got {depth_growth}")
 
     NCDataset = _require_netcdf4()
     _require_meshpy()
@@ -1160,29 +1165,21 @@ def from_slab2(
     points_2d = np.column_stack([valid_lons, valid_lats])
 
     # Trace the concave boundary of the valid grid region
-    boundary_xy = _trace_grid_boundary(
-        Xc, Yc, valid, subsample=boundary_subsample
-    )
+    boundary_xy = _trace_grid_boundary(Xc, Yc, valid, subsample=boundary_subsample)
 
     # Extend boundary to a surface trace if provided
     if surface_trace is not None:
         trace_lon_arr = np.asarray(surface_trace[0], dtype=float)
         trace_lat_arr = np.asarray(surface_trace[1], dtype=float)
-        boundary_xy = _splice_surface_trace(
-            boundary_xy, trace_lon_arr, trace_lat_arr
-        )
+        boundary_xy = _splice_surface_trace(boundary_xy, trace_lon_arr, trace_lat_arr)
         # Add trace points at depth=0 to the interpolation dataset
         valid_lons = np.concatenate([valid_lons, trace_lon_arr])
         valid_lats = np.concatenate([valid_lats, trace_lat_arr])
-        valid_depths = np.concatenate([
-            valid_depths, np.zeros(len(trace_lon_arr))
-        ])
+        valid_depths = np.concatenate([valid_depths, np.zeros(len(trace_lon_arr))])
         points_2d = np.column_stack([valid_lons, valid_lats])
 
     # Build depth interpolator and compute scale factors
-    depth_interp = interpolate.LinearNDInterpolator(
-        points_2d, valid_depths
-    )
+    depth_interp = interpolate.LinearNDInterpolator(points_2d, valid_depths)
     data_max_depth = float(np.max(valid_depths))
     if data_max_depth < 1.0:
         data_max_depth = 1.0
@@ -1205,9 +1202,7 @@ def from_slab2(
 
     if depth_growth > 1.0:
         tri_mod = _require_meshpy()
-        x_fixed, y_fixed = _fix_vertical_edges(
-            boundary_xy[:, 0], boundary_xy[:, 1]
-        )
+        x_fixed, y_fixed = _fix_vertical_edges(boundary_xy[:, 0], boundary_xy[:, 1])
         pts = list(zip(x_fixed, y_fixed))
         facets = _polygon_to_facets(len(pts))
         info = tri_mod.MeshInfo()
@@ -1219,9 +1214,7 @@ def from_slab2(
         def refinement(vertices, area):
             count[0] += 1
             if count[0] > max_refinements:
-                logger.warning(
-                    "Maximum refinements (%d) reached", max_refinements
-                )
+                logger.warning("Maximum refinements (%d) reached", max_refinements)
                 return False
             bary = np.mean(vertices, axis=0)
             local_len = _local_length_deg(bary[0], bary[1])
@@ -1232,7 +1225,8 @@ def from_slab2(
         mesh_tris = np.array(mesh_result.elements)
     else:
         mesh_pts, mesh_tris = _mesh_polygon_2d(
-            boundary_xy, max_area=base_area,
+            boundary_xy,
+            max_area=base_area,
             max_refinements=max_refinements,
         )
 
@@ -1287,9 +1281,7 @@ def from_points(
     ref_lon = float(np.mean(lon))
 
     # Convert to local ENU
-    e, n, u = transforms.geod2enu(
-        lat, lon, -depth, ref_lat, ref_lon, 0.0
-    )
+    e, n, u = transforms.geod2enu(lat, lon, -depth, ref_lat, ref_lon, 0.0)
     pts_3d = np.column_stack([e, n, u])
 
     # Get or compute boundary
@@ -1297,9 +1289,12 @@ def from_points(
         boundary = np.asarray(boundary, dtype=float)
         boundary_depth_vals = np.zeros(len(boundary))
         b_e, b_n, b_u = transforms.geod2enu(
-            boundary[:, 1], boundary[:, 0],
+            boundary[:, 1],
+            boundary[:, 0],
             np.zeros(len(boundary)),
-            ref_lat, ref_lon, 0.0,
+            ref_lat,
+            ref_lon,
+            0.0,
         )
         boundary_3d = np.column_stack([b_e, b_n, b_u])
     else:
@@ -1323,7 +1318,10 @@ def from_points(
 
     # Snap boundary nodes to exact 3D positions and depths
     mesh_pts_3d, mesh_depth = _snap_boundary_nodes(
-        mesh_pts_2d, mesh_pts_3d, boundary_2d, boundary_3d,
+        mesh_pts_2d,
+        mesh_pts_3d,
+        boundary_2d,
+        boundary_3d,
         boundary_depth_vals,
     )
 
@@ -1334,9 +1332,7 @@ def from_points(
     )
     # Identify interior nodes (those NOT on any boundary edge)
     n_bnd = len(boundary_3d)
-    bbox_diag = np.sqrt(
-        np.ptp(boundary_2d[:, 0]) ** 2 + np.ptp(boundary_2d[:, 1]) ** 2
-    )
+    bbox_diag = np.sqrt(np.ptp(boundary_2d[:, 0]) ** 2 + np.ptp(boundary_2d[:, 1]) ** 2)
     abs_tol = 1e-6 * bbox_diag
     for i in range(len(mesh_pts_2d)):
         pt = mesh_pts_2d[i]
@@ -1359,8 +1355,12 @@ def from_points(
 
     # Convert mesh nodes to geographic
     out_lat, out_lon, _ = transforms.enu2geod(
-        mesh_pts_3d[:, 0], mesh_pts_3d[:, 1], -mesh_depth,
-        ref_lat, ref_lon, 0.0,
+        mesh_pts_3d[:, 0],
+        mesh_pts_3d[:, 1],
+        -mesh_depth,
+        ref_lat,
+        ref_lon,
+        0.0,
     )
 
     return Mesh(lon=out_lon, lat=out_lat, depth=mesh_depth, triangles=tris)
@@ -1370,6 +1370,7 @@ def _require_meshpy():
     """Lazy import of meshpy.triangle with a clear error message."""
     try:
         import meshpy.triangle as tri
+
         return tri
     except ImportError:
         raise ImportError(
@@ -1382,6 +1383,7 @@ def _require_netcdf4():
     """Lazy import of netCDF4 with a clear error message."""
     try:
         from netCDF4 import Dataset
+
         return Dataset
     except ImportError:
         raise ImportError(

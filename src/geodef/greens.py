@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Green's matrix assembly (geographic coordinates)
 # ======================================================================
 
+
 def displacement_greens(
     lat: np.ndarray,
     lon: np.ndarray,
@@ -70,19 +71,33 @@ def displacement_greens(
     G = np.zeros((3 * nobs, 2 * npatch))
 
     for ipatch in range(npatch):
-        e, n, _ = transforms.geod2enu(
-            lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-        )
+        e, n, _ = transforms.geod2enu(lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0)
 
         str_e, str_n, str_u = okada85.displacement(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            0.0, 1.0, 0.0, nu,
+            e,
+            n,
+            float(depth[ipatch]),
+            float(strike[ipatch]),
+            float(dip[ipatch]),
+            float(L[ipatch]),
+            float(W[ipatch]),
+            0.0,
+            1.0,
+            0.0,
+            nu,
         )
         dip_e, dip_n, dip_u = okada85.displacement(
-            e, n, float(depth[ipatch]), float(strike[ipatch]),
-            float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-            90.0, 1.0, 0.0, nu,
+            e,
+            n,
+            float(depth[ipatch]),
+            float(strike[ipatch]),
+            float(dip[ipatch]),
+            float(L[ipatch]),
+            float(W[ipatch]),
+            90.0,
+            1.0,
+            0.0,
+            nu,
         )
 
         gstr = np.zeros(3 * nobs)
@@ -149,14 +164,30 @@ def strain_greens(
             )
 
             str_nn, str_ne, str_en, str_ee = okada85.strain(
-                e, n, float(depth[ipatch]), float(strike[ipatch]),
-                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                0.0, 1.0, 0.0, nu,
+                e,
+                n,
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+                0.0,
+                1.0,
+                0.0,
+                nu,
             )
             dip_nn, dip_ne, dip_en, dip_ee = okada85.strain(
-                e, n, float(depth[ipatch]), float(strike[ipatch]),
-                float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                90.0, 1.0, 0.0, nu,
+                e,
+                n,
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+                90.0,
+                1.0,
+                0.0,
+                nu,
             )
 
             gstr = np.zeros(4 * nobs)
@@ -173,6 +204,7 @@ def strain_greens(
             G[:, npatch + ipatch] = gdip
     else:
         from geodef import okada92
+
         obs_depth = np.asarray(obs_depth, dtype=float)
         G_mu = 1.0  # unit shear modulus; actual scaling done by caller
         for ipatch in range(npatch):
@@ -182,16 +214,36 @@ def strain_greens(
             for iobs in range(nobs):
                 z_obs = -float(obs_depth[iobs])  # okada92 convention: Z <= 0
                 _, strain_ss = okada92.okada92(
-                    float(e[iobs]), float(n[iobs]), z_obs,
-                    float(depth[ipatch]), float(strike[ipatch]),
-                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                    1.0, 0.0, 0.0, G_mu, nu, allow_singular=True,
+                    float(e[iobs]),
+                    float(n[iobs]),
+                    z_obs,
+                    float(depth[ipatch]),
+                    float(strike[ipatch]),
+                    float(dip[ipatch]),
+                    float(L[ipatch]),
+                    float(W[ipatch]),
+                    1.0,
+                    0.0,
+                    0.0,
+                    G_mu,
+                    nu,
+                    allow_singular=True,
                 )
                 _, strain_ds = okada92.okada92(
-                    float(e[iobs]), float(n[iobs]), z_obs,
-                    float(depth[ipatch]), float(strike[ipatch]),
-                    float(dip[ipatch]), float(L[ipatch]), float(W[ipatch]),
-                    0.0, 1.0, 0.0, G_mu, nu, allow_singular=True,
+                    float(e[iobs]),
+                    float(n[iobs]),
+                    z_obs,
+                    float(depth[ipatch]),
+                    float(strike[ipatch]),
+                    float(dip[ipatch]),
+                    float(L[ipatch]),
+                    float(W[ipatch]),
+                    0.0,
+                    1.0,
+                    0.0,
+                    G_mu,
+                    nu,
+                    allow_singular=True,
                 )
                 row = 4 * iobs
                 # NN, NE, EN, EE from the 3x3 gradient tensor
@@ -210,6 +262,7 @@ def strain_greens(
 # ======================================================================
 # Green's matrix assembly for triangular patches (geographic coordinates)
 # ======================================================================
+
 
 def tri_displacement_greens(
     lat: np.ndarray,
@@ -263,7 +316,7 @@ def tri_displacement_greens(
 
         gstr = np.zeros(3 * nobs)
         gdip = np.zeros(3 * nobs)
-        gstr[::3] = disp_ss[:, 0]   # East
+        gstr[::3] = disp_ss[:, 0]  # East
         gstr[1::3] = disp_ss[:, 1]  # North
         gstr[2::3] = disp_ss[:, 2]  # Up
         gdip[::3] = disp_ds[:, 0]
@@ -346,6 +399,7 @@ def tri_strain_greens(
 # Polymorphic Green's matrix assembly (Fault + DataSet)
 # ======================================================================
 
+
 def _build_greens_key(fault: Fault, data: DataSet) -> dict:
     """Build the cache key dict for a fault + dataset combination."""
     from geodef.data import GNSS, InSAR
@@ -376,7 +430,65 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
     return key
 
 
-def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
+def select_slip_columns(
+    G_full: np.ndarray,
+    n_patches: int,
+    components: str,
+    rake: float | None = None,
+    fault_strike: np.ndarray | None = None,
+    slip_azimuth: float | None = None,
+) -> np.ndarray:
+    """Project a two-component Green's matrix onto the requested slip basis.
+
+    The full matrix has ``2*N`` columns blocked as ``[strike-slip | dip-slip]``.
+    This reduces them to the columns for the requested component(s), matching
+    the semantics used by :func:`geodef.invert`.
+
+    Args:
+        G_full: Full Green's (or stress-kernel) matrix, shape (M, 2*N).
+        n_patches: Number of fault patches N.
+        components: ``'both'`` (no reduction), ``'strike'``, ``'dip'``,
+            ``'rake'`` (fixed rake, all patches), or ``'azimuth'`` (fixed
+            geographic slip azimuth, per-patch local rake).
+        rake: Fixed rake angle in degrees, required for ``'rake'``.
+        fault_strike: Per-patch strike angles in degrees, shape (N,),
+            required for ``'azimuth'``.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            required for ``'azimuth'``.
+
+    Returns:
+        Reduced matrix: shape (M, 2*N) for ``'both'``, else (M, N).
+
+    Raises:
+        ValueError: If required angles for the chosen basis are missing.
+    """
+    if components == "both":
+        return G_full
+    if components == "strike":
+        return G_full[:, :n_patches]
+    if components == "dip":
+        return G_full[:, n_patches:]
+    if components == "rake":
+        if rake is None:
+            raise ValueError("components='rake' requires a rake angle in degrees")
+        theta = np.deg2rad(rake)  # scalar
+    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
+        if fault_strike is None or slip_azimuth is None:
+            raise ValueError(
+                "components='azimuth' requires fault_strike and slip_azimuth"
+            )
+        theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
+    return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
+
+
+def greens(
+    fault: Fault,
+    datasets: DataSet | list[DataSet],
+    *,
+    components: str = "both",
+    rake: float | None = None,
+    slip_azimuth: float | None = None,
+) -> np.ndarray:
     """Build a projected Green's matrix for one or more datasets.
 
     Computes the raw Green's matrix from the fault at each dataset's
@@ -386,12 +498,19 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
     Args:
         fault: A ``Fault`` instance.
         datasets: A single ``DataSet`` or a list of them.
+        components: Slip basis for the returned columns: ``'both'``
+            (default, ``2*N`` columns), ``'strike'``, ``'dip'``, ``'rake'``
+            (fixed rake), or ``'azimuth'`` (fixed geographic slip azimuth).
+            The reduction uses the same semantics as :func:`geodef.invert`.
+        rake: Fixed rake angle in degrees, required for ``components='rake'``.
+        slip_azimuth: Geographic slip azimuth in degrees CW from North,
+            required for ``components='azimuth'``.
 
     Returns:
         Projected Green's matrix. For a single dataset with M observations
-        and a fault with N patches: shape (M_obs, 2*N). Columns are blocked:
-        ``[:N]`` strike-slip, ``[N:]`` dip-slip. For multiple datasets:
-        rows are vertically stacked.
+        and a fault with N patches: shape (M_obs, 2*N) for ``'both'``, else
+        (M_obs, N). Columns for ``'both'`` are blocked ``[:N]`` strike-slip,
+        ``[N:]`` dip-slip. For multiple datasets rows are vertically stacked.
     """
     from geodef.data import DataSet
 
@@ -403,13 +522,21 @@ def greens(fault: Fault, datasets: DataSet | list[DataSet]) -> np.ndarray:
         key = _build_greens_key(fault, data)
         G_proj = _cache.cached_compute(
             key,
-            lambda d=data: _project_greens(
-                d, fault.greens_matrix(d.lat, d.lon, kind=d.greens_type)
+            lambda: _project_greens(
+                data, fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
             ),
         )
         blocks.append(G_proj)
 
-    return np.vstack(blocks)
+    G_full = np.vstack(blocks)
+    return select_slip_columns(
+        G_full,
+        fault.n_patches,
+        components,
+        rake,
+        fault_strike=fault.strike,
+        slip_azimuth=slip_azimuth,
+    )
 
 
 def stack_obs(datasets: DataSet | list[DataSet]) -> np.ndarray:
@@ -541,6 +668,7 @@ def _check_lengths(
 # Regularization operators
 # ======================================================================
 
+
 def build_laplacian_knn(
     coords: np.ndarray,
     k: int = 4,
@@ -576,9 +704,7 @@ def build_laplacian_knn(
     n = coords.shape[0]
 
     if k < 1 or k >= n:
-        raise ValueError(
-            f"k must satisfy 1 <= k < n_points ({n}), got k={k}"
-        )
+        raise ValueError(f"k must satisfy 1 <= k < n_points ({n}), got k={k}")
 
     # Pairwise squared distances via broadcasting: (n,1,3) - (1,n,3)
     diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
@@ -587,7 +713,7 @@ def build_laplacian_knn(
     # For each point, find k nearest neighbors (exclude self)
     # argsort along axis=1; column 0 is self (distance=0)
     idx_sorted = np.argsort(dist, axis=1)
-    knn_idx = idx_sorted[:, 1:k + 1]  # (n, k)
+    knn_idx = idx_sorted[:, 1 : k + 1]  # (n, k)
     knn_dist = np.take_along_axis(dist, knn_idx, axis=1)  # (n, k)
 
     # Inverse-distance weights: w_ij = 1 / d_ij

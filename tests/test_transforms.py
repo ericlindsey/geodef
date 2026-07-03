@@ -3,11 +3,10 @@
 Migrated from related/shakeout_v2/test_geod_transform.py with updated imports.
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from geodef import transforms
-
 
 # ---------------------------------------------------------------------------
 # Test Constants
@@ -25,13 +24,16 @@ RTOL = 1e-6
 # ---------------------------------------------------------------------------
 # 1. Round-Tripping (Identity) Tests
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("lat,lon,alt", [
-    (35.0, -106.0, 1500.0),
-    (0.0, 0.0, 0.0),
-    (90.0, 0.0, 0.0),
-    (-90.0, 180.0, 10000.0),
-    (-30.5, 179.99, -500.0),
-])
+@pytest.mark.parametrize(
+    "lat,lon,alt",
+    [
+        (35.0, -106.0, 1500.0),
+        (0.0, 0.0, 0.0),
+        (90.0, 0.0, 0.0),
+        (-90.0, 180.0, 10000.0),
+        (-30.5, 179.99, -500.0),
+    ],
+)
 def test_geod2ecef2geod_scalar(lat, lon, alt):
     """Test round trip: geod -> ecef -> geod using scalar inputs."""
     x, y, z = transforms.geod2ecef(lat, lon, alt)
@@ -42,10 +44,13 @@ def test_geod2ecef2geod_scalar(lat, lon, alt):
     np.testing.assert_allclose(alt_out, alt, atol=ATOL)
 
 
-@pytest.mark.parametrize("lat,lon,alt,lat0,lon0,alt0", [
-    (35.1, -106.1, 1500.0, 35.0, -106.0, 1500.0),
-    (0.0, 90.0, 0.0, 0.0, 0.0, 0.0),
-])
+@pytest.mark.parametrize(
+    "lat,lon,alt,lat0,lon0,alt0",
+    [
+        (35.1, -106.1, 1500.0, 35.0, -106.0, 1500.0),
+        (0.0, 90.0, 0.0, 0.0, 0.0, 0.0),
+    ],
+)
 def test_geod2enu2geod_scalar(lat, lon, alt, lat0, lon0, alt0):
     """Test round trip: geod -> enu -> geod using scalar inputs."""
     e, n, u = transforms.geod2enu(lat, lon, alt, lat0, lon0, alt0)
@@ -56,10 +61,13 @@ def test_geod2enu2geod_scalar(lat, lon, alt, lat0, lon0, alt0):
     np.testing.assert_allclose(alt_out, alt, atol=ATOL)
 
 
-@pytest.mark.parametrize("e,n,u,lat0,lon0,alt0", [
-    (100.0, -200.0, 50.0, 35.0, -106.0, 1500.0),
-    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-])
+@pytest.mark.parametrize(
+    "e,n,u,lat0,lon0,alt0",
+    [
+        (100.0, -200.0, 50.0, 35.0, -106.0, 1500.0),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    ],
+)
 def test_ecef2enu2ecef_scalar(e, n, u, lat0, lon0, alt0):
     """Test round trip: enu -> ecef -> enu using scalar inputs."""
     x_ecef, y_ecef, z_ecef = transforms.enu2ecef(e, n, u, lat0, lon0, alt0)
@@ -219,7 +227,8 @@ def test_custom_ellipsoid():
 def test_pyproj_integration():
     """Test dynamic pyproj integration using crs kwarg."""
     import importlib.util
-    if importlib.util.find_spec('pyproj') is None:
+
+    if importlib.util.find_spec("pyproj") is None:
         pytest.skip("pyproj not installed, skipping pyproj dynamic adapter tests.")
 
     lat, lon, alt = 35.0, -106.0, 1500.0

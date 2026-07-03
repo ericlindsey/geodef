@@ -20,6 +20,9 @@ from geodef import GNSS
 gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su)          # full 3-component
 gnss = GNSS(lon, lat, ve, vn, None, se, sn, None)      # horizontal-only
 
+# Optional per-station East-North correlation (scalar or per-station array)
+gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, rho=0.4)
+
 # Load from file (columns: lon lat uE uN uZ sigE sigN sigZ)
 gnss = GNSS.load("stations.dat")
 gnss = GNSS.load("stations.dat", components="en")       # horizontal-only
@@ -28,6 +31,11 @@ gnss = GNSS.load("stations.dat", components="en")       # horizontal-only
 gnss.save("out.dat")
 gnss.to_gmt("out_gmt.dat")   # lon lat uE uN sigE sigN (for psvelo)
 ```
+
+Pass `rho` to build a block covariance whose per-station East-North pair has
+off-diagonal `rho * se * sn` (the Up component stays uncorrelated). `rho` may be
+a scalar or a `(n_stations,)` array and is mutually exclusive with an explicit
+`covariance=`.
 
 **Properties:** `lat`, `lon`, `obs`, `sigma`, `covariance`, `n_stations`,
 `n_obs`, `components` (`'enu'` or `'en'`)
@@ -86,6 +94,19 @@ All data classes share:
 | `data.project(ue, un, uz)` | Maps displacement components to observation space |
 | `data.n_stations` | Number of physical observation locations |
 | `data.n_obs` | Length of the observation vector |
+| `data.name` | Optional per-station site names, shape `(n_stations,)`, or `None` |
+
+### Site names
+
+`GNSS` and `Vertical` accept an optional `name=` array of per-station labels.
+When present, names round-trip through `save()`/`load()` as a leading
+`# names:` comment line, so the numeric data block stays unchanged:
+
+```python
+gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, name=["P001", "P002", "P003"])
+gnss.save("stations.dat")
+GNSS.load("stations.dat").name   # array(['P001', 'P002', 'P003'])
+```
 
 ### Setting a full covariance matrix
 
@@ -103,6 +124,29 @@ covariance, reconstruct it from the source arrays and pass `covariance=`.
 
 The covariance is used automatically by `geodef.invert()` and
 `geodef.stack_weights()`.
+
+### Building a spatially-correlated covariance
+
+InSAR noise (atmosphere, orbits) is spatially correlated, so a diagonal `C_d`
+underestimates its true structure. `geodef.spatial_covariance()` builds a full
+`C_d` from an isotropic covariance model whose correlation decays with
+great-circle distance:
+
+```python
+from geodef import InSAR, spatial_covariance
+
+# sill = correlated variance (m^2), correlation_length in meters
+Cdata = spatial_covariance(
+    lon, lat, sill=4e-4, correlation_length=8_000.0,
+    model="exponential", nugget=1e-4,
+)
+insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
+```
+
+`C_ij = sill * rho(d_ij) + nugget * delta_ij`, with `rho(d) = exp(-d / L)`
+(`'exponential'`) or `exp(-(d / L)^2)` (`'gaussian'`). The `nugget` adds
+uncorrelated white noise on the diagonal. Applies to one-value-per-station
+datasets (`InSAR`, `Vertical`).
 
 ---
 

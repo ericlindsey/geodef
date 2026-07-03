@@ -1,7 +1,8 @@
+import math
 import warnings
 
 import numpy as np
-import math
+
 
 def okada92(X, Y, Z, depth, strike, dip, length, width,
             strike_slip, dip_slip, opening, G, nu, allow_singular=False):
@@ -139,29 +140,29 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
     """
 
     global SD,CD
-    
+
     # Constants
     F0, EPS = 0.0, 1e-6
     PI2 = 6.283185307179586
-    
+
     # Initialize U and derivatives
     U = np.zeros(12)
     DUA = np.zeros(12)
     DUB = np.zeros(12)
     DUC = np.zeros(12)
-    
+
     # Set IRET flag
     IRET = 0
     if Z > 0:
         # reject positive Z
         IRET = 2
         return np.full((3, 1), np.nan), np.full((3, 3), np.nan), IRET
-    
+
     # Call DCCON0
     AALPHA = ALPHA
     DDIP = DIP
     DCCON0(AALPHA, DDIP)
-    
+
     # Coordinates
     ZZ = Z
     DD1 = DISL1
@@ -183,7 +184,7 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
         Q = F0
 
     # Reject singular cases (on fault edge)
-    if (Q == F0 and ((XI[0] * XI[1] <= F0 and ET[0] * ET[1] == F0) or 
+    if (Q == F0 and ((XI[0] * XI[1] <= F0 and ET[0] * ET[1] == F0) or
                      (ET[0] * ET[1] <= F0 and XI[0] * XI[1] == F0))):
         IRET = 1
         return np.full((3, 1), np.nan), np.full((3, 3), np.nan), IRET
@@ -196,7 +197,7 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
     R12 = math.sqrt(XI[0]**2 + ET[1]**2 + Q**2)
     R21 = math.sqrt(XI[1]**2 + ET[0]**2 + Q**2)
     R22 = math.sqrt(XI[1]**2 + ET[1]**2 + Q**2)
-    
+
     if XI[0] < 0.0 and R21 + XI[1] < EPS:
         KXI[0] = 1
     if XI[0] < 0.0 and R22 + XI[1] < EPS:
@@ -234,15 +235,15 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
     P = Y * CD + D * SD
     Q = Y * SD - D * CD
     ET = [P - AW1, P - AW2]
-    
+
     # Handle small values
     ET = [F0 if abs(e) < EPS else e for e in ET]
-    
+
     if abs(Q) < EPS:
         Q = F0
 
     # Reject singular case (on fault edge)
-    if (Q == F0 and ((XI[0] * XI[1] <= F0 and ET[0] * ET[1] == F0) or 
+    if (Q == F0 and ((XI[0] * XI[1] <= F0 and ET[0] * ET[1] == F0) or
                      (ET[0] * ET[1] <= F0 and XI[0] * XI[1] == F0))):
         IRET = 1
         return np.full((3, 1), np.nan), np.full((3, 3), np.nan), IRET
@@ -250,12 +251,12 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
     # Initialize KXI and KET
     KXI = [0, 0]
     KET = [0, 0]
-    
+
     # Compute distances
     R12 = math.sqrt(XI[0]**2 + ET[1]**2 + Q**2)
     R21 = math.sqrt(XI[1]**2 + ET[0]**2 + Q**2)
     R22 = math.sqrt(XI[1]**2 + ET[1]**2 + Q**2)
-    
+
     if XI[0] < 0.0 and R21 + XI[1] < EPS:
         KXI[0] = 1
     if XI[0] < 0.0 and R22 + XI[1] < EPS:
@@ -264,31 +265,31 @@ def DC3D(ALPHA, X, Y, Z, DEPTH, DIP, AL1, AL2, AW1, AW2, DISL1, DISL2, DISL3):
         KET[0] = 1
     if ET[0] < 0.0 and R22 + ET[1] < EPS:
         KET[1] = 1
-    
+
     for K in range(2):
         for J in range(2):
             DCCON2(XI[J], ET[K], Q, SD, CD, KXI[K], KET[J])  # Compute constants
             UA(XI[J], ET[K], Q, DD1, DD2, DD3, DUA)          # Call UA
             UB(XI[J], ET[K], Q, DD1, DD2, DD3, DUB)          # Call UB
             UC(XI[J], ET[K], Q, Z, DD1, DD2, DD3, DUC)       # Call UC
-            
+
             # Combine results
             for I in range(0, 12, 3):
                 DU[I] = DUA[I] + DUB[I] + Z * DUC[I]
                 DU[I+1] = (DUA[I+1] + DUB[I+1] + Z * DUC[I+1]) * CD - (DUA[I+2] + DUB[I+2] + Z * DUC[I+2]) * SD
                 DU[I+2] = (DUA[I+1] + DUB[I+1] - Z * DUC[I+1]) * SD + (DUA[I+2] + DUB[I+2] - Z * DUC[I+2]) * CD
-                
+
                 if I >= 9:
                     DU[9] = DU[9] + DUC[0]
                     DU[10] = DU[10] + DUC[1] * CD - DUC[2] * SD
-                    DU[11] = DU[11] - DUC[1] * SD - DUC[2] * CD 
-            
+                    DU[11] = DU[11] - DUC[1] * SD - DUC[2] * CD
+
             for I in range(0, 12):
                 if J + K != 1:
                     U[I] = U[I] + DU[I]
                 else:
                     U[I] = U[I] - DU[I]
-    
+
     # Extract displacements and strains
     UX, UY, UZ = U[0], U[1], U[2]
     UXX, UYX, UZX = U[3], U[4], U[5]
@@ -319,19 +320,19 @@ def UA(XI, ET, Q, DISL1, DISL2, DISL3, U):
     global ALP1, ALP2, ALP3, ALP4, ALP5, SD, CD, SDSD, CDCD, SDCD, S2D, C2D
     global XI2, ET2, Q2, R, R2, R3, R5, Y, D, TT, ALX, ALE, X11, Y11, X32, Y32
     global EY, EZ, FY, FZ, GY, GZ, HY, HZ
-    
+
     F0, F2, PI2 = 0.0, 2.0, 6.283185307179586
-    
+
     DU = [0.0] * 12
-    
+
     # Initialize U to zeros
     for i in range(12):
         U[i] = F0
-    
+
     XY = XI * Y11
     QX = Q * X11
     QY = Q * Y11
-    
+
     # Strike-slip contribution
     if DISL1 != F0:
         DU[0]  = TT / F2 + ALP2 * XI * QY
@@ -346,7 +347,7 @@ def UA(XI, ET, Q, DISL1, DISL2, DISL3, U):
         DU[9]  = ALP1 * XY * CD + ALP2 * XI * FZ + Y / F2 * X11
         DU[10] = ALP2 * EZ
         DU[11] = -ALP1 * (SD / R - QY * CD) - ALP2 * Q * FZ
-        
+
         for i in range(12):
             U[i] += DISL1 / PI2 * DU[i]
 
@@ -364,7 +365,7 @@ def UA(XI, ET, Q, DISL1, DISL2, DISL3, U):
         DU[9]  = ALP2 * EZ
         DU[10] = ALP1 * Y * X11 + XY / F2 * CD + ALP2 * ET * GZ
         DU[11] = -ALP1 * D * X11 - ALP2 * Q * GZ
-        
+
         for i in range(12):
             U[i] += DISL2 / PI2 * DU[i]
 
@@ -379,7 +380,7 @@ def UA(XI, ET, Q, DISL1, DISL2, DISL3, U):
         DU[6]  = -ALP1 * (CD / R + QY * SD) - ALP2 * Q * FY
         DU[7]  = -ALP1 * Y * X11 - ALP2 * Q * GY
         DU[8]  = ALP1 * (D * X11 + XY * SD) + ALP2 * Q * HY
-        
+
         for i in range(12):
             U[i] += DISL3 / PI2 * DU[i]
 
@@ -520,9 +521,9 @@ def UC(XI, ET, Q, Z, DISL1, DISL2, DISL3, U):
     global ALP1, ALP2, ALP3, ALP4, ALP5, SD, CD, SDSD, CDCD, SDCD, S2D, C2D
     global XI2, ET2, Q2, R, R2, R3, R5, Y, D, TT, ALX, ALE, X11, Y11, X32, Y32
     global EY, EZ, FY, FZ, GY, GZ, HY, HZ
-    
+
     F0, F1, F2, F3, PI2 = 0.0, 1.0, 2.0, 3.0, 6.283185307179586
-    
+
     DU = [0.0] * 12
 
     # Initial computations
@@ -546,7 +547,7 @@ def UC(XI, ET, Q, Z, DISL1, DISL2, DISL3, U):
     CQX = C * Q * X53
     CDR = (C + D) / R3
     YY0 = Y / R3 - Y0 * CD
-    
+
     # Initialize U to zeros
     for i in range(12):
         U[i] = F0
@@ -565,7 +566,7 @@ def UC(XI, ET, Q, Z, DISL1, DISL2, DISL3, U):
         DU[9]  = ALP4 * XI * PPZ * CD - ALP5 * XI * QQZ
         DU[10] = ALP4 * F2 * (Y / R3 - Y0 * CD) * SD + D / R3 * CD - ALP5 * (CDR * CD + C * D * QR)
         DU[11] = YY0 * CD - ALP5 * (CDR * SD - C * Y * QR - Y0 * SDSD + Q * Z0 * CD)
-        
+
         for i in range(12):
             U[i] += DISL1 / PI2 * DU[i]
 
@@ -583,7 +584,7 @@ def UC(XI, ET, Q, Z, DISL1, DISL2, DISL3, U):
         DU[9]  = -Q / R3 + Y0 * SDCD - ALP5 * (CDR * CD + C * D * QR)
         DU[10] = ALP4 * Y * D * X32 - ALP5 * C * ((Y - F2 * Q * SD) * X32 + D * ET * Q * X53)
         DU[11] = -XI * PPZ * SD + X11 - D * D * X32 - ALP5 * C * ((D - F2 * Q * CD) * X32 - D * Q2 * X53)
-        
+
         for i in range(12):
             U[i] += DISL2 / PI2 * DU[i]
 
@@ -596,7 +597,7 @@ def UC(XI, ET, Q, Z, DISL1, DISL2, DISL3, U):
         DU[4]  = ALP4 * F2 * Y0 * SD - D / R3 + ALP5 * C / R3 * (F1 - F3 * Q2 / R2)
         DU[5]  = -ALP4 * YY0 - ALP5 * (C * ET * QR - Q * Z0)
         DU[6]  = ALP4 * (Q / R3 + Y0 * SDCD) + ALP5 * (Z / R3 * CD + C * D * QR - Q * Z0 * SD)
-        
+
         for i in range(12):
             U[i] += DISL3 / PI2 * DU[i]
 
@@ -630,7 +631,7 @@ def DCCON0(ALPHA, DIP):
     P18 = PI2 / 360.0
     SD = math.sin(DIP * P18)
     CD = math.cos(DIP * P18)
-    
+
     # Handle small cosine values
     if abs(CD) < EPS:
         CD = F0
@@ -671,26 +672,26 @@ def DCCON2(XI, ET, Q, SD, CD, KXI, KET):
         ET = F0
     if abs(Q) < EPS:
         Q = F0
-    
+
     XI2 = XI * XI
     ET2 = ET * ET
     Q2 = Q * Q
     R2 = XI2 + ET2 + Q2
     R = R2**0.5
-    
+
     if R == F0:
         return
-    
+
     R3 = R * R2
     R5 = R3 * R2
     Y = ET * CD + Q * SD
     D = ET * SD - Q * CD
-    
+
     if Q == F0:
         TT = F0
     else:
         TT = math.atan(XI * ET / (Q * R))
-    
+
     if KXI == 1:
         ALX = -math.log(R - XI)
         X11 = F0
@@ -700,7 +701,7 @@ def DCCON2(XI, ET, Q, SD, CD, KXI, KET):
         ALX = math.log(RXI)
         X11 = F1 / (R * RXI)
         X32 = (R + RXI) * X11 * X11 / R
-    
+
     if KET == 1:
         ALE = -math.log(R - ET)
         Y11 = F0
@@ -710,7 +711,7 @@ def DCCON2(XI, ET, Q, SD, CD, KXI, KET):
         ALE = math.log(RET)
         Y11 = F1 / (R * RET)
         Y32 = (R + RET) * Y11 * Y11 / R
-    
+
     EY = SD / R - Y * Q / R3
     EZ = CD / R + D * Q / R3
     FY = D / R3 + XI2 * Y32 * SD

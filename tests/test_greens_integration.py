@@ -11,21 +11,32 @@ import pytest
 import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
-from geodef.greens import greens, stack_obs, stack_weights, _project_greens
-
+from geodef.greens import (
+    _project_greens,
+    greens,
+    select_slip_columns,
+    stack_obs,
+    stack_weights,
+)
 
 # ======================================================================
 # Fixtures
 # ======================================================================
 
+
 @pytest.fixture
 def fault_4x3():
     """A 4x3 planar fault (12 patches)."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=15e3,
-        strike=320.0, dip=15.0,
-        length=80e3, width=40e3,
-        n_length=4, n_width=3,
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=320.0,
+        dip=15.0,
+        length=80e3,
+        width=40e3,
+        n_length=4,
+        n_width=3,
     )
 
 
@@ -33,10 +44,15 @@ def fault_4x3():
 def single_patch():
     """A single-patch fault for simple tests."""
     return Fault.planar(
-        lat=0.0, lon=100.0, depth=10e3,
-        strike=0.0, dip=90.0,
-        length=10e3, width=10e3,
-        n_length=1, n_width=1,
+        lat=0.0,
+        lon=100.0,
+        depth=10e3,
+        strike=0.0,
+        dip=90.0,
+        length=10e3,
+        width=10e3,
+        n_length=1,
+        n_width=1,
     )
 
 
@@ -54,9 +70,14 @@ def gnss_4station(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return GNSS(
-        lon, lat,
-        ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
-        se=np.ones(n), sn=np.ones(n), su=np.ones(n),
+        lon,
+        lat,
+        ve=np.zeros(n),
+        vn=np.zeros(n),
+        vu=np.zeros(n),
+        se=np.ones(n),
+        sn=np.ones(n),
+        su=np.ones(n),
     )
 
 
@@ -66,9 +87,14 @@ def gnss_horizontal(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return GNSS(
-        lon, lat,
-        ve=np.zeros(n), vn=np.zeros(n), vu=None,
-        se=np.ones(n), sn=np.ones(n), su=None,
+        lon,
+        lat,
+        ve=np.zeros(n),
+        vn=np.zeros(n),
+        vu=None,
+        se=np.ones(n),
+        sn=np.ones(n),
+        su=None,
     )
 
 
@@ -78,8 +104,10 @@ def insar_4pixel(obs_points):
     lat, lon = obs_points
     n = len(lat)
     return InSAR(
-        lon, lat,
-        los=np.zeros(n), sigma=np.ones(n),
+        lon,
+        lat,
+        los=np.zeros(n),
+        sigma=np.ones(n),
         look_e=np.full(n, 0.38),
         look_n=np.full(n, -0.09),
         look_u=np.full(n, 0.92),
@@ -97,6 +125,7 @@ def vertical_4pt(obs_points):
 # ======================================================================
 # 1. greens() shape tests — single dataset
 # ======================================================================
+
 
 class TestGreensShape:
     """Verify output shapes for all data types."""
@@ -122,6 +151,7 @@ class TestGreensShape:
 # 2. greens() shape tests — joint datasets
 # ======================================================================
 
+
 class TestGreensJoint:
     """Verify stacking behavior with multiple datasets."""
 
@@ -129,11 +159,15 @@ class TestGreensJoint:
         G = greens(fault_4x3, [gnss_4station, insar_4pixel])
         assert G.shape == (16, 24)  # (12 + 4) rows
 
-    def test_all_three_types_shape(self, fault_4x3, gnss_4station, insar_4pixel, vertical_4pt):
+    def test_all_three_types_shape(
+        self, fault_4x3, gnss_4station, insar_4pixel, vertical_4pt
+    ):
         G = greens(fault_4x3, [gnss_4station, insar_4pixel, vertical_4pt])
         assert G.shape == (20, 24)  # (12 + 4 + 4) rows
 
-    def test_joint_equals_individual_vstack(self, fault_4x3, gnss_4station, insar_4pixel):
+    def test_joint_equals_individual_vstack(
+        self, fault_4x3, gnss_4station, insar_4pixel
+    ):
         G_joint = greens(fault_4x3, [gnss_4station, insar_4pixel])
         G_gnss = greens(fault_4x3, gnss_4station)
         G_insar = greens(fault_4x3, insar_4pixel)
@@ -144,15 +178,21 @@ class TestGreensJoint:
 # 3. Consistency with fault.displacement()
 # ======================================================================
 
+
 class TestConsistencyWithDisplacement:
     """Verify that greens() @ slip == fault.displacement() results."""
 
     def test_gnss_forward_model(self, single_patch, obs_points):
         lat, lon = obs_points
         gnss = GNSS(
-            lon, lat,
-            ve=np.zeros(4), vn=np.zeros(4), vu=np.zeros(4),
-            se=np.ones(4), sn=np.ones(4), su=np.ones(4),
+            lon,
+            lat,
+            ve=np.zeros(4),
+            vn=np.zeros(4),
+            vu=np.zeros(4),
+            se=np.ones(4),
+            sn=np.ones(4),
+            su=np.ones(4),
         )
 
         G = greens(single_patch, gnss)
@@ -160,7 +200,9 @@ class TestConsistencyWithDisplacement:
         m = np.array([slip_s, slip_d])  # single patch, 2 slip components
         pred = G @ m
 
-        ue, un, uz = single_patch.displacement(lat, lon, slip_strike=slip_s, slip_dip=slip_d)
+        ue, un, uz = single_patch.displacement(
+            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+        )
         expected = gnss.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
 
@@ -168,8 +210,10 @@ class TestConsistencyWithDisplacement:
         lat, lon = obs_points
         n = len(lat)
         insar = InSAR(
-            lon, lat,
-            los=np.zeros(n), sigma=np.ones(n),
+            lon,
+            lat,
+            los=np.zeros(n),
+            sigma=np.ones(n),
             look_e=np.full(n, 0.38),
             look_n=np.full(n, -0.09),
             look_u=np.full(n, 0.92),
@@ -180,7 +224,9 @@ class TestConsistencyWithDisplacement:
         m = np.array([slip_s, slip_d])
         pred = G @ m
 
-        ue, un, uz = single_patch.displacement(lat, lon, slip_strike=slip_s, slip_dip=slip_d)
+        ue, un, uz = single_patch.displacement(
+            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+        )
         expected = insar.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
 
@@ -194,7 +240,9 @@ class TestConsistencyWithDisplacement:
         m = np.array([slip_s, slip_d])
         pred = G @ m
 
-        ue, un, uz = single_patch.displacement(lat, lon, slip_strike=slip_s, slip_dip=slip_d)
+        ue, un, uz = single_patch.displacement(
+            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+        )
         expected = vert.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
 
@@ -203,9 +251,14 @@ class TestConsistencyWithDisplacement:
         lat, lon = obs_points
         n = len(lat)
         gnss = GNSS(
-            lon, lat,
-            ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
-            se=np.ones(n), sn=np.ones(n), su=np.ones(n),
+            lon,
+            lat,
+            ve=np.zeros(n),
+            vn=np.zeros(n),
+            vu=np.zeros(n),
+            se=np.ones(n),
+            sn=np.ones(n),
+            su=np.ones(n),
         )
 
         rng = np.random.default_rng(42)
@@ -219,7 +272,9 @@ class TestConsistencyWithDisplacement:
         m[n:] = slip_d
         pred = G @ m
 
-        ue, un, uz = fault_4x3.displacement(lat, lon, slip_strike=slip_s, slip_dip=slip_d)
+        ue, un, uz = fault_4x3.displacement(
+            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+        )
         expected = gnss.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
 
@@ -227,6 +282,7 @@ class TestConsistencyWithDisplacement:
 # ======================================================================
 # 4. Zero slip gives zero prediction
 # ======================================================================
+
 
 class TestZeroSlip:
     """Zero slip columns should give zero predictions."""
@@ -248,6 +304,7 @@ class TestZeroSlip:
 # 5. Linearity
 # ======================================================================
 
+
 class TestLinearity:
     """Scaled slip should produce proportionally scaled predictions."""
 
@@ -261,6 +318,7 @@ class TestLinearity:
 # ======================================================================
 # 6. stack_obs and stack_weights
 # ======================================================================
+
 
 class TestStackUtilities:
     """Tests for stack_obs() and stack_weights()."""
@@ -276,12 +334,14 @@ class TestStackUtilities:
 
     def test_stack_obs_three(self, gnss_4station, insar_4pixel, vertical_4pt):
         obs = stack_obs([gnss_4station, insar_4pixel, vertical_4pt])
-        assert obs.shape == (gnss_4station.n_obs + insar_4pixel.n_obs + vertical_4pt.n_obs,)
+        assert obs.shape == (
+            gnss_4station.n_obs + insar_4pixel.n_obs + vertical_4pt.n_obs,
+        )
 
     def test_stack_weights_single_diagonal(self, gnss_4station):
         W = stack_weights(gnss_4station)
         assert W.shape == (gnss_4station.n_obs, gnss_4station.n_obs)
-        expected = np.diag(1.0 / gnss_4station.sigma ** 2)
+        expected = np.diag(1.0 / gnss_4station.sigma**2)
         np.testing.assert_allclose(W, expected, rtol=1e-10)
 
     def test_stack_weights_joint_block_diagonal(self, gnss_4station, insar_4pixel):
@@ -302,6 +362,7 @@ class TestStackUtilities:
 # ======================================================================
 # 7. _project_greens internal helper
 # ======================================================================
+
 
 class TestProjectGreens:
     """Tests for the _project_greens helper function."""
@@ -332,22 +393,24 @@ class TestProjectGreens:
 # 8. Top-level API access
 # ======================================================================
 
+
 class TestTopLevelAPI:
     """Verify greens() is accessible from geodef namespace."""
 
     def test_greens_accessible(self):
-        assert hasattr(geodef.greens, 'greens')
+        assert hasattr(geodef.greens, "greens")
 
     def test_stack_obs_accessible(self):
-        assert hasattr(geodef, 'stack_obs')
+        assert hasattr(geodef, "stack_obs")
 
     def test_stack_weights_accessible(self):
-        assert hasattr(geodef, 'stack_weights')
+        assert hasattr(geodef, "stack_weights")
 
 
 # ======================================================================
 # 9. Tri engine support in fault.greens_matrix()
 # ======================================================================
+
 
 class TestTriEngine:
     """Test that greens_matrix works with engine='tri'."""
@@ -361,16 +424,20 @@ class TestTriEngine:
         """
         # Rectangle: 10km x 10km, vertical, NS strike, centered at depth 10km
         # In local ENU: corners at (±5000, 0, -5000) to (±5000, 0, -15000)
-        v1 = np.array([
-            [-5000.0, 0.0, -5000.0],
-            [5000.0, 0.0, -5000.0],
-            [5000.0, 0.0, -15000.0],
-        ])
-        v2 = np.array([
-            [-5000.0, 0.0, -5000.0],
-            [5000.0, 0.0, -15000.0],
-            [-5000.0, 0.0, -15000.0],
-        ])
+        v1 = np.array(
+            [
+                [-5000.0, 0.0, -5000.0],
+                [5000.0, 0.0, -5000.0],
+                [5000.0, 0.0, -15000.0],
+            ]
+        )
+        v2 = np.array(
+            [
+                [-5000.0, 0.0, -5000.0],
+                [5000.0, 0.0, -15000.0],
+                [-5000.0, 0.0, -15000.0],
+            ]
+        )
         vertices = np.array([v1, v2])
 
         lat = np.array([0.0, 0.0])
@@ -379,8 +446,9 @@ class TestTriEngine:
         strike = np.array([0.0, 0.0])
         dip = np.array([90.0, 90.0])
 
-        return Fault(lat, lon, depth, strike, dip, None, None,
-                     vertices=vertices, engine="tri")
+        return Fault(
+            lat, lon, depth, strike, dip, None, None, vertices=vertices, engine="tri"
+        )
 
     def test_tri_greens_matrix_shape(self, tri_fault):
         obs_lat = np.array([0.1, -0.1])
@@ -406,9 +474,14 @@ class TestTriEngine:
         obs_lon = np.array([100.1, 99.9])
         n = len(obs_lat)
         gnss = GNSS(
-            obs_lon, obs_lat,
-            ve=np.zeros(n), vn=np.zeros(n), vu=np.zeros(n),
-            se=np.ones(n), sn=np.ones(n), su=np.ones(n),
+            obs_lon,
+            obs_lat,
+            ve=np.zeros(n),
+            vn=np.zeros(n),
+            vu=np.zeros(n),
+            se=np.ones(n),
+            sn=np.ones(n),
+            su=np.ones(n),
         )
         G = greens(tri_fault, gnss)
         assert G.shape == (6, 4)
@@ -425,3 +498,56 @@ class TestTriEngine:
         obs_lon = np.array([100.1])
         with pytest.raises(ValueError, match="Unknown kind"):
             tri_fault.greens_matrix(obs_lat, obs_lon, kind="tilt")
+
+
+# ======================================================================
+# 6. greens() component selection
+# ======================================================================
+
+
+class TestGreensComponents:
+    """greens(components=...) reduces columns like the inversion path."""
+
+    def test_both_is_default(self, fault_4x3, gnss_4station):
+        G_default = greens(fault_4x3, gnss_4station)
+        G_both = greens(fault_4x3, gnss_4station, components="both")
+        assert G_both.shape == (12, 24)
+        np.testing.assert_array_equal(G_default, G_both)
+
+    def test_strike_selects_first_block(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        G_strike = greens(fault_4x3, gnss_4station, components="strike")
+        assert G_strike.shape == (12, 12)
+        np.testing.assert_array_equal(G_strike, G_full[:, :12])
+
+    def test_dip_selects_second_block(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        G_dip = greens(fault_4x3, gnss_4station, components="dip")
+        assert G_dip.shape == (12, 12)
+        np.testing.assert_array_equal(G_dip, G_full[:, 12:])
+
+    def test_rake_matches_manual_combination(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        rake = 30.0
+        G_rake = greens(fault_4x3, gnss_4station, components="rake", rake=rake)
+        theta = np.deg2rad(rake)
+        expected = G_full[:, :12] * np.cos(theta) + G_full[:, 12:] * np.sin(theta)
+        assert G_rake.shape == (12, 12)
+        np.testing.assert_allclose(G_rake, expected)
+
+    def test_azimuth_uses_per_patch_strike(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        az = 350.0
+        G_az = greens(fault_4x3, gnss_4station, components="azimuth", slip_azimuth=az)
+        theta = np.deg2rad(az - fault_4x3.strike)
+        expected = G_full[:, :12] * np.cos(theta) + G_full[:, 12:] * np.sin(theta)
+        np.testing.assert_allclose(G_az, expected)
+
+    def test_rake_requires_angle(self, fault_4x3, gnss_4station):
+        with pytest.raises(ValueError, match="rake"):
+            greens(fault_4x3, gnss_4station, components="rake")
+
+    def test_helper_matches_greens(self, fault_4x3, gnss_4station):
+        G_full = greens(fault_4x3, gnss_4station)
+        reduced = select_slip_columns(G_full, fault_4x3.n_patches, "strike")
+        np.testing.assert_array_equal(reduced, G_full[:, :12])

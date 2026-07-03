@@ -17,6 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_NOTEBOOKS = (
     ROOT / "tutorials" / "01_forward_model.ipynb",
     ROOT / "tutorials" / "02_discretization_and_g_matrix.ipynb",
+    ROOT / "tutorials" / "03_unregularized_inversion.ipynb",
+    ROOT / "tutorials" / "04_regularization.ipynb",
+    ROOT / "tutorials" / "05_choosing_regularization.ipynb",
+    ROOT / "tutorials" / "06_multiple_datasets.ipynb",
+    ROOT / "tutorials" / "07_correlated_noise.ipynb",
+    ROOT / "tutorials" / "08_bounds_and_constraints.ipynb",
+    ROOT / "tutorials" / "09_uncertainty_and_resolution.ipynb",
+    ROOT / "tutorials" / "10_nonlinear_geometry.ipynb",
 )
 
 

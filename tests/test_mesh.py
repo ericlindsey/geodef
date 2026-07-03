@@ -6,7 +6,6 @@ import pytest
 
 from geodef.mesh import Mesh, _compute_strike_dip
 
-
 # ======================================================================
 # Fixtures
 # ======================================================================
@@ -232,6 +231,7 @@ class TestMeshIO:
         simple_mesh.save(fname)
         # Read raw file and verify col 1 is lat (not lon)
         import numpy as np
+
         ned_data = np.loadtxt(str(tmp_path / "test_mesh.ned"))
         col1 = ned_data[:, 1]
         col2 = ned_data[:, 2]
@@ -253,6 +253,7 @@ class TestMeshIO:
     def test_lonlat_file_column_order(self, simple_mesh, tmp_path):
         """With coord_order='lonlat', col 1 is lon."""
         import numpy as np
+
         fname = str(tmp_path / "test_lonlat2")
         simple_mesh.save(fname, coord_order="lonlat")
         ned_data = np.loadtxt(str(tmp_path / "test_lonlat2.ned"))
@@ -365,6 +366,45 @@ class TestFaultFromTriangles:
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
         assert fault._depth[0] == pytest.approx(10000.0, abs=100.0)
 
+    def test_node_connectivity_matches_explicit(self):
+        from geodef.fault import Fault
+
+        nodes = np.array(
+            [[0, 0, 0], [10000, 0, 0], [0, 10000, -5000], [10000, 10000, -5000]],
+            dtype=float,
+        )
+        tris = np.array([[0, 1, 2], [1, 3, 2]])
+        f_conn = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+        f_expl = Fault.from_triangles(nodes[tris], 0.0, 100.0)
+        assert f_conn.n_patches == 2
+        np.testing.assert_allclose(f_conn._vertices, f_expl._vertices)
+        np.testing.assert_allclose(f_conn.strike, f_expl.strike)
+
+    def test_connectivity_preserves_order(self):
+        from geodef.fault import Fault
+
+        nodes = np.array(
+            [[0, 0, 0], [10000, 0, 0], [0, 10000, -5000], [10000, 10000, -5000]],
+            dtype=float,
+        )
+        tris = np.array([[1, 3, 2], [0, 1, 2]])  # swapped order
+        fault = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+        np.testing.assert_allclose(fault._vertices[0], nodes[tris[0]])
+
+    def test_connectivity_bad_node_shape_raises(self):
+        from geodef.fault import Fault
+
+        verts = np.zeros((2, 3, 3))
+        with pytest.raises(ValueError, match="node array"):
+            Fault.from_triangles(verts, 0.0, 100.0, triangles=np.array([[0, 1, 2]]))
+
+    def test_connectivity_index_out_of_range_raises(self):
+        from geodef.fault import Fault
+
+        nodes = np.zeros((3, 3))
+        with pytest.raises(ValueError, match="out of range"):
+            Fault.from_triangles(nodes, 0.0, 100.0, triangles=np.array([[0, 1, 5]]))
+
 
 class TestFaultFromMesh:
     def test_basic(self, simple_mesh):
@@ -420,9 +460,7 @@ class TestFaultLoadNed:
 
         fname = str(tmp_path / "test_mesh")
         simple_mesh.save(fname)
-        fault = Fault.load(
-            fname, format="ned", ref_lat=0.05, ref_lon=100.05
-        )
+        fault = Fault.load(fname, format="ned", ref_lat=0.05, ref_lon=100.05)
         assert fault.engine == "tri"
         assert fault.n_patches == 2
 
@@ -497,9 +535,7 @@ class TestFromPolygon:
         def depth_func(lo, la):
             return la * 100000.0
 
-        mesh = from_polygon(
-            lon, lat, depth_func=depth_func, target_length=5000.0
-        )
+        mesh = from_polygon(lon, lat, depth_func=depth_func, target_length=5000.0)
         assert mesh.n_triangles > 0
         assert mesh.depth.max() > mesh.depth.min()
 
@@ -521,9 +557,7 @@ class TestFromPolygon:
         lat = np.array([0.0, 0.0, 0.1, 0.1])
         depth = np.array([0.0, 0.0, 10000.0, 10000.0])
         with pytest.raises(ValueError, match="mutually exclusive"):
-            from_polygon(
-                lon, lat, depth, target_length=5000.0, max_area=1e-3
-            )
+            from_polygon(lon, lat, depth, target_length=5000.0, max_area=1e-3)
 
     def test_requires_depth_or_depth_func(self):
         from geodef.mesh import from_polygon
@@ -589,7 +623,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
@@ -603,7 +638,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
@@ -617,7 +653,8 @@ class TestFromTrace:
         trace_lat = np.array([0.0, 0.0])
         max_depth = 30.0
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=max_depth,
             dip=45.0,
             target_length=10000.0,
@@ -631,7 +668,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=lambda z: 10 + 40 * z / 30000,  # 10° at surface, 50° at depth
             target_length=10000.0,
@@ -644,7 +682,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=30.0,
             dip_direction=0.0,  # dip to the north
@@ -661,7 +700,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.1, 100.1])
         trace_lat = np.array([0.0, 0.0, 0.1])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=20.0,
             dip=30.0,
             target_length=10000.0,
@@ -675,7 +715,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
@@ -690,7 +731,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=30.0,
             dip=30.0,
             target_length=10000.0,
@@ -708,7 +750,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.1, 100.2])
         trace_lat = np.array([0.0, 0.05, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=50.0,
             dip=80.0,
             target_length=5000.0,
@@ -726,7 +769,8 @@ class TestFromTrace:
         trace_lon = 100.0 + 0.2 * np.cos(theta)
         trace_lat = 0.2 * np.sin(theta)
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=20.0,
             dip=45.0,
             target_length=5000.0,
@@ -742,7 +786,8 @@ class TestFromTrace:
         trace_lon = np.array([100.0, 100.3])
         trace_lat = np.array([0.0, 0.0])
         mesh = from_trace(
-            trace_lon, trace_lat,
+            trace_lon,
+            trace_lat,
             max_depth=40.0,
             dip=lambda z: 10 + 60 * z / 40000,
             target_length=8000.0,
@@ -860,8 +905,9 @@ def _shoelace_area(polygon: np.ndarray) -> float:
     """Compute polygon area via the shoelace formula."""
     x = polygon[:, 0]
     y = polygon[:, 1]
-    return 0.5 * abs(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])
-                      + x[-1] * y[0] - x[0] * y[-1])
+    return 0.5 * abs(
+        np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]) + x[-1] * y[0] - x[0] * y[-1]
+    )
 
 
 # ======================================================================
@@ -877,9 +923,7 @@ class TestSimplifyBoundary:
         n = 100
         top = np.column_stack([np.linspace(0, 1, n // 2), np.zeros(n // 2)])
         right = np.column_stack([np.ones(2), [0.0, 1.0]])
-        bottom = np.column_stack([
-            np.linspace(1, 0, n // 2), np.ones(n // 2)
-        ])
+        bottom = np.column_stack([np.linspace(1, 0, n // 2), np.ones(n // 2)])
         left = np.column_stack([np.zeros(2), [1.0, 0.0]])
         boundary = np.vstack([top, right[1:], bottom[1:], left[1:]])
 
@@ -908,10 +952,17 @@ class TestSimplifyBoundary:
         """First and last boundary points are always retained."""
         from geodef.mesh import _simplify_boundary
 
-        boundary = np.array([
-            [0.0, 0.0], [0.1, 0.0], [0.2, 0.0], [0.3, 0.0],
-            [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
-        ])
+        boundary = np.array(
+            [
+                [0.0, 0.0],
+                [0.1, 0.0],
+                [0.2, 0.0],
+                [0.3, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [0.0, 1.0],
+            ]
+        )
         result = _simplify_boundary(boundary, lambda lon, lat: 0.5)
         npt.assert_array_equal(result[0], boundary[0])
         npt.assert_array_equal(result[-1], boundary[-1])
@@ -991,11 +1042,14 @@ class TestFromSlab2:
 
         def mock_netcdf4():
             """Return a mock Dataset class."""
+
             class FakeVar:
                 def __init__(self, data):
                     self._data = data
+
                 def __getitem__(self, key):
                     return self._data[key]
+
             class FakeDS:
                 def __init__(self, fname, mode="r"):
                     self.variables = {
@@ -1003,22 +1057,29 @@ class TestFromSlab2:
                         "y": FakeVar(lats),
                         "z": FakeVar(Z),
                     }
+
                 def __enter__(self):
                     return self
+
                 def __exit__(self, *args):
                     pass
+
             return FakeDS
 
         monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
 
         # Without max_depth: full slab, max depth ≈ 200 km
         mesh_full = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1), target_length=30.0,
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
+            target_length=30.0,
         )
         # With max_depth=100 km: should clip roughly in half
         mesh_clipped = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1),
-            target_length=30.0, max_depth=100.0,
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
+            target_length=30.0,
+            max_depth=100.0,
         )
         assert mesh_clipped.depth.max() <= 105_000  # 100 km + tolerance
         assert mesh_clipped.depth.max() < mesh_full.depth.max()
@@ -1036,8 +1097,10 @@ class TestFromSlab2:
             class FakeVar:
                 def __init__(self, data):
                     self._data = data
+
                 def __getitem__(self, key):
                     return self._data[key]
+
             class FakeDS:
                 def __init__(self, fname, mode="r"):
                     self.variables = {
@@ -1045,20 +1108,27 @@ class TestFromSlab2:
                         "y": FakeVar(lats),
                         "z": FakeVar(Z),
                     }
+
                 def __enter__(self):
                     return self
+
                 def __exit__(self, *args):
                     pass
+
             return FakeDS
 
         monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
 
         mesh_full = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1), target_length=30.0,
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
+            target_length=30.0,
         )
         mesh_clipped = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1),
-            target_length=30.0, max_depth=50.0,
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
+            target_length=30.0,
+            max_depth=50.0,
         )
         # Clipped mesh should cover less latitude range
         lat_range_full = mesh_full.lat.max() - mesh_full.lat.min()
@@ -1079,8 +1149,10 @@ class TestFromSlab2:
             class FakeVar:
                 def __init__(self, data):
                     self._data = data
+
                 def __getitem__(self, key):
                     return self._data[key]
+
             class FakeDS:
                 def __init__(self, fname, mode="r"):
                     self.variables = {
@@ -1088,10 +1160,13 @@ class TestFromSlab2:
                         "y": FakeVar(lats),
                         "z": FakeVar(Z),
                     }
+
                 def __enter__(self):
                     return self
+
                 def __exit__(self, *args):
                     pass
+
             return FakeDS
 
         monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
@@ -1101,7 +1176,8 @@ class TestFromSlab2:
         trace_lat = np.array([1.3, 1.3, 1.3])
 
         mesh = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1),
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
             target_length=30.0,
             surface_trace=(trace_lon, trace_lat),
         )
@@ -1123,8 +1199,10 @@ class TestFromSlab2:
             class FakeVar:
                 def __init__(self, data):
                     self._data = data
+
                 def __getitem__(self, key):
                     return self._data[key]
+
             class FakeDS:
                 def __init__(self, fname, mode="r"):
                     self.variables = {
@@ -1132,10 +1210,13 @@ class TestFromSlab2:
                         "y": FakeVar(lats),
                         "z": FakeVar(Z),
                     }
+
                 def __enter__(self):
                     return self
+
                 def __exit__(self, *args):
                     pass
+
             return FakeDS
 
         monkeypatch.setattr(mesh_mod, "_require_netcdf4", mock_netcdf4)
@@ -1144,7 +1225,8 @@ class TestFromSlab2:
         trace_lat = np.array([1.3, 1.3, 1.3])
 
         mesh = mesh_mod.from_slab2(
-            "fake.grd", bounds=(99, 101, -1, 1),
+            "fake.grd",
+            bounds=(99, 101, -1, 1),
             target_length=30.0,
             max_depth=100.0,
             surface_trace=(trace_lon, trace_lat),
@@ -1190,15 +1272,15 @@ class TestFromPoints:
         lon = 100.0 + 0.08 * rng.random(30)
         lat = 0.02 + 0.06 * rng.random(30)
         depth = lat * 100000.0
-        boundary = np.array([
-            [100.0, 0.0],
-            [100.1, 0.0],
-            [100.1, 0.1],
-            [100.0, 0.1],
-        ])
-        mesh = from_points(
-            lon, lat, depth, boundary=boundary, target_length=5000.0
+        boundary = np.array(
+            [
+                [100.0, 0.0],
+                [100.1, 0.0],
+                [100.1, 0.1],
+                [100.0, 0.1],
+            ]
         )
+        mesh = from_points(lon, lat, depth, boundary=boundary, target_length=5000.0)
         assert mesh.n_triangles > 0
 
     def test_interpolation_quality(self):
@@ -1224,15 +1306,15 @@ class TestFromPoints:
         lat = 0.02 + 0.06 * rng.random(30)
         depth = lat * 100000.0  # depth ~ 0 at lat=0
         # Boundary with a surface edge at lat=0 (depth=0)
-        boundary = np.array([
-            [100.0, 0.0],
-            [100.1, 0.0],
-            [100.1, 0.1],
-            [100.0, 0.1],
-        ])
-        mesh = from_points(
-            lon, lat, depth, boundary=boundary, target_length=5000.0
+        boundary = np.array(
+            [
+                [100.0, 0.0],
+                [100.1, 0.0],
+                [100.1, 0.1],
+                [100.0, 0.1],
+            ]
         )
+        mesh = from_points(lon, lat, depth, boundary=boundary, target_length=5000.0)
         # Nodes on the lat=0 boundary edge should have depth ≈ 0
         surface_mask = mesh.depth < 1.0
         assert np.sum(surface_mask) >= 2
@@ -1264,10 +1346,10 @@ class TestFromPoints:
 class TestIntegration:
     def test_from_trace_to_fault_to_greens(self):
         """Full pipeline: from_trace → Fault → greens matrix."""
+        import geodef.greens as greens_mod
+        from geodef.data import GNSS
         from geodef.fault import Fault
         from geodef.mesh import from_trace
-        from geodef.data import GNSS
-        import geodef.greens as greens_mod
 
         mesh = from_trace(
             trace_lon=np.array([100.0, 100.2]),

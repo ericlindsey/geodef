@@ -23,6 +23,30 @@ def _make_readonly(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
+def _names_header(name: np.ndarray | None) -> str:
+    """Encode site names as a leading ``savetxt`` header line, or ``''``.
+
+    The numeric block stays purely numeric; names ride along in a ``# names:``
+    comment so the file still round-trips through ``np.loadtxt``.
+    """
+    if name is None:
+        return ""
+    return "names: " + " ".join(str(x) for x in name) + "\n"
+
+
+def _read_names(path: Path) -> np.ndarray | None:
+    """Read the ``# names:`` comment line from a ``.dat`` file, or ``None``."""
+    with open(path) as fh:
+        for line in fh:
+            if not line.startswith("#"):
+                break
+            stripped = line.lstrip("#").strip()
+            if stripped.startswith("names:"):
+                tokens = stripped[len("names:") :].split()
+                return np.asarray(tokens, dtype=str)
+    return None
+
+
 class DataSet(ABC):
     """Abstract base class for geodetic data types.
 
@@ -42,6 +66,7 @@ class DataSet(ABC):
         lon: np.ndarray,
         lat: np.ndarray,
         *,
+        name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
         lon = _make_readonly(np.asarray(lon, dtype=float))
@@ -51,10 +76,22 @@ class DataSet(ABC):
         if lat.ndim != 1 or lon.shape != (n,):
             raise ValueError("lon and lat must be 1-D arrays of the same length")
 
+        if name is not None:
+            name = np.asarray(name, dtype=str)
+            if name.shape != (n,):
+                raise ValueError("name must be a 1-D array of length n_stations")
+            name = _make_readonly(name)
+
         self._lon = lon
         self._lat = lat
+        self._name = name
         self._covariance_explicit = covariance
         self._covariance_cache: np.ndarray | None = None
+
+    @property
+    def name(self) -> np.ndarray | None:
+        """Optional per-station site names, shape (n_stations,), or None."""
+        return self._name
 
     @property
     def lon(self) -> np.ndarray:
@@ -117,7 +154,7 @@ class DataSet(ABC):
         if self._covariance_explicit is not None:
             cov = np.asarray(self._covariance_explicit, dtype=float)
         else:
-            cov = np.diag(self.sigma ** 2)
+            cov = np.diag(self.sigma**2)
 
         self._covariance_cache = _make_readonly(cov)
         return self._covariance_cache
@@ -129,8 +166,7 @@ class DataSet(ABC):
             cov = np.asarray(self._covariance_explicit, dtype=float)
             if cov.shape != (n, n):
                 raise ValueError(
-                    f"covariance shape {cov.shape} does not match "
-                    f"expected ({n}, {n})"
+                    f"covariance shape {cov.shape} does not match expected ({n}, {n})"
                 )
 
 
@@ -149,6 +185,11 @@ class GNSS(DataSet):
         se: East component 1-sigma, shape (n_stations,).
         sn: North component 1-sigma, shape (n_stations,).
         su: Up component 1-sigma, shape (n_stations,), or None for horizontal-only.
+        rho: Optional East-North correlation coefficient in [-1, 1], scalar
+            or shape (n_stations,). When given, a block covariance with the
+            correct per-station E-N correlation is built automatically.
+            Mutually exclusive with ``covariance``.
+        name: Optional per-station site names, shape (n_stations,).
         covariance: Optional full covariance matrix, shape (n_obs, n_obs).
     """
 
@@ -165,9 +206,13 @@ class GNSS(DataSet):
         sn: np.ndarray,
         su: np.ndarray | None,
         *,
+        rho: np.ndarray | float | None = None,
+        name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lon, lat, covariance=covariance)
+        if rho is not None and covariance is not None:
+            raise ValueError("Provide either rho or covariance, not both")
+        super().__init__(lon, lat, name=name, covariance=covariance)
 
         ve = np.asarray(ve, dtype=float)
         vn = np.asarray(vn, dtype=float)
@@ -176,13 +221,9 @@ class GNSS(DataSet):
 
         n = self.n_stations
         if ve.shape != (n,) or vn.shape != (n,):
-            raise ValueError(
-                "ve, vn must be 1-D arrays of the same length as lat/lon"
-            )
+            raise ValueError("ve, vn must be 1-D arrays of the same length as lat/lon")
         if se.shape != (n,) or sn.shape != (n,):
-            raise ValueError(
-                "se, sn must be 1-D arrays of the same length as lat/lon"
-            )
+            raise ValueError("se, sn must be 1-D arrays of the same length as lat/lon")
 
         # Validate vertical component consistency
         if (vu is None) != (su is None):
@@ -209,7 +250,41 @@ class GNSS(DataSet):
         self._sn = _make_readonly(sn)
         self._su = _make_readonly(su) if su is not None else None
 
+        if rho is not None:
+            self._covariance_explicit = self._build_en_covariance(rho)
+
         self._validate_covariance_shape()
+
+    def _build_en_covariance(self, rho: np.ndarray | float) -> np.ndarray:
+        """Build a block covariance with per-station East-North correlation.
+
+        Diagonal entries are the component variances; each station's E-N pair
+        gets an off-diagonal ``rho * se * sn``. The Up component (if present)
+        stays uncorrelated.
+
+        Args:
+            rho: East-North correlation coefficient in [-1, 1], scalar or
+                shape (n_stations,).
+
+        Returns:
+            Covariance matrix, shape (n_obs, n_obs).
+
+        Raises:
+            ValueError: If ``rho`` has the wrong shape or lies outside [-1, 1].
+        """
+        n = self.n_stations
+        rho_arr = np.broadcast_to(np.asarray(rho, dtype=float), (n,))
+        if np.any(np.abs(rho_arr) > 1.0):
+            raise ValueError("rho must lie in [-1, 1]")
+
+        n_comp = 3 if self._vu is not None else 2
+        cov = np.diag(self.sigma**2)
+        e_idx = np.arange(n) * n_comp
+        n_idx = e_idx + 1
+        off = rho_arr * self._se * self._sn
+        cov[e_idx, n_idx] = off
+        cov[n_idx, e_idx] = off
+        return cov
 
     @property
     def components(self) -> str:
@@ -234,9 +309,7 @@ class GNSS(DataSet):
             return _make_readonly(
                 np.column_stack([self._ve, self._vn, self._vu]).ravel()
             )
-        return _make_readonly(
-            np.column_stack([self._ve, self._vn]).ravel()
-        )
+        return _make_readonly(np.column_stack([self._ve, self._vn]).ravel())
 
     @property
     def sigma(self) -> np.ndarray:
@@ -245,9 +318,7 @@ class GNSS(DataSet):
             return _make_readonly(
                 np.column_stack([self._se, self._sn, self._su]).ravel()
             )
-        return _make_readonly(
-            np.column_stack([self._se, self._sn]).ravel()
-        )
+        return _make_readonly(np.column_stack([self._se, self._sn]).ravel())
 
     def project(self, *components: np.ndarray) -> np.ndarray:
         """Project displacement components into GNSS observation space.
@@ -283,14 +354,20 @@ class GNSS(DataSet):
 
         vu = self._vu if self._vu is not None else np.zeros(self.n_stations)
         su = self._su if self._su is not None else np.ones(self.n_stations)
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._ve, self._vn, vu,
-            self._se, self._sn, su,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uE uN uZ sigE sigN sigZ",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._ve,
+                self._vn,
+                vu,
+                self._se,
+                self._sn,
+                su,
+            ]
+        )
+        header = _names_header(self._name) + "lon lat uE uN uZ sigE sigN sigZ"
+        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save GNSS data in GMT-compatible format.
@@ -302,11 +379,16 @@ class GNSS(DataSet):
             fname: Output file path.
         """
         header = "lon lat uE uN sigE sigN"
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._ve, self._vn,
-            self._se, self._sn,
-        ])
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._ve,
+                self._vn,
+                self._se,
+                self._sn,
+            ]
+        )
         np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     @classmethod
@@ -338,13 +420,15 @@ class GNSS(DataSet):
 
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
-        ve, vn, vu = raw[:, 2], raw[:, 3], raw[:, 4]
-        se, sn, su = raw[:, 5], raw[:, 6], raw[:, 7]
+        ve, vn = raw[:, 2], raw[:, 3]
+        se, sn = raw[:, 5], raw[:, 6]
+        vu: np.ndarray | None = raw[:, 4]
+        su: np.ndarray | None = raw[:, 7]
 
         if components == "en":
             vu, su = None, None
 
-        return cls(lon, lat, ve, vn, vu, se, sn, su)
+        return cls(lon, lat, ve, vn, vu, se, sn, su, name=_read_names(path))
 
 
 class InSAR(DataSet):
@@ -445,14 +529,20 @@ class InSAR(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._los, self._sigma,
-            self._look_e, self._look_n, self._look_u,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uLOS sigLOS losE losN losU",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._los,
+                self._sigma,
+                self._look_e,
+                self._look_n,
+                self._look_u,
+            ]
+        )
+        np.savetxt(
+            Path(fname), data, header="lon lat uLOS sigLOS losE losN losU", fmt="%.8f"
+        )
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save InSAR data in GMT-compatible format.
@@ -509,6 +599,7 @@ class Vertical(DataSet):
         lat: Observation latitudes, shape (n_stations,).
         displacement: Vertical displacement values, shape (n_stations,).
         sigma: 1-sigma uncertainties, shape (n_stations,).
+        name: Optional per-station site names, shape (n_stations,).
         covariance: Optional full covariance matrix, shape (n_obs, n_obs).
     """
 
@@ -521,9 +612,10 @@ class Vertical(DataSet):
         displacement: np.ndarray,
         sigma: np.ndarray,
         *,
+        name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lon, lat, covariance=covariance)
+        super().__init__(lon, lat, name=name, covariance=covariance)
 
         displacement = np.asarray(displacement, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -584,13 +676,16 @@ class Vertical(DataSet):
         """
         if format != "dat":
             raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack([
-            self._lon, self._lat,
-            self._displacement, self._sigma,
-        ])
-        np.savetxt(Path(fname), data,
-                   header="lon lat uZ sigZ",
-                   fmt="%.8f")
+        data = np.column_stack(
+            [
+                self._lon,
+                self._lat,
+                self._displacement,
+                self._sigma,
+            ]
+        )
+        header = _names_header(self._name) + "lon lat uZ sigZ"
+        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save vertical data in GMT-compatible format.
@@ -631,4 +726,75 @@ class Vertical(DataSet):
         lon, lat = raw[:, 0], raw[:, 1]
         displacement, sigma = raw[:, 2], raw[:, 3]
 
-        return cls(lon, lat, displacement, sigma)
+        return cls(lon, lat, displacement, sigma, name=_read_names(path))
+
+
+def spatial_covariance(
+    lon: np.ndarray,
+    lat: np.ndarray,
+    sill: float,
+    correlation_length: float,
+    *,
+    model: str = "exponential",
+    nugget: float = 0.0,
+) -> np.ndarray:
+    """Build a spatially-correlated data covariance matrix ``C_d``.
+
+    Off-diagonal correlation decays with great-circle distance between
+    observation points, following a stationary, isotropic covariance model.
+    This is the standard way to represent spatially-correlated InSAR noise
+    (atmosphere, orbits) instead of assuming diagonal ``C_d``. Pass the result
+    as ``covariance=`` to a single-component-per-station dataset (``InSAR`` or
+    ``Vertical``), or thread it through ``geodef.invert()``.
+
+    The covariance is ``C_ij = sill * rho(d_ij) + nugget * delta_ij`` where
+    ``rho`` is the correlation function:
+
+    - ``'exponential'``: ``rho(d) = exp(-d / L)``
+    - ``'gaussian'``:    ``rho(d) = exp(-(d / L)^2)``
+
+    Args:
+        lon: Observation longitudes in degrees, shape (n,).
+        lat: Observation latitudes in degrees, shape (n,).
+        sill: Correlated variance (the ``d -> 0`` covariance), in the squared
+            units of the observations (e.g. m^2).
+        correlation_length: Decorrelation length ``L`` in meters.
+        model: Correlation function, ``'exponential'`` or ``'gaussian'``.
+        nugget: Uncorrelated (white-noise) variance added to the diagonal,
+            in the same squared units as ``sill``.
+
+    Returns:
+        Symmetric positive-definite covariance matrix, shape (n, n).
+
+    Raises:
+        ValueError: If ``sill`` or ``correlation_length`` is not positive,
+            ``nugget`` is negative, or ``model`` is unknown.
+    """
+    if sill <= 0:
+        raise ValueError("sill must be positive")
+    if correlation_length <= 0:
+        raise ValueError("correlation_length must be positive")
+    if nugget < 0:
+        raise ValueError("nugget must be non-negative")
+
+    lat_r = np.radians(np.asarray(lat, dtype=float))
+    lon_r = np.radians(np.asarray(lon, dtype=float))
+    dlat = lat_r[:, None] - lat_r[None, :]
+    dlon = lon_r[:, None] - lon_r[None, :]
+    a = (
+        np.sin(dlat / 2.0) ** 2
+        + np.cos(lat_r)[:, None] * np.cos(lat_r)[None, :] * np.sin(dlon / 2.0) ** 2
+    )
+    dist = 2.0 * 6371000.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+
+    ratio = dist / correlation_length
+    if model == "exponential":
+        rho = np.exp(-ratio)
+    elif model == "gaussian":
+        rho = np.exp(-(ratio**2))
+    else:
+        raise ValueError(f"model must be 'exponential' or 'gaussian', got {model!r}")
+
+    cov = sill * rho
+    cov[np.diag_indices_from(cov)] += nugget
+    return cov

@@ -34,9 +34,18 @@ mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6))
 fault = Fault.from_mesh(mesh)
 ```
 
-### `Fault.from_triangles(vertices, ref_lat=0.0, ref_lon=0.0)`
+### `Fault.from_triangles(vertices, ref_lat=0.0, ref_lon=0.0, *, triangles=None)`
 
-Create a triangular fault directly from ENU vertex coordinates. `vertices` has shape `(N, 3, 3)`.
+Create a triangular fault directly from ENU vertex coordinates. Two forms:
+
+- Explicit corners: `vertices` has shape `(N, 3, 3)` (leave `triangles=None`).
+- Node array + connectivity: pass a shared `(M, 3)` node array as `vertices`
+  plus an `(N, 3)` index array as `triangles`. This preserves the exact patch
+  order and node sharing of an imported mesh.
+
+```python
+fault = Fault.from_triangles(nodes, ref_lat, ref_lon, triangles=tris)
+```
 
 ### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0)`
 

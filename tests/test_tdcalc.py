@@ -129,11 +129,13 @@ class TestTDcalcProperties:
         surface, the image source contribution is negligible.
         """
         obs = np.array([[1.0, 1.0, -100.0]])
-        tri = np.array([
-            [0.0, 0.0, -100.0],
-            [1.0, 0.0, -100.0],
-            [0.0, 1.0, -101.0],
-        ])
+        tri = np.array(
+            [
+                [0.0, 0.0, -100.0],
+                [1.0, 0.0, -100.0],
+                [0.0, 1.0, -101.0],
+            ]
+        )
         slip = np.array([1.0, 0.0, 0.0])
 
         disp_fs = tdcalc.TDdispFS(obs, tri, slip, 0.25)

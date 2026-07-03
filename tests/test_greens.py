@@ -12,10 +12,10 @@ from geodef.greens import (
     build_laplacian_knn,
 )
 
-
 # ---------------------------------------------------------------------------
 # Laplacian (forward/backward difference boundaries)
 # ---------------------------------------------------------------------------
+
 
 class TestLaplacian2D:
     """Tests for build_laplacian_2d."""
@@ -90,6 +90,7 @@ class TestLaplacian2D:
 # Simple Laplacian (free boundary conditions)
 # ---------------------------------------------------------------------------
 
+
 class TestLaplacian2DSimple:
     """Tests for build_laplacian_2d_simple."""
 
@@ -136,6 +137,7 @@ class TestLaplacian2DSimple:
 # KNN Laplacian (unstructured meshes, distance-weighted)
 # ---------------------------------------------------------------------------
 
+
 class TestLaplacianKNN:
     """Tests for build_laplacian_knn."""
 
@@ -173,6 +175,7 @@ class TestLaplacianKNN:
     def test_sparse_output(self, regular_grid):
         """Should return a scipy sparse matrix."""
         import scipy.sparse
+
         L = build_laplacian_knn(regular_grid, k=4)
         assert scipy.sparse.issparse(L)
 

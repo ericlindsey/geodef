@@ -4,18 +4,15 @@ Covers: construction, validation, properties, project() methods,
 covariance, component filtering (GNSS), and file I/O.
 """
 
-import tempfile
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from geodef.data import GNSS, InSAR, Vertical, DataSet
-
+from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 
 # ======================================================================
 # Fixtures
 # ======================================================================
+
 
 @pytest.fixture
 def gnss_3station():
@@ -70,6 +67,7 @@ def vertical_4pt():
 # 1. DataSet base class
 # ======================================================================
 
+
 class TestDataSetBase:
     """Test that DataSet is an abstract base."""
 
@@ -90,6 +88,7 @@ class TestDataSetBase:
 # ======================================================================
 # 2. GNSS construction and properties
 # ======================================================================
+
 
 class TestGNSSConstruction:
     """Test GNSS.__init__ validation and basic properties."""
@@ -127,12 +126,8 @@ class TestGNSSConstruction:
     def test_horizontal_only(self, gnss_horizontal):
         assert gnss_horizontal.n_stations == 2
         assert gnss_horizontal.n_obs == 4  # 2 components x 2 stations
-        np.testing.assert_array_equal(
-            gnss_horizontal.obs, [1.0, 0.5, 2.0, 1.5]
-        )
-        np.testing.assert_array_equal(
-            gnss_horizontal.sigma, [0.1, 0.1, 0.2, 0.2]
-        )
+        np.testing.assert_array_equal(gnss_horizontal.obs, [1.0, 0.5, 2.0, 1.5])
+        np.testing.assert_array_equal(gnss_horizontal.sigma, [0.1, 0.1, 0.2, 0.2])
 
     def test_components_property(self, gnss_3station, gnss_horizontal):
         assert gnss_3station.components == "enu"
@@ -211,6 +206,7 @@ class TestGNSSConstruction:
 # 3. GNSS project()
 # ======================================================================
 
+
 class TestGNSSProject:
     """Test GNSS.project() maps displacement components correctly."""
 
@@ -242,6 +238,7 @@ class TestGNSSProject:
 # 4. InSAR construction and properties
 # ======================================================================
 
+
 class TestInSARConstruction:
     """Test InSAR.__init__ validation and basic properties."""
 
@@ -251,14 +248,10 @@ class TestInSARConstruction:
         assert insar_5pixel.greens_type == "displacement"
 
     def test_obs(self, insar_5pixel):
-        np.testing.assert_array_equal(
-            insar_5pixel.obs, [0.01, 0.02, 0.03, 0.02, 0.01]
-        )
+        np.testing.assert_array_equal(insar_5pixel.obs, [0.01, 0.02, 0.03, 0.02, 0.01])
 
     def test_sigma(self, insar_5pixel):
-        np.testing.assert_array_equal(
-            insar_5pixel.sigma, np.full(5, 0.005)
-        )
+        np.testing.assert_array_equal(insar_5pixel.sigma, np.full(5, 0.005))
 
     def test_immutable_arrays(self, insar_5pixel):
         with pytest.raises(ValueError):
@@ -292,6 +285,7 @@ class TestInSARConstruction:
 # ======================================================================
 # 5. InSAR project()
 # ======================================================================
+
 
 class TestInSARProject:
     """Test InSAR.project() applies LOS projection."""
@@ -329,6 +323,7 @@ class TestInSARProject:
 # 6. Vertical construction and properties
 # ======================================================================
 
+
 class TestVerticalConstruction:
     """Test Vertical.__init__ validation and basic properties."""
 
@@ -338,14 +333,10 @@ class TestVerticalConstruction:
         assert vertical_4pt.greens_type == "displacement"
 
     def test_obs(self, vertical_4pt):
-        np.testing.assert_array_equal(
-            vertical_4pt.obs, [0.01, 0.02, 0.015, 0.005]
-        )
+        np.testing.assert_array_equal(vertical_4pt.obs, [0.01, 0.02, 0.015, 0.005])
 
     def test_sigma(self, vertical_4pt):
-        np.testing.assert_array_equal(
-            vertical_4pt.sigma, np.full(4, 0.003)
-        )
+        np.testing.assert_array_equal(vertical_4pt.sigma, np.full(4, 0.003))
 
     def test_immutable_arrays(self, vertical_4pt):
         with pytest.raises(ValueError):
@@ -364,6 +355,7 @@ class TestVerticalConstruction:
 # ======================================================================
 # 7. Vertical project()
 # ======================================================================
+
 
 class TestVerticalProject:
     """Test Vertical.project() extracts vertical component."""
@@ -385,13 +377,14 @@ class TestVerticalProject:
 # 8. Covariance matrix
 # ======================================================================
 
+
 class TestCovariance:
     """Test default and explicit covariance matrices."""
 
     def test_default_diagonal_gnss(self, gnss_3station):
         cov = gnss_3station.covariance
         assert cov.shape == (9, 9)
-        expected_diag = gnss_3station.sigma ** 2
+        expected_diag = gnss_3station.sigma**2
         np.testing.assert_allclose(np.diag(cov), expected_diag)
         # Off-diagonal should be zero
         np.testing.assert_array_equal(cov - np.diag(np.diag(cov)), 0.0)
@@ -399,7 +392,7 @@ class TestCovariance:
     def test_default_diagonal_insar(self, insar_5pixel):
         cov = insar_5pixel.covariance
         assert cov.shape == (5, 5)
-        np.testing.assert_allclose(np.diag(cov), insar_5pixel.sigma ** 2)
+        np.testing.assert_allclose(np.diag(cov), insar_5pixel.sigma**2)
 
     def test_explicit_covariance(self):
         """User-provided covariance matrix overrides sigma-based default."""
@@ -428,9 +421,221 @@ class TestCovariance:
         assert cov1 is cov2
 
 
+class TestSiteNames:
+    """Test optional per-station site names and their file round-trip."""
+
+    def _names(self):
+        return np.array(["ABCD", "WXYZ", "TEST"])
+
+    def _gnss(self, name=None):
+        n = 3
+        lon = np.array([1.0, 2.0, 3.0])
+        lat = np.zeros(n)
+        return GNSS(
+            lon,
+            lat,
+            ve=np.ones(n),
+            vn=np.ones(n),
+            vu=np.ones(n),
+            se=np.ones(n),
+            sn=np.ones(n),
+            su=np.ones(n),
+            name=name,
+        )
+
+    def test_name_default_none(self):
+        assert self._gnss().name is None
+
+    def test_name_stored(self):
+        g = self._gnss(self._names())
+        np.testing.assert_array_equal(g.name, self._names())
+
+    def test_name_wrong_length_raises(self):
+        with pytest.raises(ValueError, match="name"):
+            self._gnss(np.array(["A", "B"]))
+
+    def test_gnss_name_roundtrip(self, tmp_path):
+        g = self._gnss(self._names())
+        p = tmp_path / "g.dat"
+        g.save(p)
+        loaded = GNSS.load(p)
+        np.testing.assert_array_equal(loaded.name, self._names())
+
+    def test_gnss_name_roundtrip_en(self, tmp_path):
+        g = self._gnss(self._names())
+        p = tmp_path / "g.dat"
+        g.save(p)
+        loaded = GNSS.load(p, components="en")
+        np.testing.assert_array_equal(loaded.name, self._names())
+
+    def test_gnss_no_name_roundtrip(self, tmp_path):
+        g = self._gnss()
+        p = tmp_path / "g.dat"
+        g.save(p)
+        assert GNSS.load(p).name is None
+
+    def test_vertical_name_roundtrip(self, tmp_path):
+        n = 3
+        v = Vertical(
+            np.array([1.0, 2.0, 3.0]),
+            np.zeros(n),
+            np.zeros(n),
+            np.ones(n),
+            name=self._names(),
+        )
+        p = tmp_path / "v.dat"
+        v.save(p)
+        np.testing.assert_array_equal(Vertical.load(p).name, self._names())
+
+
+class TestGNSSCorrelation:
+    """Test the optional East-North correlation (rho) on GNSS."""
+
+    def _gnss(self, rho, vu=True):
+        n = 3
+        lon = np.zeros(n)
+        lat = np.zeros(n)
+        return GNSS(
+            lon,
+            lat,
+            ve=np.ones(n),
+            vn=np.ones(n),
+            vu=np.ones(n) if vu else None,
+            se=np.full(n, 2.0),
+            sn=np.full(n, 3.0),
+            su=np.full(n, 1.0) if vu else None,
+            rho=rho,
+        )
+
+    def test_scalar_rho_enu(self):
+        g = self._gnss(0.5)
+        cov = g.covariance
+        assert cov.shape == (9, 9)
+        # station-0 E-N block
+        np.testing.assert_allclose(cov[:3, :3], [[4, 3, 0], [3, 9, 0], [0, 0, 1]])
+
+    def test_rho_zero_matches_diagonal(self):
+        g = self._gnss(0.0)
+        np.testing.assert_allclose(g.covariance, np.diag(g.sigma**2))
+
+    def test_per_station_rho(self):
+        g = self._gnss(np.array([0.1, 0.2, 0.3]))
+        cov = g.covariance
+        np.testing.assert_allclose(cov[0, 1], 0.1 * 2 * 3)
+        np.testing.assert_allclose(cov[3, 4], 0.2 * 2 * 3)
+        np.testing.assert_allclose(cov[6, 7], 0.3 * 2 * 3)
+
+    def test_horizontal_only(self):
+        g = self._gnss(0.5, vu=False)
+        assert g.covariance.shape == (6, 6)
+        np.testing.assert_allclose(g.covariance[0, 1], 3.0)
+
+    def test_up_stays_uncorrelated(self):
+        g = self._gnss(0.9)
+        cov = g.covariance
+        assert cov[0, 2] == 0.0  # E-U
+        assert cov[1, 2] == 0.0  # N-U
+
+    def test_covariance_is_positive_definite(self):
+        g = self._gnss(0.9)
+        assert np.all(np.linalg.eigvalsh(g.covariance) > 0)
+
+    def test_rho_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="rho"):
+            self._gnss(1.5)
+
+    def test_rho_and_covariance_mutually_exclusive(self):
+        n = 3
+        with pytest.raises(ValueError, match="rho or covariance"):
+            GNSS(
+                np.zeros(n),
+                np.zeros(n),
+                ve=np.ones(n),
+                vn=np.ones(n),
+                vu=None,
+                se=np.ones(n),
+                sn=np.ones(n),
+                su=None,
+                rho=0.5,
+                covariance=np.eye(2 * n),
+            )
+
+
+class TestSpatialCovariance:
+    """Test the spatially-correlated covariance builder."""
+
+    def _pts(self):
+        lon = np.array([100.0, 100.1, 100.2, 100.5])
+        lat = np.array([0.0, 0.0, 0.0, 0.0])
+        return lon, lat
+
+    def test_shape_and_symmetry(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(lon, lat, sill=4e-4, correlation_length=10_000.0)
+        assert cov.shape == (4, 4)
+        np.testing.assert_allclose(cov, cov.T)
+
+    def test_diagonal_is_sill_plus_nugget(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=4e-4, correlation_length=10_000.0, nugget=1e-4
+        )
+        np.testing.assert_allclose(np.diag(cov), 4e-4 + 1e-4)
+
+    def test_correlation_decays_with_distance(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(lon, lat, sill=1.0, correlation_length=10_000.0)
+        # points ordered by increasing distance from point 0
+        row = cov[0]
+        assert row[1] > row[2] > row[3]
+
+    def test_positive_definite(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=1.0, correlation_length=5_000.0, nugget=1e-3
+        )
+        assert np.all(np.linalg.eigvalsh(cov) > 0)
+
+    def test_gaussian_model(self):
+        lon, lat = self._pts()
+        cov = spatial_covariance(
+            lon, lat, sill=1.0, correlation_length=10_000.0, model="gaussian"
+        )
+        assert cov[0, 1] > cov[0, 2]
+
+    def test_usable_as_insar_covariance(self):
+        lon, lat = self._pts()
+        n = len(lon)
+        cov = spatial_covariance(lon, lat, sill=4e-4, correlation_length=10_000.0)
+        insar = InSAR(
+            lon,
+            lat,
+            los=np.zeros(n),
+            sigma=np.full(n, 0.02),
+            look_e=np.full(n, 0.4),
+            look_n=np.full(n, -0.1),
+            look_u=np.full(n, 0.9),
+            covariance=cov,
+        )
+        np.testing.assert_array_equal(insar.covariance, cov)
+
+    def test_invalid_sill_raises(self):
+        lon, lat = self._pts()
+        with pytest.raises(ValueError, match="sill"):
+            spatial_covariance(lon, lat, sill=0.0, correlation_length=1.0)
+
+    def test_invalid_model_raises(self):
+        lon, lat = self._pts()
+        with pytest.raises(ValueError, match="model"):
+            spatial_covariance(
+                lon, lat, sill=1.0, correlation_length=1.0, model="spherical"
+            )
+
+
 # ======================================================================
 # 9. GNSS file I/O
 # ======================================================================
+
 
 class TestGNSSLoad:
     """Test GNSS.load() for .dat format."""
@@ -453,8 +658,7 @@ class TestGNSSLoad:
         """Load .dat file and select only horizontal components."""
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat uE uN uZ sigE sigN sigZ\n"
-            "100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
+            "# lon lat uE uN uZ sigE sigN sigZ\n100.0 0.0 1.0 0.5 -0.1 0.1 0.1 0.5\n"
         )
         g = GNSS.load(dat_file, components="en")
         assert g.n_obs == 2
@@ -468,6 +672,7 @@ class TestGNSSLoad:
 # ======================================================================
 # 10. InSAR file I/O
 # ======================================================================
+
 
 class TestInSARLoad:
     """Test InSAR.load() for .dat format."""
@@ -493,15 +698,14 @@ class TestInSARLoad:
 # 11. Vertical file I/O
 # ======================================================================
 
+
 class TestVerticalLoad:
     """Test Vertical.load() for .dat format."""
 
     def test_load_dat_format(self, tmp_path):
         dat_file = tmp_path / "test.dat"
         dat_file.write_text(
-            "# lon lat uZ sigZ\n"
-            "100.0 0.0 0.01 0.003\n"
-            "100.0 1.0 0.02 0.003\n"
+            "# lon lat uZ sigZ\n100.0 0.0 0.01 0.003\n100.0 1.0 0.02 0.003\n"
         )
         d = Vertical.load(dat_file)
         assert d.n_stations == 2
@@ -516,6 +720,7 @@ class TestVerticalLoad:
 # ======================================================================
 # 12. GNSS save / to_gmt
 # ======================================================================
+
 
 class TestGNSSSave:
     """Test GNSS.save() round-trip and format behaviour."""
@@ -633,6 +838,7 @@ class TestGNSSToGmt:
 # 13. InSAR save / to_gmt
 # ======================================================================
 
+
 class TestInSARSave:
     """Test InSAR.save() round-trip."""
 
@@ -715,6 +921,7 @@ class TestInSARToGmt:
 # ======================================================================
 # 14. Vertical save / to_gmt
 # ======================================================================
+
 
 class TestVerticalSave:
     """Test Vertical.save() round-trip."""
