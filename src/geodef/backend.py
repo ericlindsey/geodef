@@ -27,6 +27,7 @@ import logging
 import os
 from collections.abc import Callable, Sequence
 from types import ModuleType
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -102,6 +103,21 @@ def namespace() -> ModuleType:
 
         return jnp
     return np
+
+
+class _NamespaceProxy:
+    """Array-namespace handle that re-resolves the backend at every access.
+
+    Kernels import this once as ``xp`` and write ``xp.cos(...)`` etc.; each
+    attribute access looks up the active backend, so ``set_backend`` takes
+    effect immediately without re-importing the kernels.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(namespace(), name)
+
+
+xp = _NamespaceProxy()
 
 
 def set_precision(precision: str) -> None:

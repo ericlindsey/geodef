@@ -89,6 +89,7 @@
 import numpy as np
 
 from geodef import backend
+from geodef.backend import xp
 
 ########################################################################
 ################## General-purpose functions ###########################
@@ -106,11 +107,11 @@ def strain2stress(Exx,Eyy,Ezz,Exy,Exz,Eyz,mu,lam):
     return Sxx,Syy,Szz,Sxy,Sxz,Syz
 
 def normalize(v):
-    return v / np.linalg.norm(v)
+    return v / xp.linalg.norm(v)
 
 def CoordTrans(x,y,z,A):
     # convenience function to make this more similar to the matlab code
-    trans = np.asarray(A).dot(np.asarray([x,y,z]))
+    trans = xp.asarray(A).dot(xp.asarray([x,y,z]))
     return trans[0], trans[1], trans[2]
 
 def build_tri_coordinate_system(tri):
@@ -119,11 +120,11 @@ def build_tri_coordinate_system(tri):
     # vectors point Northward and Westward, whereas if the normal vector points
     # downward, the strike and dip vectors point Southward and Westward,
     # respectively.
-    Vnorm = normalize(np.cross(tri[1] - tri[0], tri[2] - tri[0]))
-    eY = np.array([0, 1, 0])
-    eZ = np.array([0, 0, 1])
-    Vstrike = np.cross(eZ, Vnorm)
-    if np.linalg.norm(Vstrike) == 0:
+    Vnorm = normalize(xp.cross(tri[1] - tri[0], tri[2] - tri[0]))
+    eY = xp.array([0, 1, 0])
+    eZ = xp.array([0, 0, 1])
+    Vstrike = xp.cross(eZ, Vnorm)
+    if xp.linalg.norm(Vstrike) == 0:
         Vstrike = eY * Vnorm[2]
         # TODO: check this correction from TDdispHS:
         #% For horizontal elements in case of half-space calculation!!!
@@ -131,8 +132,8 @@ def build_tri_coordinate_system(tri):
         if tri[0][2]>0:
             Vstrike = -Vstrike
     Vstrike = normalize(Vstrike)
-    Vdip = np.cross(Vnorm, Vstrike)
-    return np.array([Vnorm, Vstrike, Vdip])
+    Vdip = xp.cross(Vnorm, Vstrike)
+    return xp.array([Vnorm, Vstrike, Vdip])
 
 def trimodefinder(obs, tri):
     # trimodefinder calculates the normalized barycentric coordinates of
@@ -154,14 +155,14 @@ def trimodefinder(obs, tri):
         ((tri[1,1]-tri[2,1])*(tri[0,0]-tri[2,0])+(tri[2,0]-tri[1,0])*(tri[0,1]-tri[2,1]))
     c = 1-a-b
 
-    trimode = np.ones(len(obs[0]),dtype=int)
-    trimode = np.where(np.logical_and(np.logical_and(a<=0 , b>c) , c>a), -1, trimode)
-    trimode = np.where(np.logical_and(np.logical_and(b<=0 , c>a) , a>b), -1, trimode)
-    trimode = np.where(np.logical_and(np.logical_and(c<=0 , a>b) , b>c), -1, trimode)
-    trimode = np.where(np.logical_and(np.logical_and(a==0 , b>=0) , c>=0), 0, trimode)
-    trimode = np.where(np.logical_and(np.logical_and(a>=0 , b==0) , c>=0), 0, trimode)
-    trimode = np.where(np.logical_and(np.logical_and(a>=0 , b>=0) , c==0), 0, trimode)
-    trimode = np.where(np.logical_and(trimode==0 , obs[2]!=0), 1, trimode)
+    trimode = xp.ones(len(obs[0]),dtype=int)
+    trimode = xp.where(xp.logical_and(xp.logical_and(a<=0 , b>c) , c>a), -1, trimode)
+    trimode = xp.where(xp.logical_and(xp.logical_and(b<=0 , c>a) , a>b), -1, trimode)
+    trimode = xp.where(xp.logical_and(xp.logical_and(c<=0 , a>b) , b>c), -1, trimode)
+    trimode = xp.where(xp.logical_and(xp.logical_and(a==0 , b>=0) , c>=0), 0, trimode)
+    trimode = xp.where(xp.logical_and(xp.logical_and(a>=0 , b==0) , c>=0), 0, trimode)
+    trimode = xp.where(xp.logical_and(xp.logical_and(a>=0 , b>=0) , c==0), 0, trimode)
+    trimode = xp.where(xp.logical_and(trimode==0 , obs[2]!=0), 1, trimode)
 
     Ipos = trimode==1
     Ineg = trimode==-1
@@ -171,15 +172,15 @@ def trimodefinder(obs, tri):
 
 def TDtransform_pts_slip(obs,slip_b,TriVertex,SideVec):
     # Transform calculation points and slip vector components from TDCS into ADCS
-    A = np.array([[SideVec[2], -SideVec[1]], [SideVec[1], SideVec[2]]])
+    A = xp.array([[SideVec[2], -SideVec[1]], [SideVec[1], SideVec[2]]])
 
     # Transform coordinates of the calculation points from TDCS into ADCS
-    r1 = A.dot([obs[1]-TriVertex[1], obs[2]-TriVertex[2]])
+    r1 = A.dot(xp.stack([obs[1]-TriVertex[1], obs[2]-TriVertex[2]]))
     y1 = r1[0]
     z1 = r1[1]
 
     # Transform the in-plane slip vector components from TDCS into ADCS
-    r2 = A.dot([slip_b[1], slip_b[2]])
+    r2 = A.dot(xp.stack([slip_b[1], slip_b[2]]))
     by1 = r2[0]
     bz1 = r2[1]
 
@@ -192,11 +193,15 @@ def setupTDCS(obs,tri):
     transform = build_tri_coordinate_system(tri)
 
     # note, transformed_obs will now have a shape of (3,n) instead of (n,3) but this is OK
-    transformed_obs = transform.dot(np.transpose(obs - tri[1]))
+    transformed_obs = transform.dot(xp.transpose(obs - tri[1]))
 
-    transformed_tri = np.zeros((3,3))
-    transformed_tri[0,:] = transform.dot(tri[0] - tri[1])
-    transformed_tri[2,:] = transform.dot(tri[2] - tri[1])
+    # row 1 stays zero: vertex 2 is the TDCS origin (built without in-place
+    # writes so the construction stays trace-safe)
+    transformed_tri = xp.vstack([
+        transform.dot(tri[0] - tri[1]),
+        xp.zeros(3),
+        transform.dot(tri[2] - tri[1]),
+    ])
 
     np.testing.assert_almost_equal(transformed_tri[1], [0,0,0])
     np.testing.assert_almost_equal(transformed_tri[0][0], 0)
@@ -208,9 +213,9 @@ def setupTDCS(obs,tri):
     e23 = normalize(transformed_tri[2] - transformed_tri[1])
 
     # Calculate the TD angles
-    A = np.arccos(e12.T.dot(e13))
-    B = np.arccos(-e12.T.dot(e23))
-    C = np.arccos(e23.T.dot(e13))
+    A = xp.arccos(e12.T.dot(e13))
+    B = xp.arccos(-e12.T.dot(e23))
+    C = xp.arccos(e23.T.dot(e13))
 
     return transform,transformed_obs,transformed_tri,e12,e13,e23,A,B,C
 
@@ -244,17 +249,17 @@ def TDdispFS(obs, tri, slip, nu):
     # elastic full-space.
 
     # require ndmin=2 in case of only 1 obs point being passed
-    if np.ndim(obs)<2:
-        obs=np.array(obs,ndmin=2)
+    if xp.ndim(obs)<2:
+        obs=xp.array(obs,ndmin=2)
 
     # define slip vector
-    slip_b = np.array([slip[2], slip[0], slip[1]])
+    slip_b = xp.array([slip[2], slip[0], slip[1]])
 
     # convert coordinates from EFCS to TDCS
     transform,transformed_obs,transformed_tri,e12,e13,e23,A,B,C = setupTDCS(obs,tri)
 
     # select appropriate angular dislocations for artefact-free solution
-    Ipos,Ineg,Inan = trimodefinder(np.array([transformed_obs[1],\
+    Ipos,Ineg,Inan = trimodefinder(xp.array([transformed_obs[1],\
                                              transformed_obs[2],transformed_obs[0]]),\
                                              transformed_tri[:,1:])
 
@@ -274,33 +279,33 @@ def TDdispFS(obs, tri, slip, nu):
         lambda o: disp_config(o, 1), Ipos, (transformed_obs,), 3, fill=0.0)
     uTn,vTn,wTn = backend.masked_eval(
         lambda o: disp_config(o, -1), Ineg, (transformed_obs,), 3, fill=0.0)
-    out = np.array([uTp+uTn, vTp+vTn, wTp+wTn])
+    out = xp.array([uTp+uTn, vTp+vTn, wTp+wTn])
     # points located exactly on the dislocation edge
-    out = np.where(Inan, np.nan, out)
+    out = xp.where(Inan, xp.nan, out)
 
-    a = np.array([
+    a = xp.array([
         -transformed_obs[0],
         transformed_tri[0][1] - transformed_obs[1],
         transformed_tri[0][2] - transformed_obs[2]
     ])
     b = -transformed_obs
-    c = np.array([
+    c = xp.array([
         -transformed_obs[0],
         transformed_tri[2][1] - transformed_obs[1],
         transformed_tri[2][2] - transformed_obs[2]
     ])
-    na = np.sqrt(np.sum(a**2,axis=0))
-    nb = np.sqrt(np.sum(b**2,axis=0))
-    nc = np.sqrt(np.sum(c**2,axis=0))
+    na = xp.sqrt(xp.sum(a**2,axis=0))
+    nb = xp.sqrt(xp.sum(b**2,axis=0))
+    nc = xp.sqrt(xp.sum(c**2,axis=0))
 
     FiN = (a[0]*(b[1]*c[2]-b[2]*c[1])- \
            a[1]*(b[0]*c[2]-b[2]*c[0])+ \
            a[2]*(b[0]*c[1]-b[1]*c[0]))
-    FiD = na*nb*nc + np.sum(a*b,axis=0)*nc + np.sum(a*c,axis=0)*nb + np.sum(b*c,axis=0)*na
-    Fi = -2*np.arctan2(FiN,FiD)/4/np.pi
+    FiD = na*nb*nc + xp.sum(a*b,axis=0)*nc + xp.sum(a*c,axis=0)*nb + xp.sum(b*c,axis=0)*na
+    Fi = -2*xp.arctan2(FiN,FiD)/4/xp.pi
 
     # Calculate the complete displacement vector components in TDCS
-    out += np.outer(slip_b, Fi)
+    out += xp.outer(slip_b, Fi)
 
     # Transform the complete displacement vector components from TDCS into EFCS
     # also has the effect of rotating the shape of out from (3,n) to (n,3)
@@ -316,10 +321,10 @@ def TDSetupD(obs, alpha, slip_b, nu, TriVertex, SideVec):
     A,y1,z1,by1,bz1 = TDtransform_pts_slip(obs,slip_b,TriVertex,SideVec)
 
     # Calculate displacements associated with an angular dislocation in ADCS
-    [u,v0,w0] = AngDisDisp(obs[0],y1,z1,-np.pi+alpha,slip_b[0],by1,bz1,nu)
+    [u,v0,w0] = AngDisDisp(obs[0],y1,z1,-xp.pi+alpha,slip_b[0],by1,bz1,nu)
 
     # Transform displacements from ADCS into TDCS
-    r3 = A.T.dot([v0,w0])
+    r3 = A.T.dot(xp.stack([v0,w0]))
     v = r3[0]
     w = r3[1]
     return u, v, w
@@ -329,30 +334,30 @@ def AngDisDisp(x, y, z, alpha, bx, by, bz, nu):
     # Burgers' function contribution) associated with an angular dislocation in
     # an elastic full-space.
 
-    cosA = np.cos(alpha)
-    sinA = np.sin(alpha)
+    cosA = xp.cos(alpha)
+    sinA = xp.sin(alpha)
     eta = y*cosA-z*sinA
     zeta = y*sinA+z*cosA
-    r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
+    r = xp.sqrt(x ** 2 + y ** 2 + z ** 2)
 
     # Avoid complex results for the logarithmic terms
-    zeta = np.where(zeta>r, r, zeta)
-    z = np.where(z>r, r, z)
+    zeta = xp.where(zeta>r, r, zeta)
+    z = xp.where(z>r, r, z)
 
-    ux = bx/8/np.pi/(1-nu)*(x*y/r/(r-z)-x*eta/r/(r-zeta))
-    vx = bx/8/np.pi/(1-nu)*(eta*sinA/(r-zeta)-y*eta/r/(r-zeta)+\
-        y**2/r/(r-z)+(1-2*nu)*(cosA*np.log(r-zeta)-np.log(r-z)))
-    wx = bx/8/np.pi/(1-nu)*(eta*cosA/(r-zeta)-y/r-eta*z/r/(r-zeta)-\
-        (1-2*nu)*sinA*np.log(r-zeta))
+    ux = bx/8/xp.pi/(1-nu)*(x*y/r/(r-z)-x*eta/r/(r-zeta))
+    vx = bx/8/xp.pi/(1-nu)*(eta*sinA/(r-zeta)-y*eta/r/(r-zeta)+\
+        y**2/r/(r-z)+(1-2*nu)*(cosA*xp.log(r-zeta)-xp.log(r-z)))
+    wx = bx/8/xp.pi/(1-nu)*(eta*cosA/(r-zeta)-y/r-eta*z/r/(r-zeta)-\
+        (1-2*nu)*sinA*xp.log(r-zeta))
 
-    uy = by/8/np.pi/(1-nu)*(x**2*cosA/r/(r-zeta)-x**2/r/(r-z)-\
-        (1-2*nu)*(cosA*np.log(r-zeta)-np.log(r-z)))
-    vy = by*x/8/np.pi/(1-nu)*(y*cosA/r/(r-zeta)-sinA*cosA/(r-zeta)-y/r/(r-z))
-    wy = by*x/8/np.pi/(1-nu)*(z*cosA/r/(r-zeta)-cosA**2/(r-zeta)+1/r)
+    uy = by/8/xp.pi/(1-nu)*(x**2*cosA/r/(r-zeta)-x**2/r/(r-z)-\
+        (1-2*nu)*(cosA*xp.log(r-zeta)-xp.log(r-z)))
+    vy = by*x/8/xp.pi/(1-nu)*(y*cosA/r/(r-zeta)-sinA*cosA/(r-zeta)-y/r/(r-z))
+    wy = by*x/8/xp.pi/(1-nu)*(z*cosA/r/(r-zeta)-cosA**2/(r-zeta)+1/r)
 
-    uz = bz*sinA/8/np.pi/(1-nu)*((1-2*nu)*np.log(r-zeta)-x**2/r/(r-zeta))
-    vz = bz*x*sinA/8/np.pi/(1-nu)*(sinA/(r-zeta)-y/r/(r-zeta))
-    wz = bz*x*sinA/8/np.pi/(1-nu)*(cosA/(r-zeta)-z/r/(r-zeta))
+    uz = bz*sinA/8/xp.pi/(1-nu)*((1-2*nu)*xp.log(r-zeta)-x**2/r/(r-zeta))
+    vz = bz*x*sinA/8/xp.pi/(1-nu)*(sinA/(r-zeta)-y/r/(r-zeta))
+    wz = bz*x*sinA/8/xp.pi/(1-nu)*(cosA/(r-zeta)-z/r/(r-zeta))
 
     return ux+uy+uz, vx+vy+vz, wx+wy+wz
 
@@ -365,8 +370,8 @@ def TDdispHS(obs,tri,slip,nu):
     # elastic half-space.
 
     # require ndmin=2 in case of only 1 obs point being passed
-    if np.ndim(obs)<2:
-        obs=np.array(obs,ndmin=2)
+    if xp.ndim(obs)<2:
+        obs=xp.array(obs,ndmin=2)
 
     assert all(obs[:,2]<=0), 'Half-space solution: observation Z coordinates must be zero or negative!'
     assert all(tri[:,2]<=0), 'Half-space solution: triangle Z coordinates must be zero or negative!'
@@ -382,7 +387,8 @@ def TDdispHS(obs,tri,slip,nu):
     tri_img[:,2] = -tri_img[:,2]
     uIS = TDdispFS(obs, tri_img, slip, nu)
     if all(tri[:,2]==0):
-        uIS[:,2] = -uIS[:,2]
+        # flip the vertical component without an in-place write (trace-safe)
+        uIS = uIS * xp.asarray([1.0, 1.0, -1.0])
 
     # Calculate the complete displacement vector components in EFCS
     u = uMS+uIS+uFSC
@@ -412,7 +418,7 @@ def TDdisp_HarFunc(obs,tri,slip,nu):
     u3,v3,w3 = AngSetupFSC(obs,bX,bY,bZ,tri[2],tri[0],nu) # Side P3P1
 
     # Calculate total harmonic function contribution to displacements
-    return np.array([u1+u2+u3, v1+v2+v3, w1+w2+w3]).T
+    return xp.array([u1+u2+u3, v1+v2+v3, w1+w2+w3]).T
 
 def AngSetupFSC(obs,bX,bY,bZ,PA,PB,nu):
     # AngSetupFSC calculates the Free Surface Correction to displacements
@@ -422,18 +428,18 @@ def AngSetupFSC(obs,bX,bY,bZ,PA,PB,nu):
 
     # Calculate TD side vector and the angle of the angular dislocation pair
     SideVec = PB-PA
-    eZ = np.array([0, 0, 1])
-    beta = np.arccos(-SideVec.dot(eZ)/np.linalg.norm(SideVec))
+    eZ = xp.array([0, 0, 1])
+    beta = xp.arccos(-SideVec.dot(eZ)/xp.linalg.norm(SideVec))
 
-    if (np.abs(beta) < np.finfo(float).eps or np.abs(np.pi-beta) < np.finfo(float).eps):
-        ue = np.zeros(npts)
-        un = np.zeros(npts)
-        uv = np.zeros(npts)
+    if (xp.abs(beta) < xp.finfo(float).eps or xp.abs(xp.pi-beta) < xp.finfo(float).eps):
+        ue = xp.zeros(npts)
+        un = xp.zeros(npts)
+        uv = xp.zeros(npts)
     else:
-        ey1 = normalize(np.array([SideVec[0],SideVec[1],0]))
+        ey1 = normalize(xp.array([SideVec[0],SideVec[1],0]))
         ey3 = -eZ
-        ey2 = np.cross(ey3,ey1)
-        A = np.array([ey1,ey2,ey3]) # Transformation matrix
+        ey2 = xp.cross(ey3,ey1)
+        A = xp.array([ey1,ey2,ey3]) # Transformation matrix
 
         # Transform coordinates from EFCS to the first ADCS
         y1A,y2A,y3A = CoordTrans(obs[:,0]-PA[0],obs[:,1]-PA[1],obs[:,2]-PA[2],A)
@@ -449,15 +455,15 @@ def AngSetupFSC(obs,bX,bY,bZ,PA,PB,nu):
         # Determine the best arteact-free configuration for the calculation
         # points near the free furface
         Ipos = (beta*y1A >= 0)
-        Ineg = np.logical_not(Ipos)
+        Ineg = xp.logical_not(Ipos)
 
         # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
         # masks with fill=0 sum to the full per-lane selection
         vA_p = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-np.pi+beta,b1,b2,b3,nu,-PA[2]),
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta,b1,b2,b3,nu,-PA[2]),
             Ipos, (y1A,y2A,y3A), 3, fill=0.0)
         vB_p = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-np.pi+beta,b1,b2,b3,nu,-PB[2]),
+            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta,b1,b2,b3,nu,-PB[2]),
             Ipos, (y1B,y2B,y3B), 3, fill=0.0)
         vA_n = backend.masked_eval(
             lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PA[2]),
@@ -479,18 +485,18 @@ def AngDisDispFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
     # displacements associated with an angular dislocation in an elastic
     # half-space.
 
-    sinB = np.sin(beta)
-    cosB = np.cos(beta)
-    cotB = 1.0/np.tan(beta)
+    sinB = xp.sin(beta)
+    cosB = xp.cos(beta)
+    cotB = 1.0/xp.tan(beta)
     y3b = y3+2*a
     z1b = y1*cosB+y3b*sinB
     z3b = -y1*sinB+y3b*cosB
     r2b = y1**2+y2**2+y3b**2
-    rb = np.sqrt(r2b)
+    rb = xp.sqrt(r2b)
 
-    Fib = 2*np.arctan(-y2/(-(rb+y3b)/np.tan(beta/2)+y1)) # The Burgers' function
+    Fib = 2*xp.arctan(-y2/(-(rb+y3b)/xp.tan(beta/2)+y1)) # The Burgers' function
 
-    v1cb1 = b1/4/np.pi/(1-nu)*(-2*(1-nu)*(1-2*nu)*Fib*cotB**2+(1-2*nu)*y2/\
+    v1cb1 = b1/4/xp.pi/(1-nu)*(-2*(1-nu)*(1-2*nu)*Fib*cotB**2+(1-2*nu)*y2/\
         (rb+y3b)*((1-2*nu-a/rb)*cotB-y1/(rb+y3b)*(nu+a/rb))+(1-2*nu)*\
         y2*cosB*cotB/(rb+z3b)*(cosB+a/rb)+a*y2*(y3b-a)*cotB/rb**3+y2*\
         (y3b-a)/(rb*(rb+y3b))*(-(1-2*nu)*cotB+y1/(rb+y3b)*(2*nu+a/rb)+\
@@ -498,8 +504,8 @@ def AngDisDispFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cosB+y3b)*((1-2*nu)*cosB-a/rb)*cotB+2*(1-nu)*(rb*sinB-y1)*cosB)-\
         a*y3b*cosB*cotB/rb**2))
 
-    v2cb1 = b1/4/np.pi/(1-nu)*((1-2*nu)*((2*(1-nu)*cotB**2-nu)*np.log(rb+y3b)-(2*\
-        (1-nu)*cotB**2+1-2*nu)*cosB*np.log(rb+z3b))-(1-2*nu)/(rb+y3b)*(y1*\
+    v2cb1 = b1/4/xp.pi/(1-nu)*((1-2*nu)*((2*(1-nu)*cotB**2-nu)*xp.log(rb+y3b)-(2*\
+        (1-nu)*cotB**2+1-2*nu)*cosB*xp.log(rb+z3b))-(1-2*nu)/(rb+y3b)*(y1*\
         cotB*(1-2*nu-a/rb)+nu*y3b-a+y2**2/(rb+y3b)*(nu+a/rb))-(1-2*\
         nu)*z1b*cotB/(rb+z3b)*(cosB+a/rb)-a*y1*(y3b-a)*cotB/rb**3+\
         (y3b-a)/(rb+y3b)*(-2*nu+1/rb*((1-2*nu)*y1*cotB-a)+y2**2/(rb*\
@@ -507,13 +513,13 @@ def AngDisDispFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         1/rb*((1-2*nu)*z1b*cotB+a*cosB)+a*y3b*z1b*cotB/rb**3-1/(rb*\
         (rb+z3b))*(y2**2*cosB**2-a*z1b*cotB/rb*(rb*cosB+y3b))))
 
-    v3cb1 = b1/4/np.pi/(1-nu)*(2*(1-nu)*(((1-2*nu)*Fib*cotB)+(y2/(rb+y3b)*(2*\
+    v3cb1 = b1/4/xp.pi/(1-nu)*(2*(1-nu)*(((1-2*nu)*Fib*cotB)+(y2/(rb+y3b)*(2*\
         nu+a/rb))-(y2*cosB/(rb+z3b)*(cosB+a/rb)))+y2*(y3b-a)/rb*(2*\
         nu/(rb+y3b)+a/rb**2)+y2*(y3b-a)*cosB/(rb*(rb+z3b))*(1-2*nu-\
         (rb*cosB+y3b)/(rb+z3b)*(cosB+a/rb)-a*y3b/rb**2))
 
-    v1cb2 = b2/4/np.pi/(1-nu)*((1-2*nu)*((2*(1-nu)*cotB**2+nu)*np.log(rb+y3b)-(2*\
-        (1-nu)*cotB**2+1)*cosB*np.log(rb+z3b))+(1-2*nu)/(rb+y3b)*(-(1-2*nu)*\
+    v1cb2 = b2/4/xp.pi/(1-nu)*((1-2*nu)*((2*(1-nu)*cotB**2+nu)*xp.log(rb+y3b)-(2*\
+        (1-nu)*cotB**2+1)*cosB*xp.log(rb+z3b))+(1-2*nu)/(rb+y3b)*(-(1-2*nu)*\
         y1*cotB+nu*y3b-a+a*y1*cotB/rb+y1**2/(rb+y3b)*(nu+a/rb))-(1-2*\
         nu)*cotB/(rb+z3b)*(z1b*cosB-a*(rb*sinB-y1)/(rb*cosB))-a*y1*\
         (y3b-a)*cotB/rb**3+(y3b-a)/(rb+y3b)*(2*nu+1/rb*((1-2*nu)*y1*\
@@ -521,31 +527,31 @@ def AngDisDispFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cotB/(rb+z3b)*(-cosB*sinB+a*y1*y3b/(rb**3*cosB)+(rb*sinB-y1)/\
         rb*(2*(1-nu)*cosB-(rb*cosB+y3b)/(rb+z3b)*(1+a/(rb*cosB)))))
 
-    v2cb2 = b2/4/np.pi/(1-nu)*(2*(1-nu)*(1-2*nu)*Fib*cotB**2+(1-2*nu)*y2/\
+    v2cb2 = b2/4/xp.pi/(1-nu)*(2*(1-nu)*(1-2*nu)*Fib*cotB**2+(1-2*nu)*y2/\
         (rb+y3b)*(-(1-2*nu-a/rb)*cotB+y1/(rb+y3b)*(nu+a/rb))-(1-2*nu)*\
         y2*cotB/(rb+z3b)*(1+a/(rb*cosB))-a*y2*(y3b-a)*cotB/rb**3+y2*\
         (y3b-a)/(rb*(rb+y3b))*((1-2*nu)*cotB-2*nu*y1/(rb+y3b)-a*y1/rb*\
         (1/rb+1/(rb+y3b)))+y2*(y3b-a)*cotB/(rb*(rb+z3b))*(-2*(1-nu)*\
         cosB+(rb*cosB+y3b)/(rb+z3b)*(1+a/(rb*cosB))+a*y3b/(rb**2*cosB)))
 
-    v3cb2 = b2/4/np.pi/(1-nu)*(-2*(1-nu)*(1-2*nu)*cotB*(np.log(rb+y3b)-cosB*\
-        np.log(rb+z3b))-2*(1-nu)*y1/(rb+y3b)*(2*nu+a/rb)+2*(1-nu)*z1b/(rb+\
+    v3cb2 = b2/4/xp.pi/(1-nu)*(-2*(1-nu)*(1-2*nu)*cotB*(xp.log(rb+y3b)-cosB*\
+        xp.log(rb+z3b))-2*(1-nu)*y1/(rb+y3b)*(2*nu+a/rb)+2*(1-nu)*z1b/(rb+\
         z3b)*(cosB+a/rb)+(y3b-a)/rb*((1-2*nu)*cotB-2*nu*y1/(rb+y3b)-a*\
         y1/rb**2)-(y3b-a)/(rb+z3b)*(cosB*sinB+(rb*cosB+y3b)*cotB/rb*\
         (2*(1-nu)*cosB-(rb*cosB+y3b)/(rb+z3b))+a/rb*(sinB-y3b*z1b/\
         rb**2-z1b*(rb*cosB+y3b)/(rb*(rb+z3b)))))
 
-    v1cb3 = b3/4/np.pi/(1-nu)*((1-2*nu)*(y2/(rb+y3b)*(1+a/rb)-y2*cosB/(rb+\
+    v1cb3 = b3/4/xp.pi/(1-nu)*((1-2*nu)*(y2/(rb+y3b)*(1+a/rb)-y2*cosB/(rb+\
         z3b)*(cosB+a/rb))-y2*(y3b-a)/rb*(a/rb**2+1/(rb+y3b))+y2*\
         (y3b-a)*cosB/(rb*(rb+z3b))*((rb*cosB+y3b)/(rb+z3b)*(cosB+a/\
         rb)+a*y3b/rb**2))
 
-    v2cb3 = b3/4/np.pi/(1-nu)*((1-2*nu)*(-sinB*np.log(rb+z3b)-y1/(rb+y3b)*(1+a/\
+    v2cb3 = b3/4/xp.pi/(1-nu)*((1-2*nu)*(-sinB*xp.log(rb+z3b)-y1/(rb+y3b)*(1+a/\
         rb)+z1b/(rb+z3b)*(cosB+a/rb))+y1*(y3b-a)/rb*(a/rb**2+1/(rb+\
         y3b))-(y3b-a)/(rb+z3b)*(sinB*(cosB-a/rb)+z1b/rb*(1+a*y3b/\
         rb**2)-1/(rb*(rb+z3b))*(y2**2*cosB*sinB-a*z1b/rb*(rb*cosB+y3b))))
 
-    v3cb3 = b3/4/np.pi/(1-nu)*(2*(1-nu)*Fib+2*(1-nu)*(y2*sinB/(rb+z3b)*(cosB+\
+    v3cb3 = b3/4/xp.pi/(1-nu)*(2*(1-nu)*Fib+2*(1-nu)*(y2*sinB/(rb+z3b)*(cosB+\
         a/rb))+y2*(y3b-a)*sinB/(rb*(rb+z3b))*(1+(rb*cosB+y3b)/(rb+\
         z3b)*(cosB+a/rb)+a*y3b/rb**2))
 
@@ -560,17 +566,17 @@ def TDstrainFS(obs,tri,slip,nu):
     # in an elastic full-space.
 
     # require ndmin=2 in case of only 1 obs point being passed
-    if np.ndim(obs)<2:
-        obs=np.array(obs,ndmin=2)
+    if xp.ndim(obs)<2:
+        obs=xp.array(obs,ndmin=2)
 
     # define slip vector
-    slip_b = np.array([slip[2], slip[0], slip[1]])
+    slip_b = xp.array([slip[2], slip[0], slip[1]])
 
     # convert coordinates from EFCS to TDCS
     transform,transformed_obs,transformed_tri,e12,e13,e23,A,B,C = setupTDCS(obs,tri)
 
     # select appropriate angular dislocations for artefact-free solution
-    Ipos,Ineg,Inan = trimodefinder(np.array([transformed_obs[1],\
+    Ipos,Ineg,Inan = trimodefinder(xp.array([transformed_obs[1],\
                                              transformed_obs[2],transformed_obs[0]]),\
                                              transformed_tri[:,1:])
 
@@ -592,12 +598,12 @@ def TDstrainFS(obs,tri,slip,nu):
     En = backend.masked_eval(
         lambda o: strain_config(o, -1), Ineg, (transformed_obs,), 6, fill=0.0)
     # points located exactly on the dislocation edge get NaN
-    exx,eyy,ezz,exy,exz,eyz = (np.where(Inan, np.nan, p+n) for p,n in zip(Ep,En))
+    exx,eyy,ezz,exy,exz,eyz = (xp.where(Inan, xp.nan, p+n) for p,n in zip(Ep,En))
 
     # Transform the strain tensor components from TDCS into EFCS
     Exx,Eyy,Ezz,Exy,Exz,Eyz = TensTrans(exx,eyy,ezz,exy,exz,eyz,transform.T)
 
-    return np.array([Exx,Eyy,Ezz,Exy,Exz,Eyz]).T
+    return xp.array([Exx,Eyy,Ezz,Exy,Exz,Eyz]).T
 
 def TDSetupS(obs,alpha,slip_b,nu,TriVertex,SideVec):
     # TDSetupS transforms coordinates of the calculation points as well as
@@ -608,11 +614,11 @@ def TDSetupS(obs,alpha,slip_b,nu,TriVertex,SideVec):
     A,y1,z1,by1,bz1 = TDtransform_pts_slip(obs,slip_b,TriVertex,SideVec)
 
     # Calculate strains associated with an angular dislocation in ADCS
-    exx,eyy,ezz,exy,exz,eyz = AngDisStrain(obs[0],y1,z1,-np.pi+alpha,slip_b[0],by1,bz1,nu)
+    exx,eyy,ezz,exy,exz,eyz = AngDisStrain(obs[0],y1,z1,-xp.pi+alpha,slip_b[0],by1,bz1,nu)
 
     # Transform strains from ADCS into TDCS
     # 3x3 Transformation matrix
-    B = np.vstack(([1, 0, 0],np.column_stack((np.zeros((2,1)),np.array(A,ndmin=2).T))))
+    B = xp.vstack((xp.asarray([[1.0, 0.0, 0.0]]),xp.column_stack((xp.zeros((2,1)),xp.array(A,ndmin=2).T))))
     exx,eyy,ezz,exy,exz,eyz = TensTrans(exx,eyy,ezz,exy,exz,eyz,B)
 
     return exx,eyy,ezz,exy,exz,eyz
@@ -621,8 +627,8 @@ def AngDisStrain(x,y,z,alpha,bx,by,bz,nu):
     # AngDisStrain calculates the strains associated with an angular
     # dislocation in an elastic full-space.
 
-    sinA = np.sin(alpha)
-    cosA = np.cos(alpha)
+    sinA = xp.sin(alpha)
+    cosA = xp.cos(alpha)
     eta = y*cosA-z*sinA
     zeta = y*sinA+z*cosA
 
@@ -630,7 +636,7 @@ def AngDisStrain(x,y,z,alpha,bx,by,bz,nu):
     y2 = y**2
     z2 = z**2
     r2 = x2+y2+z2
-    r = np.sqrt(r2)
+    r = xp.sqrt(r2)
     r3 = r*r2
     rz = r*(r-z)
     r2z2 = r2*(r-z)**2
@@ -647,50 +653,50 @@ def AngDisStrain(x,y,z,alpha,bx,by,bz,nu):
     S = (r*sinA-y)/Wr
 
     # Partial derivatives of the Burgers' function
-    rFi_rx = (eta/r/(r-zeta)-y/r/(r-z))/4/np.pi
-    rFi_ry = (x/r/(r-z)-cosA*x/r/(r-zeta))/4/np.pi
-    rFi_rz = (sinA*x/r/(r-zeta))/4/np.pi
+    rFi_rx = (eta/r/(r-zeta)-y/r/(r-z))/4/xp.pi
+    rFi_ry = (x/r/(r-z)-cosA*x/r/(r-zeta))/4/xp.pi
+    rFi_rz = (sinA*x/r/(r-zeta))/4/xp.pi
 
     Exx = bx*(rFi_rx)+\
-        bx/8/np.pi/(1-nu)*(eta/Wr+eta*x2/W2r2-eta*x2/Wr3+y/rz-\
+        bx/8/xp.pi/(1-nu)*(eta/Wr+eta*x2/W2r2-eta*x2/Wr3+y/rz-\
         x2*y/r2z2-x2*y/r3z)-\
-        by*x/8/np.pi/(1-nu)*(((2*nu+1)/Wr+x2/W2r2-x2/Wr3)*cosA+\
+        by*x/8/xp.pi/(1-nu)*(((2*nu+1)/Wr+x2/W2r2-x2/Wr3)*cosA+\
         (2*nu+1)/rz-x2/r2z2-x2/r3z)+\
-        bz*x*sinA/8/np.pi/(1-nu)*((2*nu+1)/Wr+x2/W2r2-x2/Wr3)
+        bz*x*sinA/8/xp.pi/(1-nu)*((2*nu+1)/Wr+x2/W2r2-x2/Wr3)
 
     Eyy = by*(rFi_ry)+\
-        bx/8/np.pi/(1-nu)*((1/Wr+S**2-y2/Wr3)*eta+(2*nu+1)*y/rz-y**3/r2z2-\
+        bx/8/xp.pi/(1-nu)*((1/Wr+S**2-y2/Wr3)*eta+(2*nu+1)*y/rz-y**3/r2z2-\
         y**3/r3z-2*nu*cosA*S)-\
-        by*x/8/np.pi/(1-nu)*(1/rz-y2/r2z2-y2/r3z+\
+        by*x/8/xp.pi/(1-nu)*(1/rz-y2/r2z2-y2/r3z+\
         (1/Wr+S**2-y2/Wr3)*cosA)+\
-        bz*x*sinA/8/np.pi/(1-nu)*(1/Wr+S**2-y2/Wr3)
+        bz*x*sinA/8/xp.pi/(1-nu)*(1/Wr+S**2-y2/Wr3)
 
     Ezz = bz*(rFi_rz)+\
-        bx/8/np.pi/(1-nu)*(eta/W/r+eta*C**2-eta*z2/Wr3+y*z/r3+\
+        bx/8/xp.pi/(1-nu)*(eta/W/r+eta*C**2-eta*z2/Wr3+y*z/r3+\
         2*nu*sinA*C)-\
-        by*x/8/np.pi/(1-nu)*((1/Wr+C**2-z2/Wr3)*cosA+z/r3)+\
-        bz*x*sinA/8/np.pi/(1-nu)*(1/Wr+C**2-z2/Wr3)
+        by*x/8/xp.pi/(1-nu)*((1/Wr+C**2-z2/Wr3)*cosA+z/r3)+\
+        bz*x*sinA/8/xp.pi/(1-nu)*(1/Wr+C**2-z2/Wr3)
 
     Exy = bx*(rFi_ry)/2+by*(rFi_rx)/2-\
-        bx/8/np.pi/(1-nu)*(x*y2/r2z2-nu*x/rz+x*y2/r3z-nu*x*cosA/Wr+\
+        bx/8/xp.pi/(1-nu)*(x*y2/r2z2-nu*x/rz+x*y2/r3z-nu*x*cosA/Wr+\
         eta*x*S/Wr+eta*x*y/Wr3)+\
-        by/8/np.pi/(1-nu)*(x2*y/r2z2-nu*y/rz+x2*y/r3z+nu*cosA*S+\
+        by/8/xp.pi/(1-nu)*(x2*y/r2z2-nu*y/rz+x2*y/r3z+nu*cosA*S+\
         x2*y*cosA/Wr3+x2*cosA*S/Wr)-\
-        bz*sinA/8/np.pi/(1-nu)*(nu*S+x2*S/Wr+x2*y/Wr3)
+        bz*sinA/8/xp.pi/(1-nu)*(nu*S+x2*S/Wr+x2*y/Wr3)
 
     Exz = bx*(rFi_rz)/2+bz*(rFi_rx)/2-\
-        bx/8/np.pi/(1-nu)*(-x*y/r3+nu*x*sinA/Wr+eta*x*C/Wr+\
+        bx/8/xp.pi/(1-nu)*(-x*y/r3+nu*x*sinA/Wr+eta*x*C/Wr+\
         eta*x*z/Wr3)+\
-        by/8/np.pi/(1-nu)*(-x2/r3+nu/r+nu*cosA*C+x2*z*cosA/Wr3+\
+        by/8/xp.pi/(1-nu)*(-x2/r3+nu/r+nu*cosA*C+x2*z*cosA/Wr3+\
         x2*cosA*C/Wr)-\
-        bz*sinA/8/np.pi/(1-nu)*(nu*C+x2*C/Wr+x2*z/Wr3)
+        bz*sinA/8/xp.pi/(1-nu)*(nu*C+x2*C/Wr+x2*z/Wr3)
 
     Eyz = by*(rFi_rz)/2+bz*(rFi_ry)/2+\
-        bx/8/np.pi/(1-nu)*(y2/r3-nu/r-nu*cosA*C+nu*sinA*S+eta*sinA*cosA/W2-\
+        bx/8/xp.pi/(1-nu)*(y2/r3-nu/r-nu*cosA*C+nu*sinA*S+eta*sinA*cosA/W2-\
         eta*(y*cosA+z*sinA)/W2r+eta*y*z/W2r2-eta*y*z/Wr3)-\
-        by*x/8/np.pi/(1-nu)*(y/r3+sinA*cosA**2/W2-cosA*(y*cosA+z*sinA)/\
+        by*x/8/xp.pi/(1-nu)*(y/r3+sinA*cosA**2/W2-cosA*(y*cosA+z*sinA)/\
         W2r+y*z*cosA/W2r2-y*z*cosA/Wr3)-\
-        bz*x*sinA/8/np.pi/(1-nu)*(y*z/Wr3-sinA*cosA/W2+(y*cosA+z*sinA)/\
+        bz*x*sinA/8/xp.pi/(1-nu)*(y*z/Wr3-sinA*cosA/W2+(y*cosA+z*sinA)/\
         W2r-y*z/W2r2)
 
     return Exx,Eyy,Ezz,Exy,Exz,Eyz
@@ -704,8 +710,8 @@ def TDstrainHS(obs,tri,slip,nu):
     # in an elastic half-space.
 
     # require ndmin=2 in case of only 1 obs point being passed
-    if np.ndim(obs)<2:
-        obs=np.array(obs,ndmin=2)
+    if xp.ndim(obs)<2:
+        obs=xp.array(obs,ndmin=2)
 
     assert all(obs[:,2]<=0), 'Half-space solution: observation Z coordinates must be zero or negative!'
     assert all(tri[:,2]<=0), 'Half-space solution: triangle Z coordinates must be zero or negative!'
@@ -722,8 +728,8 @@ def TDstrainHS(obs,tri,slip,nu):
     StrIS = TDstrainFS(obs, tri_img, slip, nu)
 
     if all(tri[:,2]==0):
-        StrIS[:,4] = -StrIS[:,4]
-        StrIS[:,5] = -StrIS[:,5]
+        # flip the xz and yz components without in-place writes (trace-safe)
+        StrIS = StrIS * xp.asarray([1.0, 1.0, 1.0, 1.0, -1.0, -1.0])
 
     # Calculate the complete strain tensor components in EFCS
     Strain = StrMS+StrIS+StrFSC
@@ -761,16 +767,16 @@ def AngSetupFSC_S(obs,bX,bY,bZ,PA,PB,nu):
 
     # Calculate TD side vector and the angle of the angular dislocation pair
     SideVec = PB-PA
-    eZ = np.array([0, 0, 1])
-    beta = np.arccos(-SideVec.dot(eZ)/np.linalg.norm(SideVec))
+    eZ = xp.array([0, 0, 1])
+    beta = xp.arccos(-SideVec.dot(eZ)/xp.linalg.norm(SideVec))
 
-    if (np.abs(beta) < np.finfo(float).eps or np.abs(np.pi-beta) < np.finfo(float).eps):
-        Strain = np.zeros((npts,6))
+    if (xp.abs(beta) < xp.finfo(float).eps or xp.abs(xp.pi-beta) < xp.finfo(float).eps):
+        Strain = xp.zeros((npts,6))
     else:
-        ey1 = normalize(np.array([SideVec[0],SideVec[1],0]))
+        ey1 = normalize(xp.array([SideVec[0],SideVec[1],0]))
         ey3 = -eZ
-        ey2 = np.cross(ey3,ey1)
-        A = np.array([ey1,ey2,ey3]) # Transformation matrix
+        ey2 = xp.cross(ey3,ey1)
+        A = xp.array([ey1,ey2,ey3]) # Transformation matrix
 
         # Transform coordinates from EFCS to the first ADCS
         y1A,y2A,y3A = CoordTrans(obs[:,0]-PA[0],obs[:,1]-PA[1],obs[:,2]-PA[2],A)
@@ -786,13 +792,13 @@ def AngSetupFSC_S(obs,bX,bY,bZ,PA,PB,nu):
         # Determine the best arteact-free configuration for the calculation
         # points near the free furface
         Ipos = (beta*y1A >= 0)
-        Ineg = np.logical_not(Ipos)
+        Ineg = xp.logical_not(Ipos)
 
         # Configuration I evaluates at mirrored coordinates and slip, then
         # flips the 13/23 shear components back
         def fsc_pos(p1,p2,p3,depth):
             v11,v22,v33,v12,v13,v23 = AngDisStrainFSC(-p1,-p2,p3,\
-                np.pi-beta,-b1,-b2,b3,nu,depth)
+                xp.pi-beta,-b1,-b2,b3,nu,depth)
             return v11,v22,v33,v12,-v13,-v23
 
         # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
@@ -816,7 +822,7 @@ def AngSetupFSC_S(obs,bX,bY,bZ,PA,PB,nu):
 
         # Transform total Free Surface Correction to strains from ADCS to EFCS
         Exx,Eyy,Ezz,Exy,Exz,Eyz = TensTrans(v11,v22,v33,v12,v13,v23,A.T)
-        Strain = np.asarray([Exx,Eyy,Ezz,Exy,Exz,Eyz]).T
+        Strain = xp.asarray([Exx,Eyy,Ezz,Exy,Exz,Eyz]).T
 
     return Strain
 
@@ -824,14 +830,14 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
     # AngDisStrainFSC calculates the harmonic function contribution to the
     # strains associated with an angular dislocation in an elastic half-space.
 
-    sinB = np.sin(beta)
-    cosB = np.cos(beta)
-    cotB = 1.0/np.tan(beta)
+    sinB = xp.sin(beta)
+    cosB = xp.cos(beta)
+    cotB = 1.0/xp.tan(beta)
     y3b = y3+2*a
     z1b = y1*cosB+y3b*sinB
     z3b = -y1*sinB+y3b*cosB
     rb2 = y1**2+y2**2+y3b**2
-    rb = np.sqrt(rb2)
+    rb = xp.sqrt(rb2)
 
     W1 = rb*cosB+y3b
     W2 = cosB+a/rb
@@ -864,7 +870,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W7**2*(W1*(N1*cosB-a/rb)*cotB+(2-2*nu)*(rb*sinB-y1)*cosB)*(y1/\
         rb-sinB)+cosB/W7*(1/rb*cosB*y1*(N1*cosB-a/rb)*cotB+W1*a/rb**\
         3*y1*cotB+(2-2*nu)*(1/rb*sinB*y1-1)*cosB)+2*a*y3b*cosB*cotB/\
-        rb2**2*y1))/np.pi/(1-nu))+\
+        rb2**2*y1))/xp.pi/(1-nu))+\
         b2*(1/4*(N1*(((2-2*nu)*cotB**2+nu)/rb*y1/W6-((2-2*nu)*cotB**2+1)*\
         cosB*(y1/rb-sinB)/W7)-N1/W6**2*(-N1*y1*cotB+nu*y3b-a+a*y1*\
         cotB/rb+y1**2/W6*W4)/rb*y1+N1/W6*(-N1*cotB+a*cotB/rb-a*\
@@ -881,14 +887,14 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb**3/cosB-3*a*y1**2*y3b/rb**5/cosB+(1/rb*sinB*y1-1)/rb*\
         ((2-2*nu)*cosB-W1/W7*W9)-(rb*sinB-y1)/rb**3*((2-2*nu)*cosB-W1/\
         W7*W9)*y1+(rb*sinB-y1)/rb*(-1/rb*cosB*y1/W7*W9+W1/W7**2*\
-        W9*(y1/rb-sinB)+W1/W7*a/rb**3/cosB*y1)))/np.pi/(1-nu))+\
+        W9*(y1/rb-sinB)+W1/W7*a/rb**3/cosB*y1)))/xp.pi/(1-nu))+\
         b3*(1/4*(N1*(-y2/W6**2*(1+a/rb)/rb*y1-y2/W6*a/rb**3*y1+y2*\
         cosB/W7**2*W2*(y1/rb-sinB)+y2*cosB/W7*a/rb**3*y1)+y2*W8/\
         rb**3*(a/rb2+1/W6)*y1-y2*W8/rb*(-2*a/rb2**2*y1-1/W6**2/\
         rb*y1)-y2*W8*cosB/rb**3/W7*(W1/W7*W2+a*y3b/rb2)*y1-y2*W8*\
         cosB/rb/W7**2*(W1/W7*W2+a*y3b/rb2)*(y1/rb-sinB)+y2*W8*\
         cosB/rb/W7*(1/rb*cosB*y1/W7*W2-W1/W7**2*W2*(y1/rb-sinB)-\
-        W1/W7*a/rb**3*y1-2*a*y3b/rb2**2*y1))/np.pi/(1-nu))
+        W1/W7*a/rb**3*y1-2*a*y3b/rb2**2*y1))/xp.pi/(1-nu))
 
     v22 = b1*(1/4*(N1*(((2-2*nu)*cotB**2-nu)/rb*y2/W6-((2-2*nu)*cotB**2+1-\
         2*nu)*cosB/rb*y2/W7)+N1/W6**2*(y1*cotB*(1-W5)+nu*y3b-a+y2**\
@@ -904,7 +910,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cosB)*y2-3*a*y3b*z1b*cotB/rb**5*y2+1/rb**3/W7*(y2**2*cosB**2-\
         a*z1b*cotB/rb*W1)*y2+1/rb2/W7**2*(y2**2*cosB**2-a*z1b*cotB/\
         rb*W1)*y2-1/rb/W7*(2*y2*cosB**2+a*z1b*cotB/rb**3*W1*y2-a*\
-        z1b*cotB/rb2*cosB*y2)))/np.pi/(1-nu))+\
+        z1b*cotB/rb2*cosB*y2)))/xp.pi/(1-nu))+\
         b2*(1/4*((2-2*nu)*N1*rFib_ry2*cotB**2+N1/W6*((W5-1)*cotB+y1/W6*\
         W4)-N1*y2**2/W6**2*((W5-1)*cotB+y1/W6*W4)/rb+N1*y2/W6*(-a/\
         rb**3*y2*cotB-y1/W6**2*W4/rb*y2-y2/W6*a/rb**3*y1)-N1*cotB/\
@@ -919,7 +925,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cosB+W1/W7*W9+a*y3b/rb2/cosB)-y2**2*W8*cotB/rb2/W7**2*((-2+\
         2*nu)*cosB+W1/W7*W9+a*y3b/rb2/cosB)+y2*W8*cotB/rb/W7*(1/\
         rb*cosB*y2/W7*W9-W1/W7**2*W9/rb*y2-W1/W7*a/rb**3/cosB*y2-\
-        2*a*y3b/rb2**2/cosB*y2))/np.pi/(1-nu))+\
+        2*a*y3b/rb2**2/cosB*y2))/xp.pi/(1-nu))+\
         b3*(1/4*(N1*(-sinB/rb*y2/W7+y2/W6**2*(1+a/rb)/rb*y1+y2/W6*\
         a/rb**3*y1-z1b/W7**2*W2/rb*y2-z1b/W7*a/rb**3*y2)-y2*W8/\
         rb**3*(a/rb2+1/W6)*y1+y1*W8/rb*(-2*a/rb2**2*y2-1/W6**2/\
@@ -928,7 +934,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb**3*y2-z1b/rb**3*(1+a*y3b/rb2)*y2-2*z1b/rb**5*a*y3b*y2+\
         1/rb**3/W7*(y2**2*cosB*sinB-a*z1b/rb*W1)*y2+1/rb2/W7**2*\
         (y2**2*cosB*sinB-a*z1b/rb*W1)*y2-1/rb/W7*(2*y2*cosB*sinB+a*\
-        z1b/rb**3*W1*y2-a*z1b/rb2*cosB*y2)))/np.pi/(1-nu))
+        z1b/rb**3*W1*y2-a*z1b/rb2*cosB*y2)))/xp.pi/(1-nu))
 
     v33 = b1*(1/4*((2-2*nu)*(N1*rFib_ry3*cotB-y2/W6**2*W5*(y3b/rb+1)-\
         1/2*y2/W6*a/rb**3*2*y3b+y2*cosB/W7**2*W2*W3+1/2*y2*cosB/W7*\
@@ -938,7 +944,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         1/2*y2*W8*cosB/rb**3/W7*(1-2*nu-W1/W7*W2-a*y3b/rb2)*2*\
         y3b-y2*W8*cosB/rb/W7**2*(1-2*nu-W1/W7*W2-a*y3b/rb2)*W3+y2*\
         W8*cosB/rb/W7*(-(cosB*y3b/rb+1)/W7*W2+W1/W7**2*W2*W3+1/2*\
-        W1/W7*a/rb**3*2*y3b-a/rb2+a*y3b/rb2**2*2*y3b))/np.pi/(1-nu))+\
+        W1/W7*a/rb**3*2*y3b-a/rb2+a*y3b/rb2**2*2*y3b))/xp.pi/(1-nu))+\
         b2*(1/4*((-2+2*nu)*N1*cotB*((y3b/rb+1)/W6-cosB*W3/W7)+(2-2*nu)*\
         y1/W6**2*W5*(y3b/rb+1)+1/2*(2-2*nu)*y1/W6*a/rb**3*2*y3b+(2-\
         2*nu)*sinB/W7*W2-(2-2*nu)*z1b/W7**2*W2*W3-1/2*(2-2*nu)*z1b/\
@@ -953,13 +959,13 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W1/W7**2*W3)-1/2*a/rb**3*(sinB-y3b*z1b/rb2-z1b*W1/rb/W7)*\
         2*y3b+a/rb*(-z1b/rb2-y3b*sinB/rb2+y3b*z1b/rb2**2*2*y3b-\
         sinB*W1/rb/W7-z1b*(cosB*y3b/rb+1)/rb/W7+1/2*z1b*W1/rb**3/\
-        W7*2*y3b+z1b*W1/rb/W7**2*W3)))/np.pi/(1-nu))+\
+        W7*2*y3b+z1b*W1/rb/W7**2*W3)))/xp.pi/(1-nu))+\
         b3*(1/4*((2-2*nu)*rFib_ry3-(2-2*nu)*y2*sinB/W7**2*W2*W3-1/2*\
         (2-2*nu)*y2*sinB/W7*a/rb**3*2*y3b+y2*sinB/rb/W7*(1+W1/W7*\
         W2+a*y3b/rb2)-1/2*y2*W8*sinB/rb**3/W7*(1+W1/W7*W2+a*y3b/\
         rb2)*2*y3b-y2*W8*sinB/rb/W7**2*(1+W1/W7*W2+a*y3b/rb2)*W3+\
         y2*W8*sinB/rb/W7*((cosB*y3b/rb+1)/W7*W2-W1/W7**2*W2*W3-\
-        1/2*W1/W7*a/rb**3*2*y3b+a/rb2-a*y3b/rb2**2*2*y3b))/np.pi/(1-nu))
+        1/2*W1/W7*a/rb**3*2*y3b+a/rb2-a*y3b/rb2**2*2*y3b))/xp.pi/(1-nu))
 
     v12 = b1/2*(1/4*((-2+2*nu)*N1*rFib_ry2*cotB**2+N1/W6*((1-W5)*cotB-y1/\
         W6*W4)-N1*y2**2/W6**2*((1-W5)*cotB-y1/W6*W4)/rb+N1*y2/W6*\
@@ -977,7 +983,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cosB)-a*y3b*cosB*cotB/rb2)+y2*W8/rb/W7*(-cosB/W7**2*(W1*\
         (N1*cosB-a/rb)*cotB+(2-2*nu)*(rb*sinB-y1)*cosB)/rb*y2+cosB/\
         W7*(1/rb*cosB*y2*(N1*cosB-a/rb)*cotB+W1*a/rb**3*y2*cotB+(2-2*\
-        nu)/rb*sinB*y2*cosB)+2*a*y3b*cosB*cotB/rb2**2*y2))/np.pi/(1-nu))+\
+        nu)/rb*sinB*y2*cosB)+2*a*y3b*cosB*cotB/rb2**2*y2))/xp.pi/(1-nu))+\
         b2/2*(1/4*(N1*(((2-2*nu)*cotB**2+nu)/rb*y2/W6-((2-2*nu)*cotB**2+1)*\
         cosB/rb*y2/W7)-N1/W6**2*(-N1*y1*cotB+nu*y3b-a+a*y1*cotB/rb+\
         y1**2/W6*W4)/rb*y2+N1/W6*(-a*y1*cotB/rb**3*y2-y1**2/W6**\
@@ -992,7 +998,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W7*(-3*a*y1*y3b/rb**5/cosB*y2+1/rb2*sinB*y2*((2-2*nu)*cosB-\
         W1/W7*W9)-(rb*sinB-y1)/rb**3*((2-2*nu)*cosB-W1/W7*W9)*y2+(rb*\
         sinB-y1)/rb*(-1/rb*cosB*y2/W7*W9+W1/W7**2*W9/rb*y2+W1/W7*\
-        a/rb**3/cosB*y2)))/np.pi/(1-nu))+\
+        a/rb**3/cosB*y2)))/xp.pi/(1-nu))+\
         b3/2*(1/4*(N1*(1/W6*(1+a/rb)-y2**2/W6**2*(1+a/rb)/rb-y2**2/\
         W6*a/rb**3-cosB/W7*W2+y2**2*cosB/W7**2*W2/rb+y2**2*cosB/W7*\
         a/rb**3)-W8/rb*(a/rb2+1/W6)+y2**2*W8/rb**3*(a/rb2+1/W6)-\
@@ -1000,7 +1006,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         (W1/W7*W2+a*y3b/rb2)-y2**2*W8*cosB/rb**3/W7*(W1/W7*W2+a*\
         y3b/rb2)-y2**2*W8*cosB/rb2/W7**2*(W1/W7*W2+a*y3b/rb2)+y2*\
         W8*cosB/rb/W7*(1/rb*cosB*y2/W7*W2-W1/W7**2*W2/rb*y2-W1/\
-        W7*a/rb**3*y2-2*a*y3b/rb2**2*y2))/np.pi/(1-nu))+\
+        W7*a/rb**3*y2-2*a*y3b/rb2**2*y2))/xp.pi/(1-nu))+\
         b1/2*(1/4*(N1*(((2-2*nu)*cotB**2-nu)/rb*y1/W6-((2-2*nu)*cotB**2+1-\
         2*nu)*cosB*(y1/rb-sinB)/W7)+N1/W6**2*(y1*cotB*(1-W5)+nu*y3b-\
         a+y2**2/W6*W4)/rb*y1-N1/W6*((1-W5)*cotB+a*y1**2*cotB/rb**3-\
@@ -1017,7 +1023,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb**5*y1+1/rb**3/W7*(y2**2*cosB**2-a*z1b*cotB/rb*W1)*y1+1/\
         rb/W7**2*(y2**2*cosB**2-a*z1b*cotB/rb*W1)*(y1/rb-sinB)-1/rb/\
         W7*(-a*cosB*cotB/rb*W1+a*z1b*cotB/rb**3*W1*y1-a*z1b*cotB/\
-        rb2*cosB*y1)))/np.pi/(1-nu))+\
+        rb2*cosB*y1)))/xp.pi/(1-nu))+\
         b2/2*(1/4*((2-2*nu)*N1*rFib_ry1*cotB**2-N1*y2/W6**2*((W5-1)*cotB+\
         y1/W6*W4)/rb*y1+N1*y2/W6*(-a/rb**3*y1*cotB+1/W6*W4-y1**\
         2/W6**2*W4/rb-y1**2/W6*a/rb**3)+N1*y2*cotB/W7**2*W9*(y1/\
@@ -1030,7 +1036,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cosB+W1/W7*W9+a*y3b/rb2/cosB)*y1-y2*W8*cotB/rb/W7**2*((-2+\
         2*nu)*cosB+W1/W7*W9+a*y3b/rb2/cosB)*(y1/rb-sinB)+y2*W8*\
         cotB/rb/W7*(1/rb*cosB*y1/W7*W9-W1/W7**2*W9*(y1/rb-sinB)-\
-        W1/W7*a/rb**3/cosB*y1-2*a*y3b/rb2**2/cosB*y1))/np.pi/(1-nu))+\
+        W1/W7*a/rb**3/cosB*y1-2*a*y3b/rb2**2/cosB*y1))/xp.pi/(1-nu))+\
         b3/2*(1/4*(N1*(-sinB*(y1/rb-sinB)/W7-1/W6*(1+a/rb)+y1**2/W6**\
         2*(1+a/rb)/rb+y1**2/W6*a/rb**3+cosB/W7*W2-z1b/W7**2*W2*\
         (y1/rb-sinB)-z1b/W7*a/rb**3*y1)+W8/rb*(a/rb2+1/W6)-y1**2*\
@@ -1041,7 +1047,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb2)*y1-2*z1b/rb**5*a*y3b*y1+1/rb**3/W7*(y2**2*cosB*sinB-a*\
         z1b/rb*W1)*y1+1/rb/W7**2*(y2**2*cosB*sinB-a*z1b/rb*W1)*\
         (y1/rb-sinB)-1/rb/W7*(-a*cosB/rb*W1+a*z1b/rb**3*W1*y1-a*\
-        z1b/rb2*cosB*y1)))/np.pi/(1-nu))
+        z1b/rb2*cosB*y1)))/xp.pi/(1-nu))
 
     v13 = b1/2*(1/4*((-2+2*nu)*N1*rFib_ry3*cotB**2-N1*y2/W6**2*((1-W5)*\
         cotB-y1/W6*W4)*(y3b/rb+1)+N1*y2/W6*(1/2*a/rb**3*2*y3b*cotB+\
@@ -1060,7 +1066,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W7*(-cosB/W7**2*(W1*(N1*cosB-a/rb)*cotB+(2-2*nu)*(rb*sinB-y1)*\
         cosB)*W3+cosB/W7*((cosB*y3b/rb+1)*(N1*cosB-a/rb)*cotB+1/2*W1*\
         a/rb**3*2*y3b*cotB+1/2*(2-2*nu)/rb*sinB*2*y3b*cosB)-a*cosB*\
-        cotB/rb2+a*y3b*cosB*cotB/rb2**2*2*y3b))/np.pi/(1-nu))+\
+        cotB/rb2+a*y3b*cosB*cotB/rb2**2*2*y3b))/xp.pi/(1-nu))+\
         b2/2*(1/4*(N1*(((2-2*nu)*cotB**2+nu)*(y3b/rb+1)/W6-((2-2*nu)*cotB**\
         2+1)*cosB*W3/W7)-N1/W6**2*(-N1*y1*cotB+nu*y3b-a+a*y1*cotB/\
         rb+y1**2/W6*W4)*(y3b/rb+1)+N1/W6*(nu-1/2*a*y1*cotB/rb**3*2*\
@@ -1080,7 +1086,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb2*sinB*2*y3b*((2-2*nu)*cosB-W1/W7*W9)-1/2*(rb*sinB-y1)/rb**\
         3*((2-2*nu)*cosB-W1/W7*W9)*2*y3b+(rb*sinB-y1)/rb*(-(cosB*y3b/\
         rb+1)/W7*W9+W1/W7**2*W9*W3+1/2*W1/W7*a/rb**3/cosB*2*\
-        y3b)))/np.pi/(1-nu))+\
+        y3b)))/xp.pi/(1-nu))+\
         b3/2*(1/4*(N1*(-y2/W6**2*(1+a/rb)*(y3b/rb+1)-1/2*y2/W6*a/\
         rb**3*2*y3b+y2*cosB/W7**2*W2*W3+1/2*y2*cosB/W7*a/rb**3*2*\
         y3b)-y2/rb*(a/rb2+1/W6)+1/2*y2*W8/rb**3*(a/rb2+1/W6)*2*\
@@ -1089,7 +1095,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W7*W2+a*y3b/rb2)*2*y3b-y2*W8*cosB/rb/W7**2*(W1/W7*W2+a*\
         y3b/rb2)*W3+y2*W8*cosB/rb/W7*((cosB*y3b/rb+1)/W7*W2-W1/\
         W7**2*W2*W3-1/2*W1/W7*a/rb**3*2*y3b+a/rb2-a*y3b/rb2**2*2*\
-        y3b))/np.pi/(1-nu))+\
+        y3b))/xp.pi/(1-nu))+\
         b1/2*(1/4*((2-2*nu)*(N1*rFib_ry1*cotB-y1/W6**2*W5/rb*y2-y2/W6*\
         a/rb**3*y1+y2*cosB/W7**2*W2*(y1/rb-sinB)+y2*cosB/W7*a/rb**\
         3*y1)-y2*W8/rb**3*(2*nu/W6+a/rb2)*y1+y2*W8/rb*(-2*nu/W6**\
@@ -1097,7 +1103,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         W2-a*y3b/rb2)*y1-y2*W8*cosB/rb/W7**2*(1-2*nu-W1/W7*W2-a*\
         y3b/rb2)*(y1/rb-sinB)+y2*W8*cosB/rb/W7*(-1/rb*cosB*y1/W7*\
         W2+W1/W7**2*W2*(y1/rb-sinB)+W1/W7*a/rb**3*y1+2*a*y3b/rb2**\
-        2*y1))/np.pi/(1-nu))+\
+        2*y1))/xp.pi/(1-nu))+\
         b2/2*(1/4*((-2+2*nu)*N1*cotB*(1/rb*y1/W6-cosB*(y1/rb-sinB)/W7)-\
         (2-2*nu)/W6*W5+(2-2*nu)*y1**2/W6**2*W5/rb+(2-2*nu)*y1**2/W6*\
         a/rb**3+(2-2*nu)*cosB/W7*W2-(2-2*nu)*z1b/W7**2*W2*(y1/rb-\
@@ -1110,13 +1116,13 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         y1/W7+W1/W7**2*(y1/rb-sinB))-a/rb**3*(sinB-y3b*z1b/rb2-\
         z1b*W1/rb/W7)*y1+a/rb*(-y3b*cosB/rb2+2*y3b*z1b/rb2**2*y1-\
         cosB*W1/rb/W7-z1b/rb2*cosB*y1/W7+z1b*W1/rb**3/W7*y1+z1b*\
-        W1/rb/W7**2*(y1/rb-sinB))))/np.pi/(1-nu))+\
+        W1/rb/W7**2*(y1/rb-sinB))))/xp.pi/(1-nu))+\
         b3/2*(1/4*((2-2*nu)*rFib_ry1-(2-2*nu)*y2*sinB/W7**2*W2*(y1/rb-\
         sinB)-(2-2*nu)*y2*sinB/W7*a/rb**3*y1-y2*W8*sinB/rb**3/W7*(1+\
         W1/W7*W2+a*y3b/rb2)*y1-y2*W8*sinB/rb/W7**2*(1+W1/W7*W2+\
         a*y3b/rb2)*(y1/rb-sinB)+y2*W8*sinB/rb/W7*(1/rb*cosB*y1/\
         W7*W2-W1/W7**2*W2*(y1/rb-sinB)-W1/W7*a/rb**3*y1-2*a*y3b/\
-        rb2**2*y1))/np.pi/(1-nu))
+        rb2**2*y1))/xp.pi/(1-nu))
 
     v23 = b1/2*(1/4*(N1*(((2-2*nu)*cotB**2-nu)*(y3b/rb+1)/W6-((2-2*nu)*\
         cotB**2+1-2*nu)*cosB*W3/W7)+N1/W6**2*(y1*cotB*(1-W5)+nu*y3b-a+\
@@ -1138,7 +1144,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         3/W7*(y2**2*cosB**2-a*z1b*cotB/rb*W1)*2*y3b+1/rb/W7**2*(y2**\
         2*cosB**2-a*z1b*cotB/rb*W1)*W3-1/rb/W7*(-a*sinB*cotB/rb*W1+\
         1/2*a*z1b*cotB/rb**3*W1*2*y3b-a*z1b*cotB/rb*(cosB*y3b/rb+\
-        1))))/np.pi/(1-nu))+\
+        1))))/xp.pi/(1-nu))+\
         b2/2*(1/4*((2-2*nu)*N1*rFib_ry3*cotB**2-N1*y2/W6**2*((W5-1)*cotB+\
         y1/W6*W4)*(y3b/rb+1)+N1*y2/W6*(-1/2*a/rb**3*2*y3b*cotB-y1/\
         W6**2*W4*(y3b/rb+1)-1/2*y1/W6*a/rb**3*2*y3b)+N1*y2*cotB/\
@@ -1154,7 +1160,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb2/cosB)*2*y3b-y2*W8*cotB/rb/W7**2*((-2+2*nu)*cosB+W1/W7*\
         W9+a*y3b/rb2/cosB)*W3+y2*W8*cotB/rb/W7*((cosB*y3b/rb+1)/\
         W7*W9-W1/W7**2*W9*W3-1/2*W1/W7*a/rb**3/cosB*2*y3b+a/rb2/\
-        cosB-a*y3b/rb2**2/cosB*2*y3b))/np.pi/(1-nu))+\
+        cosB-a*y3b/rb2**2/cosB*2*y3b))/xp.pi/(1-nu))+\
         b3/2*(1/4*(N1*(-sinB*W3/W7+y1/W6**2*(1+a/rb)*(y3b/rb+1)+\
         1/2*y1/W6*a/rb**3*2*y3b+sinB/W7*W2-z1b/W7**2*W2*W3-1/2*\
         z1b/W7*a/rb**3*2*y3b)+y1/rb*(a/rb2+1/W6)-1/2*y1*W8/rb**\
@@ -1167,7 +1173,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         y3b/rb2**2*2*y3b)+1/2/rb**3/W7*(y2**2*cosB*sinB-a*z1b/rb*\
         W1)*2*y3b+1/rb/W7**2*(y2**2*cosB*sinB-a*z1b/rb*W1)*W3-1/\
         rb/W7*(-a*sinB/rb*W1+1/2*a*z1b/rb**3*W1*2*y3b-a*z1b/rb*\
-        (cosB*y3b/rb+1))))/np.pi/(1-nu))+\
+        (cosB*y3b/rb+1))))/xp.pi/(1-nu))+\
         b1/2*(1/4*((2-2*nu)*(N1*rFib_ry2*cotB+1/W6*W5-y2**2/W6**2*W5/\
         rb-y2**2/W6*a/rb**3-cosB/W7*W2+y2**2*cosB/W7**2*W2/rb+y2**2*\
         cosB/W7*a/rb**3)+W8/rb*(2*nu/W6+a/rb2)-y2**2*W8/rb**3*(2*\
@@ -1176,7 +1182,7 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         rb**3/W7*(1-2*nu-W1/W7*W2-a*y3b/rb2)-y2**2*W8*cosB/rb2/W7**\
         2*(1-2*nu-W1/W7*W2-a*y3b/rb2)+y2*W8*cosB/rb/W7*(-1/rb*\
         cosB*y2/W7*W2+W1/W7**2*W2/rb*y2+W1/W7*a/rb**3*y2+2*a*\
-        y3b/rb2**2*y2))/np.pi/(1-nu))+\
+        y3b/rb2**2*y2))/xp.pi/(1-nu))+\
         b2/2*(1/4*((-2+2*nu)*N1*cotB*(1/rb*y2/W6-cosB/rb*y2/W7)+(2-\
         2*nu)*y1/W6**2*W5/rb*y2+(2-2*nu)*y1/W6*a/rb**3*y2-(2-2*\
         nu)*z1b/W7**2*W2/rb*y2-(2-2*nu)*z1b/W7*a/rb**3*y2-W8/rb**\
@@ -1187,12 +1193,12 @@ def AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a):
         cotB/rb**3*((2-2*nu)*cosB-W1/W7)*y2+W1*cotB/rb*(-cosB/rb*\
         y2/W7+W1/W7**2/rb*y2)-a/rb**3*(sinB-y3b*z1b/rb2-z1b*W1/\
         rb/W7)*y2+a/rb*(2*y3b*z1b/rb2**2*y2-z1b/rb2*cosB*y2/W7+\
-        z1b*W1/rb**3/W7*y2+z1b*W1/rb2/W7**2*y2)))/np.pi/(1-nu))+\
+        z1b*W1/rb**3/W7*y2+z1b*W1/rb2/W7**2*y2)))/xp.pi/(1-nu))+\
         b3/2*(1/4*((2-2*nu)*rFib_ry2+(2-2*nu)*sinB/W7*W2-(2-2*nu)*y2**2*\
         sinB/W7**2*W2/rb-(2-2*nu)*y2**2*sinB/W7*a/rb**3+W8*sinB/rb/\
         W7*(1+W1/W7*W2+a*y3b/rb2)-y2**2*W8*sinB/rb**3/W7*(1+W1/\
         W7*W2+a*y3b/rb2)-y2**2*W8*sinB/rb2/W7**2*(1+W1/W7*W2+a*\
         y3b/rb2)+y2*W8*sinB/rb/W7*(1/rb*cosB*y2/W7*W2-W1/W7**2*\
-        W2/rb*y2-W1/W7*a/rb**3*y2-2*a*y3b/rb2**2*y2))/np.pi/(1-nu))
+        W2/rb*y2-W1/W7*a/rb**3*y2-2*a*y3b/rb2**2*y2))/xp.pi/(1-nu))
 
-    return np.asarray([v11, v22, v33, v12, v13, v23])
+    return xp.asarray([v11, v22, v33, v12, v13, v23])

@@ -76,6 +76,15 @@ same process.
 
 ---
 
+## Engine coverage
+
+The `okada85` (surface deformation) and `tri` (triangular dislocation)
+engines run fully on the selected backend. The `okada92` (internal
+deformation, DC3D) engine is a faithful scalar port of the Fortran
+reference and always runs on NumPy, regardless of the selected backend.
+
+---
+
 ## Module boundaries
 
 Backend arrays are converted back to NumPy at public API boundaries:

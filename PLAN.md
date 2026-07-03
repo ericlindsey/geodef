@@ -56,25 +56,34 @@ autodiff rewards.
   refactor is designed for tracing/gradients from day one.
 
 ### Phase 1 — Backend abstraction (CPU-only, no behavior change)
-- [ ] `geodef.backend`: `set_backend()`/`get_backend()`, `GEODEF_BACKEND` env
+- [x] `geodef.backend`: `set_backend()`/`get_backend()`, `GEODEF_BACKEND` env
   var, array-namespace resolution (NumPy default, JAX when installed and
   selected), float64 default with opt-in float32.
-- [ ] Trace-safe kernel refactor (pure NumPy, behavior-preserving): rewrite
+- [x] Trace-safe kernel refactor (pure NumPy, behavior-preserving): rewrite
   `tri.trimodefinder`'s `flatnonzero` + fancy-index assignment into
-  `where`/mask form, and make the `okada92` numerical core branch-free
-  (`allow_singular` raise moves outside the core). Validate against the
-  Matlab reference `.npz` files at existing tolerances.
-- [ ] Route the `okada85`/`okada92`/`tri` elementwise math through the backend
-  namespace; keep NumPy the default everywhere — invisible to existing users
-  and the tutorials. Note: `greens.py` assembles `G` with Python loops over
-  patches, so the JAX path needs a `vmap`-over-patches assembly, not just
-  elementwise routing.
-- [ ] Cross-validate JAX output against the existing Matlab reference `.npz`
-  files to the same tolerances the CPU engines meet (tests skipped when JAX
-  is absent).
-- [ ] Deliverable: identical results, a `geodef[jax]` extra, and a benchmark
-  harness (apples-to-apples, caching disabled) comparing NumPy vs JAX
-  assembly for a range of patch/observation counts.
+  `where`/mask form via `backend.masked_eval` (NumPy gathers/scatters as
+  before; JAX evaluates full-size and selects with `where`). Validated
+  against the Matlab reference `.npz` files at existing tolerances.
+- [x] Route the `okada85` and `tri` math through the backend namespace
+  (`backend.xp` proxy); NumPy stays the default everywhere — invisible to
+  existing users and the tutorials.
+- [x] Cross-validate JAX output against the existing Matlab reference `.npz`
+  files to the same tolerances the CPU engines meet
+  (`tests/test_backend_kernels.py`, skipped when JAX is absent).
+- [ ] `vmap`-over-patches Green's assembly for the JAX path (`greens.py`
+  currently loops over patches in Python) so assembly JIT-compiles as one
+  batched kernel.
+- [ ] Deliverable: a `geodef[jax]` extra (done) and a benchmark harness
+  (apples-to-apples, caching disabled) comparing NumPy vs JAX assembly for
+  a range of patch/observation counts.
+
+**Scope note (okada92).** The `okada92`/DC3D engine is a faithful scalar
+port of the Fortran reference (per-point control flow, module-level state),
+so it cannot be backend-routed by the namespace shim. It stays on the NumPy
+path; a vectorized, trace-safe DC3D rewrite — cross-validated against the
+same reference data — is its own future roadmap item. Surface-data
+workflows (the dominant use) go through `okada85` and `tri`, which are
+fully routed.
 
 ### Phase 2 — Differentiable forward model
 - Express `G(θ)` assembly as a JAX-traceable function of the geometry parameters

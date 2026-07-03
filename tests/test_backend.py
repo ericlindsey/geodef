@@ -117,6 +117,25 @@ class TestToNumpy:
 
 
 # ======================================================================
+# Namespace proxy
+# ======================================================================
+
+
+class TestNamespaceProxy:
+    def test_proxy_resolves_to_numpy_by_default(self):
+        assert backend.xp.cos is np.cos
+
+    @requires_jax
+    def test_proxy_follows_backend_switch(self):
+        import jax.numpy as jnp
+
+        backend.set_backend("jax")
+        assert backend.xp.cos is jnp.cos
+        backend.set_backend("numpy")
+        assert backend.xp.cos is np.cos
+
+
+# ======================================================================
 # Masked evaluation
 # ======================================================================
 
