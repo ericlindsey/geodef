@@ -100,11 +100,18 @@ autodiff rewards.
   faster on NumPy, and the kernel is now available to the JAX backend
   for the stress-shadows / earthquake-cycle path.
 
-### Phase 2 — Differentiable forward model
-- Express `G(θ)` assembly as a JAX-traceable function of the geometry parameters
-  `θ` (position, strike, dip, length, width for rectangles; vertices for
-  triangles) and expose `jax.jacobian`/`jax.grad` of the predicted data with
-  respect to `θ` and slip, for **both** engines.
+### Phase 2 — Differentiable forward model (IN PROGRESS)
+- [x] `geodef.gradients`: `rect_displacement(theta, slip, ...)` traceable in
+  the native rectangle parameters and `tri_displacement(vertices, slip, ...)`
+  traceable in the vertex coordinates, plus `*_jacobian` helpers built on
+  `jax.jacfwd` returning `(d, ∂d/∂θ, ∂d/∂m)`. All Jacobians validated
+  against central finite differences (`tests/test_gradients.py`); the `tri`
+  path needed setupTDCS's construction asserts skipped under tracing and
+  the image-triangle mirror rewritten without `np.copy`/in-place writes.
+- [ ] Extend the differentiable path from single-source displacement to
+  full `G(θ)` assembly for a fault + dataset (projection, multi-patch
+  meshes via a traced `θ → patches`/`θ → vertices` builder), and to the
+  strain/stress kernels.
 - **Differentiation variables (settled 2026-07).** The `tri` engine
   differentiates with respect to the **vertex coordinates** — its native
   parameterization, well-defined for any mesh including non-planar ones.

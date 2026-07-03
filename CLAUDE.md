@@ -43,6 +43,7 @@ geodef/
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |

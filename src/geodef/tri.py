@@ -203,9 +203,12 @@ def setupTDCS(obs,tri):
         transform.dot(tri[2] - tri[1]),
     ])
 
-    np.testing.assert_almost_equal(transformed_tri[1], [0,0,0])
-    np.testing.assert_almost_equal(transformed_tri[0][0], 0)
-    np.testing.assert_almost_equal(transformed_tri[2][0], 0)
+    # construction sanity checks; skipped on the JAX backend because
+    # np.testing cannot inspect traced values (e.g. under jax.jacfwd)
+    if backend.get_backend() == "numpy":
+        np.testing.assert_almost_equal(transformed_tri[1], [0,0,0])
+        np.testing.assert_almost_equal(transformed_tri[0][0], 0)
+        np.testing.assert_almost_equal(transformed_tri[2][0], 0)
 
     # Calculate the unit vectors along TD sides in TDCS
     e12 = normalize(transformed_tri[1] - transformed_tri[0])
@@ -383,8 +386,9 @@ def TDdispHS(obs,tri,slip,nu):
     uFSC = TDdisp_HarFunc(obs, tri, slip, nu)
 
     # Calculate image dislocation contribution to displacements
-    tri_img = np.copy(tri) # do not modify tri!
-    tri_img[:,2] = -tri_img[:,2]
+    # mirror the triangle through the free surface (trace-safe: no copy
+    # or in-place write, so vertex coordinates can be differentiated)
+    tri_img = tri * xp.asarray([1.0, 1.0, -1.0])
     uIS = TDdispFS(obs, tri_img, slip, nu)
     if all(tri[:,2]==0):
         # flip the vertical component without an in-place write (trace-safe)
@@ -723,8 +727,9 @@ def TDstrainHS(obs,tri,slip,nu):
     StrFSC = TDstrain_HarFunc(obs, tri, slip, nu)
 
     # Calculate image dislocation contribution to strains and stresses
-    tri_img = np.copy(tri) # do not modify tri!
-    tri_img[:,2] = -tri_img[:,2]
+    # mirror the triangle through the free surface (trace-safe: no copy
+    # or in-place write, so vertex coordinates can be differentiated)
+    tri_img = tri * xp.asarray([1.0, 1.0, -1.0])
     StrIS = TDstrainFS(obs, tri_img, slip, nu)
 
     if all(tri[:,2]==0):
