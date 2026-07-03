@@ -37,6 +37,7 @@ geodef/
 
 | Module | What it provides |
 |--------|-----------------|
+| `backend` | Array backend selection: NumPy (default) or JAX, precision control |
 | `okada85` | Surface displacements, tilts, strains (Okada 1985) |
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
