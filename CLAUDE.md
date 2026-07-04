@@ -23,7 +23,7 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 884 tests collected across 18 files
+├── tests/                 # 888 tests collected across 18 files
 ├── tutorials/             # Ten-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
@@ -110,7 +110,7 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**883 tests passing, 1 skipped, 884 collected** across 18 test files covering
+**887 tests passing, 1 skipped, 888 collected** across 18 test files covering
 all modules. Reference data in `tests/reference_data/` — Matlab-generated
 `.npz` files for cross-validation of Green's function engines. A few `Fault.load`
 tests need reference data under `related/stress-shadows/` and are skipped when
