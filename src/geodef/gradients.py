@@ -190,7 +190,9 @@ def rect_greens(
     e_c, n_c, depth_c, strike, dip, patch_L, patch_W = _planar_patches(
         theta, n_length, n_width
     )
-    nobs = len(np.atleast_1d(e_obs))
+    e_obs = xp.atleast_1d(xp.asarray(e_obs))
+    n_obs = xp.atleast_1d(xp.asarray(n_obs))
+    nobs = e_obs.shape[0]
     npatch = n_length * n_width
 
     de = e_obs[None, :] - e_c[:, None]
