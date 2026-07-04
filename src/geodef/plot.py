@@ -1063,6 +1063,10 @@ def vectors(
     if title is not None:
         ax.set_title(title)
 
+    # Finalize data limits before placing the scale arrow so it is anchored to
+    # the true corner of the plotted data, not the pre-autoscale extent.
+    ax.autoscale_view()
+
     if legend:
         if scale_arrow is not None:
             _add_scale_arrow_legend(
@@ -1088,7 +1092,6 @@ def vectors(
                 )
             ax.legend(handles=handles)
 
-    ax.autoscale_view()
     return ax
 
 
@@ -1106,36 +1109,42 @@ def _add_scale_arrow_legend(
     """Add a scale-bar arrow legend to a vector plot.
 
     Uses ``ax.quiver()`` so the reference arrow matches the data arrows
-    exactly (same head shape, line width, etc.).
+    exactly (same head shape, line width, etc.). The legend is placed in a
+    dedicated band just outside the data so it never overlaps the plotted
+    vectors: the axis limit on the chosen side is extended to make room.
     """
     if label is None:
         label = f"{scale_arrow} observed"
 
     arrow_km = scale_arrow * scale
+    n_rows = 2 if pred_color is not None else 1
 
-    # Determine anchor position from loc
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
     x_range = xlim[1] - xlim[0]
     y_range = ylim[1] - ylim[0]
 
-    if "right" in loc:
-        bx = xlim[1] - x_range * 0.05
-        ha = "right"
-        text_x = bx
-    else:
-        bx = xlim[0] + x_range * 0.05 + arrow_km
-        ha = "left"
-        text_x = bx
-
+    # Reserve a clear band outside the data on the requested vertical side so
+    # the reference arrows never overlap the plotted vectors.
+    row_h = y_range * 0.07
+    pad = row_h * (n_rows + 1.2)
     if "upper" in loc:
-        by = ylim[1] - y_range * 0.08
-        text_dy = y_range * 0.02
-        row_dy = -y_range * 0.05
+        ax.set_ylim(ylim[0], ylim[1] + pad)
+        by = ylim[1] + row_h * 0.8  # observed row just above the data
+        row_dy = row_h  # subsequent rows stack further up
     else:
-        by = ylim[0] + y_range * 0.08
-        text_dy = y_range * 0.02
-        row_dy = y_range * 0.05
+        ax.set_ylim(ylim[0] - pad, ylim[1])
+        by = ylim[0] - row_h * 0.8  # observed row just below the data
+        row_dy = -row_h  # subsequent rows stack further down
+
+    if "right" in loc:
+        bx = xlim[1] - x_range * 0.03
+        ha = "right"
+    else:
+        bx = xlim[0] + x_range * 0.03 + arrow_km
+        ha = "left"
+    text_x = bx
+    text_dy = row_h * 0.15
 
     # Build quiver kwargs that match the data arrows
     qkw: dict[str, Any] = {"angles": "xy", "scale_units": "xy", "scale": 1}
