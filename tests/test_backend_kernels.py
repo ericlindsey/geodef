@@ -118,6 +118,82 @@ class TestTriJaxReference:
         np.testing.assert_almost_equal(strain, ref_strain)
 
 
+class TestFloat32Mode:
+    """Opt-in float32 precision runs end-to-end with reduced accuracy."""
+
+    @pytest.fixture(autouse=True)
+    def float32_precision(self):
+        backend.set_precision("float32")
+        yield
+        backend.set_precision("float64")
+
+    def test_okada85_displacement_close_to_float64(self) -> None:
+        rng = np.random.default_rng(2)
+        e = rng.uniform(5e3, 3e4, 100) * rng.choice([-1, 1], 100)
+        n = rng.uniform(5e3, 3e4, 100) * rng.choice([-1, 1], 100)
+        args = (e, n, 8e3, 35.0, 55.0, 2e4, 1e4, 20.0, 1.2, 0.1)
+
+        backend.set_precision("float64")
+        ref = okada85.displacement(*args)
+        backend.set_precision("float32")
+        result = okada85.displacement(*args)
+
+        scale = max(np.max(np.abs(backend.to_numpy(c))) for c in ref)
+        for r, x in zip(result, ref):
+            assert backend.to_numpy(r).dtype == np.float32
+            np.testing.assert_allclose(
+                backend.to_numpy(r), backend.to_numpy(x),
+                rtol=2e-3, atol=2e-4 * scale,
+            )
+
+    def test_tri_displacement_close_to_float64(self) -> None:
+        rng = np.random.default_rng(4)
+        nobs = 100
+        obs = np.column_stack(
+            [rng.uniform(-2e4, 2e4, nobs), rng.uniform(-2e4, 2e4, nobs),
+             np.zeros(nobs)]
+        )
+        triangle = np.array(
+            [[0.0, 0.0, -1e3], [8e3, 2e3, -4e3], [1e3, 6e3, -6e3]]
+        )
+        slip = np.array([1.0, 0.5, 0.2])
+
+        backend.set_precision("float64")
+        ref = backend.to_numpy(tdcalc.TDdispHS(obs, triangle, slip, 0.25))
+        backend.set_precision("float32")
+        result = backend.to_numpy(tdcalc.TDdispHS(obs, triangle, slip, 0.25))
+
+        assert result.dtype == np.float32
+        scale = np.max(np.abs(ref))
+        np.testing.assert_allclose(result, ref, rtol=5e-3, atol=5e-4 * scale)
+
+    def test_displacement_greens_close_to_float64(self) -> None:
+        rng = np.random.default_rng(6)
+        nobs, npatch = 30, 8
+        args = (
+            rng.uniform(-0.3, 0.3, nobs),
+            rng.uniform(-0.3, 0.3, nobs),
+            rng.uniform(-0.15, 0.15, npatch),
+            rng.uniform(-0.15, 0.15, npatch),
+            rng.uniform(5e3, 2e4, npatch),
+            rng.uniform(0.0, 360.0, npatch),
+            rng.uniform(10.0, 90.0, npatch),
+            np.full(npatch, 8e3),
+            np.full(npatch, 5e3),
+        )
+
+        backend.set_precision("float64")
+        ref = greens.displacement_greens(*args)
+        backend.set_precision("float32")
+        result = greens.displacement_greens(*args)
+
+        # far-field coefficients of small patches lose relative accuracy
+        # in float32 (the Chinnery corner differences nearly cancel), so
+        # assert against the matrix scale rather than element-wise
+        scale = np.max(np.abs(ref))
+        np.testing.assert_allclose(result, ref, rtol=0, atol=2e-2 * scale)
+
+
 class TestAbicSweepJax:
     """The batched JAX ABIC sweep reproduces the NumPy loop."""
 

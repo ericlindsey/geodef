@@ -67,8 +67,19 @@ geodef.backend.default_dtype()            # → dtype('float32')
 ```
 
 The dislocation kernels are sensitive near the fault surface: expect reduced
-accuracy for observation points close to patch edges in float32. Keep the
-default float64 unless throughput matters more than near-field precision.
+accuracy for observation points close to patch edges in float32, and
+~1%-of-scale errors in far-field Green's coefficients of small patches
+(the Chinnery corner differences nearly cancel). A good laptop workflow is
+to explore in float32 — hyperparameter sweeps, coarse geometry searches —
+and rerun the final inversion in float64:
+
+```python
+geodef.backend.set_precision("float32")
+ac = geodef.abic_curve(fault, data, smoothing="laplacian")   # fast sweep
+geodef.backend.set_precision("float64")
+result = geodef.invert(fault, data, smoothing="laplacian",
+                       smoothing_strength=ac.optimal)         # final solve
+```
 
 With the JAX backend, precision is synced to JAX's `jax_enable_x64` flag,
 which is process-global — enabling float32 here affects other JAX code in the
