@@ -371,6 +371,43 @@ class TestPlotSlip:
         )
         assert isinstance(ax, plt.Axes)
 
+    def test_default_fault_coords_labels(self, rect_fault, slip_magnitude):
+        """Default coordinate frame is along-strike / along-dip."""
+        ax = geodef.plot.slip(rect_fault, slip_magnitude)
+        assert "strike" in ax.get_xlabel().lower()
+        assert "dip" in ax.get_ylabel().lower()
+        # Up-dip (shallow) edge at the top: y-axis is inverted.
+        assert ax.yaxis_inverted()
+
+    def test_geographic_coords_labels(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip(rect_fault, slip_magnitude, coords="geographic")
+        assert "east" in ax.get_xlabel().lower()
+        assert "north" in ax.get_ylabel().lower()
+
+    def test_invalid_coords(self, rect_fault, slip_magnitude):
+        with pytest.raises(ValueError, match="coords"):
+            geodef.plot.slip(rect_fault, slip_magnitude, coords="polar")
+
+    def test_updip_edge_default_on(self, rect_fault, slip_magnitude):
+        """A black up-dip edge line is drawn by default."""
+        ax = geodef.plot.slip(rect_fault, slip_magnitude)
+        black_lines = [
+            ln
+            for ln in ax.get_lines()
+            if ln.get_color() in ("black", "k", (0.0, 0.0, 0.0, 1.0))
+        ]
+        assert black_lines
+
+    def test_updip_edge_off(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip(rect_fault, slip_magnitude, updip_edge=False)
+        assert not ax.get_lines()
+
+    def test_updip_edge_geographic(self, rect_fault, slip_magnitude):
+        ax = geodef.plot.slip(
+            rect_fault, slip_magnitude, coords="geographic", updip_edge=True
+        )
+        assert ax.get_lines()
+
 
 @pytest.fixture
 def tri_fault_4():
@@ -459,6 +496,14 @@ class TestPlotResolution:
         values = np.random.rand(tri_fault.n_patches)
         ax = geodef.plot.resolution(tri_fault, values)
         assert isinstance(ax, plt.Axes)
+
+    def test_full_matrix_uses_diagonal(self, rect_fault):
+        """Passing a full (N, N) resolution matrix uses its diagonal."""
+        n = rect_fault.n_patches
+        matrix = np.random.rand(n, n)
+        ax = geodef.plot.resolution(rect_fault, matrix, vmin=None, vmax=None)
+        coll = ax.collections[0]
+        assert np.allclose(coll.get_array(), np.diag(matrix))
 
 
 class TestPlotUncertainty:
@@ -646,29 +691,33 @@ class TestPlotVectors:
         assert quivers and dots
         assert max(d.get_zorder() for d in dots) < min(q.get_zorder() for q in quivers)
 
-    def test_vertical_dot_size_scales(self, gnss_3comp, rect_fault):
-        """scale parameter should affect dot sizes in vertical mode."""
-        ax1 = geodef.plot.vectors(
-            gnss_3comp, rect_fault, components="vertical", scale=1
-        )
-        ax2 = geodef.plot.vectors(
+    def test_vertical_dots_constant_size(self, gnss_3comp, rect_fault):
+        """Vertical dots are a single fixed size, independent of value/scale."""
+        ax = geodef.plot.vectors(
             gnss_3comp, rect_fault, components="vertical", scale=5
         )
-        # Get the scatter PathCollection
-        sc1 = [
+        sc = [
             c
-            for c in ax1.get_children()
+            for c in ax.get_children()
             if isinstance(c, matplotlib.collections.PathCollection)
             and len(c.get_offsets()) > 0
         ][0]
-        sc2 = [
+        sizes = sc.get_sizes()
+        # All dots share one size (color, not area, encodes the vertical value).
+        assert np.allclose(sizes, sizes[0])
+
+    def test_vertical_size_parameter(self, gnss_3comp, rect_fault):
+        """vertical_size sets the constant dot area."""
+        ax = geodef.plot.vectors(
+            gnss_3comp, rect_fault, components="vertical", vertical_size=99.0
+        )
+        sc = [
             c
-            for c in ax2.get_children()
+            for c in ax.get_children()
             if isinstance(c, matplotlib.collections.PathCollection)
             and len(c.get_offsets()) > 0
         ][0]
-        # Larger scale should give larger max dot size
-        assert sc2.get_sizes().max() > sc1.get_sizes().max()
+        assert np.allclose(sc.get_sizes(), 99.0)
 
     def test_scale_arrow_loc(self, gnss_3comp, rect_fault):
         """scale_arrow_loc should not raise for valid locations."""

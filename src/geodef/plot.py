@@ -281,6 +281,67 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
     return verts
 
 
+def _get_patch_vertices_fault(fault: Fault) -> list[np.ndarray]:
+    """Compute 2-D patch vertices in fault coordinates (along-strike, along-dip).
+
+    The along-strike axis runs along the fault's average strike direction; the
+    along-dip axis measures distance *down the fault plane* from the up-dip
+    (shallowest) edge. Both axes are shifted so the shallowest, first
+    along-strike corner sits at the origin. Units are kilometers.
+
+    This projection is exact for a planar (uniform strike/dip) fault and a
+    reasonable approximation for gently varying meshes.
+
+    Args:
+        fault: Fault geometry (rectangular or triangular).
+
+    Returns:
+        List of arrays, each (n_corners, 2) with columns
+        ``(along_strike_km, along_dip_km)``.
+    """
+    verts_3d = _get_patch_vertices_3d(fault)  # (east_km, north_km, depth_km down)
+    strike_rad = np.radians(float(np.mean(fault.strike)))
+    dip_rad = np.radians(float(np.mean(fault.dip)))
+    s_hat = np.array([np.sin(strike_rad), np.cos(strike_rad)])
+    sin_dip = max(np.sin(dip_rad), 1e-6)
+
+    all_v = np.vstack(verts_3d)
+    s0 = float((all_v[:, :2] @ s_hat).min())
+    d0 = float((all_v[:, 2] / sin_dip).min())
+
+    return [
+        np.column_stack([v[:, :2] @ s_hat - s0, v[:, 2] / sin_dip - d0])
+        for v in verts_3d
+    ]
+
+
+def _draw_updip_edge(
+    ax: matplotlib.axes.Axes,
+    fault: Fault,
+    coords: str,
+    line_kwargs: dict | None = None,
+) -> None:
+    """Draw a black line along the fault's up-dip (shallowest) edge.
+
+    In ``'fault'`` coordinates the up-dip edge is the ``along_dip = 0`` line
+    spanning the along-strike extent; in ``'geographic'`` coordinates it is the
+    surface trace returned by :func:`_get_surface_trace`.
+    """
+    lkw: dict[str, Any] = {"color": "black", "linewidth": 1.5, "zorder": 6}
+    if line_kwargs:
+        lkw.update(line_kwargs)
+
+    if coords == "fault":
+        all_v = np.vstack(_get_patch_vertices_fault(fault))
+        s_min, s_max = float(all_v[:, 0].min()), float(all_v[:, 0].max())
+        ax.plot([s_min, s_max], [0.0, 0.0], **lkw)
+        return
+
+    trace = _get_surface_trace(fault)
+    if trace is not None:
+        ax.plot(trace[:, 0], trace[:, 1], **lkw)
+
+
 def _get_slip_component(
     slip: np.ndarray,
     n_patches: int,
@@ -337,23 +398,35 @@ def _plot_patch_scalar(
     colorbar_label: str | None = None,
     colorbar_kwargs: dict | None = None,
     title: str | None = None,
+    coords: str = "geographic",
+    updip_edge: bool = False,
+    updip_edge_kwargs: dict | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """Plot a scalar value on each fault patch as colored polygons.
 
     This is the shared implementation behind ``slip()``, ``resolution()``,
-    ``uncertainty()``, and ``patches()``.
+    ``uncertainty()``, and ``patches()``. See :func:`slip` for a description of
+    the ``coords`` and ``updip_edge`` arguments.
     """
     from matplotlib.collections import PolyCollection
 
+    if coords not in ("fault", "geographic"):
+        raise ValueError(
+            f"coords must be 'fault' or 'geographic', got {coords!r}"
+        )
+
     ax = _ensure_axes(ax)
-    verts = _get_patch_vertices_local(fault)
+    if coords == "fault":
+        verts = _get_patch_vertices_fault(fault)
+    else:
+        verts = _get_patch_vertices_local(fault)
 
     defaults: dict[str, Any] = {"edgecolor": "face", "linewidth": 0.5}
     defaults.update(kwargs)
 
     pc = PolyCollection(verts, **defaults)
-    pc.set_array(values)
+    pc.set_array(np.asarray(values).ravel())
     pc.set_cmap(cmap)
     if vmin is not None or vmax is not None:
         pc.set_clim(vmin, vmax)
@@ -361,8 +434,18 @@ def _plot_patch_scalar(
     ax.add_collection(pc)
     ax.autoscale_view()
     ax.set_aspect("equal")
-    ax.set_xlabel("East (km)")
-    ax.set_ylabel("North (km)")
+    if coords == "fault":
+        ax.set_xlabel("Along-strike (km)")
+        ax.set_ylabel("Along-dip (km)")
+        # Depth increases down-dip; put the up-dip (shallow) edge at the top.
+        y0, y1 = ax.get_ylim()
+        ax.set_ylim(max(y0, y1), min(y0, y1))
+    else:
+        ax.set_xlabel("East (km)")
+        ax.set_ylabel("North (km)")
+
+    if updip_edge:
+        _draw_updip_edge(ax, fault, coords, updip_edge_kwargs)
 
     if title is not None:
         ax.set_title(title)
@@ -480,6 +563,9 @@ def patches(
     colorbar_label: str | None = None,
     colorbar_kwargs: dict | None = None,
     title: str | None = None,
+    coords: str = "geographic",
+    updip_edge: bool = False,
+    updip_edge_kwargs: dict | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """Plot an arbitrary scalar quantity on fault patches.
@@ -499,6 +585,11 @@ def patches(
         colorbar_label: Colorbar label.
         colorbar_kwargs: Extra kwargs passed to ``fig.colorbar()``.
         title: Axes title.
+        coords: Coordinate frame for the axes: ``'geographic'`` (default,
+            East/North km) or ``'fault'`` (along-strike/along-dip km). See
+            :func:`slip`.
+        updip_edge: Whether to draw a black line along the up-dip edge.
+        updip_edge_kwargs: Extra kwargs for the up-dip edge line.
         **kwargs: Passed to ``PolyCollection`` (e.g. ``edgecolor``,
             ``linewidth``).
 
@@ -516,6 +607,9 @@ def patches(
         colorbar_label=colorbar_label,
         colorbar_kwargs=colorbar_kwargs,
         title=title,
+        coords=coords,
+        updip_edge=updip_edge,
+        updip_edge_kwargs=updip_edge_kwargs,
         **kwargs,
     )
 
@@ -533,6 +627,9 @@ def slip(
     colorbar_label: str | None = None,
     colorbar_kwargs: dict | None = None,
     title: str | None = None,
+    coords: str = "fault",
+    updip_edge: bool = True,
+    updip_edge_kwargs: dict | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """Plot fault slip distribution as colored patches.
@@ -552,6 +649,16 @@ def slip(
         colorbar_label: Colorbar label. Auto-generated if ``None``.
         colorbar_kwargs: Extra kwargs passed to ``fig.colorbar()``.
         title: Axes title.
+        coords: Coordinate frame for the axes. ``'fault'`` (default) draws the
+            slip in along-strike / along-dip kilometers with the up-dip edge at
+            the top — the natural frame for reading a slip distribution.
+            ``'geographic'`` uses local East/North kilometers, which is needed
+            when overlaying the slip on a map alongside :func:`vectors`,
+            :func:`insar`, or station locations.
+        updip_edge: Whether to draw a black line along the up-dip (shallowest)
+            fault edge. Defaults to ``True``.
+        updip_edge_kwargs: Extra kwargs for the up-dip edge line (e.g.
+            ``color``, ``linewidth``).
         **kwargs: Passed to ``PolyCollection`` (e.g. ``edgecolor``,
             ``linewidth``).
 
@@ -577,6 +684,9 @@ def slip(
         colorbar_label=colorbar_label,
         colorbar_kwargs=colorbar_kwargs,
         title=title,
+        coords=coords,
+        updip_edge=updip_edge,
+        updip_edge_kwargs=updip_edge_kwargs,
         **kwargs,
     )
 
@@ -681,13 +791,17 @@ def resolution(
     colorbar_label: str = "Resolution",
     colorbar_kwargs: dict | None = None,
     title: str | None = None,
+    coords: str = "geographic",
+    updip_edge: bool = False,
+    updip_edge_kwargs: dict | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """Plot resolution matrix diagonal on fault patches.
 
     Args:
         fault: Fault geometry.
-        values: Resolution diagonal, shape (N,).
+        values: Resolution diagonal, shape (N,). If a full (N, N) resolution
+            matrix is supplied, its diagonal is used.
         ax: Axes to plot on. Creates a new figure if ``None``.
         cmap: Matplotlib colormap name.
         vmin: Minimum color limit.
@@ -696,11 +810,18 @@ def resolution(
         colorbar_label: Colorbar label.
         colorbar_kwargs: Extra kwargs passed to ``fig.colorbar()``.
         title: Axes title.
+        coords: Coordinate frame: ``'geographic'`` (default) or ``'fault'``.
+            See :func:`slip`.
+        updip_edge: Whether to draw a black line along the up-dip edge.
+        updip_edge_kwargs: Extra kwargs for the up-dip edge line.
         **kwargs: Passed to ``PolyCollection``.
 
     Returns:
         The axes used for plotting.
     """
+    values = np.asarray(values)
+    if values.ndim == 2 and values.shape == (fault.n_patches, fault.n_patches):
+        values = np.diag(values)
     return _plot_patch_scalar(
         fault,
         values,
@@ -712,6 +833,9 @@ def resolution(
         colorbar_label=colorbar_label,
         colorbar_kwargs=colorbar_kwargs,
         title=title,
+        coords=coords,
+        updip_edge=updip_edge,
+        updip_edge_kwargs=updip_edge_kwargs,
         **kwargs,
     )
 
@@ -728,6 +852,9 @@ def uncertainty(
     colorbar_label: str = "1-sigma uncertainty (m)",
     colorbar_kwargs: dict | None = None,
     title: str | None = None,
+    coords: str = "geographic",
+    updip_edge: bool = False,
+    updip_edge_kwargs: dict | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """Plot model uncertainty on fault patches.
@@ -743,6 +870,10 @@ def uncertainty(
         colorbar_label: Colorbar label.
         colorbar_kwargs: Extra kwargs passed to ``fig.colorbar()``.
         title: Axes title.
+        coords: Coordinate frame: ``'geographic'`` (default) or ``'fault'``.
+            See :func:`slip`.
+        updip_edge: Whether to draw a black line along the up-dip edge.
+        updip_edge_kwargs: Extra kwargs for the up-dip edge line.
         **kwargs: Passed to ``PolyCollection``.
 
     Returns:
@@ -759,6 +890,9 @@ def uncertainty(
         colorbar_label=colorbar_label,
         colorbar_kwargs=colorbar_kwargs,
         title=title,
+        coords=coords,
+        updip_edge=updip_edge,
+        updip_edge_kwargs=updip_edge_kwargs,
         **kwargs,
     )
 
@@ -787,6 +921,7 @@ def vectors(
     quiver_kwargs: dict | None = None,
     vertical_colorbar: bool = True,
     vertical_colorbar_label: str = "Vertical displacement",
+    vertical_size: float = 40.0,
     title: str | None = None,
 ) -> matplotlib.axes.Axes:
     """Plot GNSS displacement/velocity vectors.
@@ -800,8 +935,8 @@ def vectors(
         scale: Scale factor for horizontal vector lengths. Vectors are
             plotted in data coordinates (km), so set this to convert
             your displacement units into a visible length in km.
-            For vertical-only mode, ``scale`` controls the dot size
-            scaling (marker area is proportional to ``|value| * scale``).
+            ``scale`` affects only the horizontal arrows; the vertical
+            dots are drawn at a constant size (see ``vertical_size``).
         components: ``'horizontal'``, ``'vertical'``, or ``'both'``.
         obs_color: Color for observed vectors.
         pred_color: Color for predicted vectors.
@@ -825,6 +960,9 @@ def vectors(
             component when vertical dots are drawn (``components='vertical'``
             or ``'both'``).
         vertical_colorbar_label: Label for the vertical colorbar.
+        vertical_size: Constant marker area (points^2) for the vertical
+            dots. The vertical component is encoded by color (symmetric
+            ``RdBu_r``), not marker size.
         title: Axes title.
 
     Returns:
@@ -883,24 +1021,22 @@ def vectors(
                 ax.add_patch(ell)
 
     if components == "vertical" or (components == "both" and has_vert):
-        vu = dataset._vu  # raw values — don't scale the color
+        vu = dataset._vu  # raw values — encode magnitude by color only
         assert vu is not None
-        # Scale controls dot size, not color
-        base_size = 30
-        sizes = (
-            np.abs(vu) / np.max(np.abs(vu)) * base_size * scale
-            if np.max(np.abs(vu)) > 0
-            else np.full(n, base_size)
-        )
-        # Clamp minimum size so dots are always visible
-        sizes = np.clip(sizes, base_size * 0.2, None)
+        # Vertical dots are a constant size; the vertical component is read
+        # from color, not marker area (value-scaled areas produced dots that
+        # were far too large).
+        absmax = float(np.max(np.abs(vu))) if vu.size else 0.0
+        clim = absmax if absmax > 0 else None
 
         sc = ax.scatter(
             x_km,
             y_km,
             c=vu,
-            s=sizes,
+            s=vertical_size,
             cmap="RdBu_r",
+            vmin=-clim if clim is not None else None,
+            vmax=clim if clim is not None else None,
             edgecolors="k",
             linewidths=0.5,
             zorder=2,
@@ -913,7 +1049,7 @@ def vectors(
             ax.scatter(
                 x_km,
                 y_km,
-                s=sizes,
+                s=vertical_size,
                 edgecolors=pred_color,
                 linewidths=1.0,
                 facecolors="none",
