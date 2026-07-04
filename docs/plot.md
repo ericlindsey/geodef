@@ -18,6 +18,8 @@ geodef.plot.slip(fault, result.slip_vector)
 geodef.plot.slip(fault, result.slip_vector,
     ax=ax,
     components='dip',         # 'strike', 'dip', 'magnitude' (default)
+    coords='fault',           # 'fault' (default) or 'geographic'
+    updip_edge=True,          # black line along the up-dip edge (default)
     cmap='RdBu_r',
     vmin=-2, vmax=2,
     edgecolor='gray', linewidth=0.5,   # → PatchCollection/**kwargs
@@ -26,6 +28,17 @@ geodef.plot.slip(fault, result.slip_vector,
     title='Coseismic slip',
 )
 ```
+
+By default the slip is drawn in **fault coordinates** — along-strike (x) and
+along-dip (y) kilometers, with the up-dip (shallowest) edge at the top of the
+axes — which is the natural frame for reading a slip distribution. A black line
+marks the up-dip edge (disable with `updip_edge=False`). Pass
+`coords='geographic'` to plot in local East/North kilometers instead; use this
+when overlaying the slip on a map together with `plot.vectors`, `plot.insar`, or
+station locations (the up-dip edge is then drawn as the surface trace). The
+`coords` and `updip_edge` arguments are also available on `plot.patches`,
+`plot.resolution`, and `plot.uncertainty` (defaulting to `'geographic'` and
+`False` there).
 
 For one-parameter inversion results such as `components='rake'` or
 `components='azimuth'`, `result.slip_vector` has length `N`; `plot.slip()`
@@ -98,13 +111,16 @@ geodef.plot.vectors(gnss, fault,
     scale_arrow=0.5, scale_arrow_label="50 cm",
     scale_arrow_loc='lower right',
     vertical_colorbar=True,     # colorbar for the vertical dots
+    vertical_size=40,           # constant dot area (points^2)
 )
 ```
 
 For `components='vertical'` (and the vertical part of `'both'`), the vertical
-component is shown as color-coded circles with a colorbar; set
-`vertical_colorbar=False` to suppress it. In `'both'` mode the horizontal arrows
-are drawn *above* the vertical dots so large dots cannot hide the vectors.
+component is shown as color-coded circles (symmetric `RdBu_r`) with a colorbar;
+set `vertical_colorbar=False` to suppress it. The dots are a **constant size**
+(`vertical_size`) — the vertical value is encoded by color only, not marker
+area. In `'both'` mode the horizontal arrows are drawn *above* the vertical dots
+so they cannot be hidden.
 
 ---
 

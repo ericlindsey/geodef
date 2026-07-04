@@ -105,7 +105,7 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest -q   # 883 passed, 1 skipped, 884 collected
+uv run pytest -q   # 887 passed, 1 skipped, 888 collected
 ```
 
 The tutorial notebooks and a Gorkha example smoke test run as part of the suite.
