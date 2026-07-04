@@ -154,10 +154,64 @@ autodiff rewards.
   with the explore-in-float32 / finalize-in-float64 workflow documented.
 - [ ] Batched L-curve and cross-validation sweeps on JAX (same pattern as
   the ABIC sweep).
-- [ ] Later Bayesian path: HMC/NUTS over the differentiable geometry
-  objective (ties to roadmap item 4). Triangular (vertex-parameterized)
-  geometry optimization — e.g. along-strike dip variation on a large
-  strike-slip fault — is deliberately a separate, higher-dimensional step.
+- [ ] Bayesian path: now planned concretely as Phase 4 below (supersedes the
+  earlier "later Bayesian path" note; ties to roadmap item 4).
+
+### Phase 4 — Bayesian solver (`geodef.bayes`) — PLANNED 2026-07
+
+**Goal.** Full posterior inference for fault geometry and hyperparameters on
+CPU, using the differentiable pipeline built in Phases 1–3. The design is a
+**collapsed (Rao–Blackwellized) sampler**: because slip is linear given
+geometry, the (up to hundreds of) slip parameters are marginalized
+analytically — the same Cholesky/log-determinant math the batched ABIC sweep
+already uses (ABIC is −2·log marginal likelihood up to priors, Fukuda &
+Johnson 2008) — and NUTS samples only the ~5–10 dimensional space of geometry
+plus noise/regularization scales. Per-sample cost is a few ms after one JIT
+compile, so full 4-chain runs finish in minutes on a plain CPU. Slip
+uncertainty (now including geometry uncertainty) comes afterward from the
+exact Gaussian conditional p(slip | theta, lambda, sigma, d), vmapped over
+posterior draws.
+
+Decisions:
+- **Sampler library: blackjax** (JAX-native, lightweight, functional) behind
+  a new optional extra `geodef[bayes]` (= jax + blackjax). No pyro/numpyro.
+  `emcee` stays out of the package — used only in the validation example.
+- **Sampled parameters:** free geometry components of theta (as in
+  `geometry_search`), plus `log_sigma` (noise scale) and `log_lambda`
+  (regularization scale). Priors: uniform/normal per geometry parameter,
+  wide log-uniform defaults on the scales.
+- **Rectangular engine first.** Triangular-mesh geometry sampling waits for
+  the Phase 2 tri jit/vmap work.
+
+Steps (red/green TDD, one commit per step):
+- [ ] Reverse-mode safety of the rect path: NUTS wants `jax.grad` of a scalar
+  log-density, but `okada85`'s `cos(dip)` configuration branches hit the
+  0·NaN-through-`where` reverse-mode pitfall (forward mode, used so far, is
+  immune). Apply the standard double-`where` fix at those sites; test
+  `jax.grad` of scalar reductions against `jacfwd` and finite differences.
+- [ ] `geodef.bayes` log-posterior factories, reusing the `_vp_residual` /
+  `_abic_sweep_jax` machinery: (a) `profiled_logpost` — fixed lambda,
+  profiled slip (quick win, mirrors `geometry_search`'s objective);
+  (b) `marginal_logpost(theta, log_sigma, log_lambda)` — exact Gaussian slip
+  marginalization, Cholesky-based slogdet, configurable priors. Tests:
+  analytic small Gaussian linear case; agreement with `_abic_value` at
+  matched settings; gradients vs finite differences.
+- [ ] Sampler driver: `bayes.sample(logpost, ...)` wrapping blackjax NUTS
+  with window adaptation; multi-chain via `vmap`; `PosteriorResult`
+  dataclass (samples, log-probs, R-hat/ESS — small in-house
+  implementations, no arviz dependency) plus a pair-plot in `plot.py`
+  style. Float32 pilot / float64 final workflow supported as in Phase 3.
+- [ ] Conditional slip posterior: Gaussian draws of slip per theta sample
+  (vmapped), per-patch credible intervals, posterior-predictive data fits;
+  plotting hooks alongside the existing uncertainty plots.
+- [ ] Validation + docs: cross-check the same posterior against `emcee` on a
+  small problem (this is roadmap item 4's example); tutorial/example
+  notebook on the tutorial-10 scenario comparing Gauss-Newton error bars
+  from `geometry_search` against the full posterior (dip/depth trade-offs,
+  possible multimodality); `docs/bayes.md`.
+- [ ] Later (separate steps): blackjax SMC/tempering for multimodal
+  posteriors; triangular-mesh geometry sampling once tri jit/vmap lands;
+  GPU-scale joint slip sampling with positivity priors.
 
 ### Risks and non-goals
 - Do **not** make JAX a hard dependency or complicate the base API.
@@ -198,9 +252,10 @@ for free.
 
 A worked MCMC study (`emcee`, already used in a `shakeout_v2` notebook) for
 posterior uncertainty on fault geometry — the natural sequel to tutorial 10's
-outlook. Home it in `examples/` rather than the teaching path, and let it share
-the differentiable forward model from item 1 once that lands (gradient-based
-samplers such as HMC/NUTS become attractive there).
+outlook. Home it in `examples/` rather than the teaching path. With item 1's
+Phase 4 (`geodef.bayes`) now planned, this example doubles as its validation:
+run `emcee` on the same posterior the NUTS sampler targets and confirm the
+two agree on a small problem.
 
 ---
 
