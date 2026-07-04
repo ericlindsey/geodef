@@ -5,7 +5,7 @@
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
 (locked fault / coupling) applications. As of **v1.0** the runtime library, the
-ten-part tutorial course, and the per-module documentation are complete; `ruff`
+eleven-part tutorial course, and the per-module documentation are complete; `ruff`
 and `mypy` pass cleanly and the suite runs warning-free. Forward-looking work
 (a GPU/autodiff accelerator, earthquake-cycle modeling, more Green's engines)
 is tracked in `PLAN.md`.
@@ -23,8 +23,8 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 981 tests collected across 21 files
-├── tutorials/             # Ten-part teaching course executed by pytest
+├── tests/                 # 992 tests collected across 23 files
+├── tutorials/             # Eleven-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
@@ -112,7 +112,7 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**981 tests collected** across 21 test files covering all modules. Reference
+**992 tests collected** across 23 test files covering all modules. Reference
 data in `tests/reference_data/` — Matlab-generated `.npz` files for
 cross-validation of Green's function engines, plus golden okada92 outputs
 captured from the pre-vectorization scalar port. A few `Fault.load` tests

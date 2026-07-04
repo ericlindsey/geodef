@@ -134,18 +134,30 @@ autodiff rewards.
 - Deliverable: `geodef.gradients` (or similar) giving `∂d/∂θ` and `∂d/∂m` for a
   fault + dataset.
 
-### Phase 3 — Accelerated and gradient-based inversion
-- JAX-backed linear solves for the regularized normal equations (the `wls`
-  path); batched hyperparameter sweeps (L-curve / ABIC / CV) evaluated in
-  parallel across `λ` via `vmap`. Bounded/constrained solvers remain on SciPy.
-- Gradient-based nonlinear geometry search: replace the grid-then-`minimize`
-  recipe of tutorial 10 with a differentiable objective and
-  `scipy.optimize.minimize` (L-BFGS-B) fed by JAX gradients, with the linear
-  slip solved inside (variable projection). Optional gradient-based / HMC
-  sampling as a later Bayesian path.
-- Deliverable: an accelerated `invert(...)` path selected by backend, plus a new
-  advanced example notebook demonstrating end-to-end differentiable geometry
-  inversion — and honest CPU-vs-GPU benchmarks.
+### Phase 3 — Accelerated and gradient-based inversion (IN PROGRESS)
+- [x] Batched ABIC sweep: `abic_curve` evaluates all lambdas in one batched
+  JAX computation (broadcast solves + batched slogdet), transparently when
+  the JAX backend is active. ABIC first per user priority; L-curve and CV
+  sweeps can follow the same pattern.
+- [x] `invert.geometry_search`: gradient-based nonlinear planar-fault
+  geometry inversion (variable projection, wls inner solve, L-BFGS-B on
+  exact forward-mode gradients, per-parameter bounds, Gauss-Newton
+  covariance). One module-level jitted kernel returns residual + Jacobian,
+  so multi-start calls share the compilation. Raises unless the JAX
+  backend is active.
+- [x] Tutorial 11 (`11_gradient_geometry.ipynb`): end-to-end gradient-based
+  geometry inversion on the notebook-10 scenario — single-parameter parity,
+  joint dip+depth recovery with error bars, practical notes on
+  non-convexity, lambda selection, and float32 exploration. Executed by
+  pytest, skipped without JAX; tutorials 01-10 stay on the NumPy path.
+- [x] Opt-in float32 mode validated end-to-end (kernels, assembly, sweep)
+  with the explore-in-float32 / finalize-in-float64 workflow documented.
+- [ ] Batched L-curve and cross-validation sweeps on JAX (same pattern as
+  the ABIC sweep).
+- [ ] Later Bayesian path: HMC/NUTS over the differentiable geometry
+  objective (ties to roadmap item 4). Triangular (vertex-parameterized)
+  geometry optimization — e.g. along-strike dip variation on a large
+  strike-slip fault — is deliberately a separate, higher-dimensional step.
 
 ### Risks and non-goals
 - Do **not** make JAX a hard dependency or complicate the base API.

@@ -4,7 +4,7 @@ A Python library for forward and inverse modeling of fault slip in elastic
 half-spaces. Targets coseismic (earthquake) and interseismic (coupling)
 applications.
 
-Status: **v1.0** — the runtime library, the ten-part tutorial course, and the
+Status: **v1.0** — the runtime library, the eleven-part tutorial course, and the
 per-module documentation are complete. `ruff` and `mypy` pass cleanly and the
 test suite runs warning-free.
 
@@ -62,7 +62,7 @@ fixed_azimuth = geodef.invert(fault, gnss,
 
 ## Tutorials
 
-A ten-part course in geodetic inverse methods, taught with synthetic data and
+An eleven-part course in geodetic inverse methods, taught with synthetic data and
 executed by the pytest suite so it stays aligned with the runtime API:
 
 1. Forward model `d = G m` · 2. Discretization and the `G` matrix ·
