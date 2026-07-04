@@ -18,6 +18,7 @@ import scipy.optimize
 if TYPE_CHECKING:
     import matplotlib
 
+from geodef import backend
 from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
@@ -622,6 +623,66 @@ class LinearSystem:
         model_norm = float(np.sqrt((self.L @ m) @ (self.L @ m)))
         return abic, misfit_norm, model_norm
 
+    def _abic_sweep_jax(
+        self,
+        lambdas: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the ABIC sweep as one batched JAX computation.
+
+        Computes the same quantities as ``_abic_value`` at every lambda,
+        but the linear solves, log-determinants, and norms are batched
+        across the lambda axis so XLA fuses the whole sweep. The
+        posterior log-determinant uses ``slogdet(H)`` instead of filtered
+        eigenvalues; for the positive-definite systems swept here the two
+        agree.
+
+        Args:
+            lambdas: Regularization weights to sweep, shape (n,).
+
+        Returns:
+            Arrays ``(abic_values, misfits, model_norms)``, each (n,).
+        """
+        import jax.numpy as jnp
+
+        assert self.L is not None
+        n_data = len(self.d)
+        lam = jnp.asarray(lambdas)
+        GtWG = jnp.asarray(self.GtWG)
+        LtL = jnp.asarray(self.LtL)
+        Gtwd = jnp.asarray(self.Gtwd)
+        G = jnp.asarray(self.G)
+        d = jnp.asarray(self.d)
+        W = jnp.asarray(self.W)
+        L = jnp.asarray(self.L)
+
+        H = GtWG[None, :, :] + lam[:, None, None] * LtL[None, :, :]
+        rhs = jnp.broadcast_to(Gtwd, (len(lambdas), len(Gtwd)))
+        m = jnp.linalg.solve(H, rhs[..., None]).squeeze(-1)
+
+        r = d[None, :] - m @ G.T
+        misfit_weighted = jnp.einsum("nm,mk,nk->n", r, W, r)
+        penalty = lam * jnp.einsum("np,pq,nq->n", m, LtL, m)
+        total = misfit_weighted + penalty
+        total = jnp.maximum(total, jnp.finfo(total.dtype).tiny)
+        abic1 = n_data * backend.to_numpy(jnp.log(total))
+
+        # eig_LtL is lambda-independent — compute once and cache, and
+        # split sum(log(lam*|e|)) into k*log(lam) + sum(log|e|)
+        eig_LtL: np.ndarray | None = self.__dict__.get("_eig_LtL")
+        if eig_LtL is None:
+            eig_LtL = np.linalg.eigvalsh(self.LtL)
+            self.__dict__["_eig_LtL"] = eig_LtL
+        eig_pos = np.abs(eig_LtL)[np.abs(eig_LtL) > 0]
+        abic2 = len(eig_pos) * np.log(lambdas) + np.sum(np.log(eig_pos))
+
+        _, abic3 = jnp.linalg.slogdet(H)
+
+        abic = abic1 - abic2 + backend.to_numpy(abic3)
+        misfits = np.sqrt(np.sum(backend.to_numpy(r) ** 2, axis=1))
+        Lm = backend.to_numpy(m @ L.T)
+        model_norms = np.sqrt(np.sum(Lm**2, axis=1))
+        return abic, misfits, model_norms
+
     def _optimal_abic(self) -> float:
         """Find optimal smoothing strength by minimizing ABIC.
 
@@ -901,12 +962,15 @@ class LinearSystem:
             raise ValueError("abic_curve requires a smoothing matrix")
 
         lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
-        abic_values = np.empty(n)
-        misfits = np.empty(n)
-        model_norms = np.empty(n)
 
-        for i, lam in enumerate(lambdas):
-            abic_values[i], misfits[i], model_norms[i] = self._abic_value(lam)
+        if backend.get_backend() == "jax":
+            abic_values, misfits, model_norms = self._abic_sweep_jax(lambdas)
+        else:
+            abic_values = np.empty(n)
+            misfits = np.empty(n)
+            model_norms = np.empty(n)
+            for i, lam in enumerate(lambdas):
+                abic_values[i], misfits[i], model_norms[i] = self._abic_value(lam)
 
         optimal = float(lambdas[np.argmin(abic_values)])
         return ABICCurveResult(

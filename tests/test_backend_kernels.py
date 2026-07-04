@@ -118,6 +118,51 @@ class TestTriJaxReference:
         np.testing.assert_almost_equal(strain, ref_strain)
 
 
+class TestAbicSweepJax:
+    """The batched JAX ABIC sweep reproduces the NumPy loop."""
+
+    def test_abic_curve_matches_numpy(self) -> None:
+        from geodef.data import GNSS
+        from geodef.fault import Fault
+        from geodef.invert import abic_curve
+
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=15e3, strike=320.0, dip=15.0,
+            length=80e3, width=40e3, n_length=4, n_width=3,
+        )
+        lat_1d = np.linspace(-0.5, 0.5, 5)
+        lon_1d = np.linspace(99.5, 100.5, 5)
+        lon_g, lat_g = np.meshgrid(lon_1d, lat_1d)
+        lat, lon = lat_g.ravel(), lon_g.ravel()
+
+        rng = np.random.default_rng(21)
+        slip_ss = rng.uniform(0.0, 1.0, fault.n_patches)
+        slip_ds = rng.uniform(0.0, 0.5, fault.n_patches)
+
+        backend.set_backend("numpy")
+        ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
+        n = len(lat)
+        gnss = GNSS(
+            lon, lat, ve=ue, vn=un, vu=uz,
+            se=np.full(n, 0.001), sn=np.full(n, 0.001), su=np.full(n, 0.001),
+        )
+
+        result_np = abic_curve(fault, gnss, smoothing_range=(1e0, 1e6), n=12)
+        backend.set_backend("jax")
+        result_jax = abic_curve(fault, gnss, smoothing_range=(1e0, 1e6), n=12)
+
+        np.testing.assert_allclose(
+            result_jax.abic_values, result_np.abic_values, rtol=1e-8
+        )
+        np.testing.assert_allclose(
+            result_jax.misfits, result_np.misfits, rtol=1e-8
+        )
+        np.testing.assert_allclose(
+            result_jax.model_norms, result_np.model_norms, rtol=1e-8
+        )
+        assert result_jax.optimal == result_np.optimal
+
+
 class TestBackendEquivalence:
     """NumPy and JAX backends agree on a general dipping-fault case."""
 
