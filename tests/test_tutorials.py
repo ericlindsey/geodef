@@ -25,7 +25,11 @@ TUTORIAL_NOTEBOOKS = (
     ROOT / "tutorials" / "08_bounds_and_constraints.ipynb",
     ROOT / "tutorials" / "09_uncertainty_and_resolution.ipynb",
     ROOT / "tutorials" / "10_nonlinear_geometry.ipynb",
+    ROOT / "tutorials" / "11_gradient_geometry.ipynb",
 )
+
+# Notebooks that need optional dependencies; skipped when those are absent.
+_NOTEBOOKS_REQUIRING_JAX = {"11_gradient_geometry.ipynb"}
 
 
 def _notebook_id(path: Path) -> str:
@@ -39,6 +43,9 @@ def test_tutorial_notebook_executes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Execute a tutorial notebook from its own directory."""
+    if notebook_path.name in _NOTEBOOKS_REQUIRING_JAX:
+        pytest.importorskip("jax")
+
     src_path = ROOT / "src"
     existing_pythonpath = os.environ.get("PYTHONPATH")
     pythonpath = str(src_path)

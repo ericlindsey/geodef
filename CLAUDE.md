@@ -5,7 +5,7 @@
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
 (locked fault / coupling) applications. As of **v1.0** the runtime library, the
-ten-part tutorial course, and the per-module documentation are complete; `ruff`
+eleven-part tutorial course, and the per-module documentation are complete; `ruff`
 and `mypy` pass cleanly and the suite runs warning-free. Forward-looking work
 (a GPU/autodiff accelerator, earthquake-cycle modeling, more Green's engines)
 is tracked in `PLAN.md`.
@@ -23,8 +23,8 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 888 tests collected across 18 files
-├── tutorials/             # Ten-part teaching course executed by pytest
+├── tests/                 # 992 tests collected across 23 files
+├── tutorials/             # Eleven-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
@@ -37,11 +37,13 @@ geodef/
 
 | Module | What it provides |
 |--------|-----------------|
+| `backend` | Array backend selection: NumPy (default) or JAX, precision control |
 | `okada85` | Surface displacements, tilts, strains (Okada 1985) |
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
@@ -110,8 +112,9 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**887 tests passing, 1 skipped, 888 collected** across 18 test files covering
-all modules. Reference data in `tests/reference_data/` — Matlab-generated
-`.npz` files for cross-validation of Green's function engines. A few `Fault.load`
-tests need reference data under `related/stress-shadows/` and are skipped when
-it is absent.
+**992 tests collected** across 23 test files covering all modules. Reference
+data in `tests/reference_data/` — Matlab-generated `.npz` files for
+cross-validation of Green's function engines, plus golden okada92 outputs
+captured from the pre-vectorization scalar port. A few `Fault.load` tests
+need reference data under `related/stress-shadows/` and are skipped when it
+is absent; JAX-backend tests are skipped when JAX is not installed.

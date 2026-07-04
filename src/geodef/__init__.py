@@ -3,9 +3,11 @@
 __version__ = "1.0.0"
 
 from geodef import (
+    backend,
     cache,
     euler,
     geomap,
+    gradients,
     greens,
     mesh,
     okada,
@@ -21,12 +23,14 @@ from geodef.greens import select_slip_columns, stack_obs, stack_weights
 from geodef.invert import (
     ABICCurveResult,
     DatasetDiagnostics,
+    GeometrySearchResult,
     InversionResult,
     LCurveResult,
     LinearSystem,
     abic_curve,
     compute_abic,
     dataset_diagnostics,
+    geometry_search,
     invert,
     lcurve,
     model_covariance,
@@ -36,9 +40,11 @@ from geodef.invert import (
 
 __all__ = [
     # Submodules
+    "backend",
     "cache",
     "euler",
     "geomap",
+    "gradients",
     "greens",
     "mesh",
     "okada",
@@ -64,12 +70,14 @@ __all__ = [
     # Inversion and assessment
     "ABICCurveResult",
     "DatasetDiagnostics",
+    "GeometrySearchResult",
     "InversionResult",
     "LCurveResult",
     "LinearSystem",
     "abic_curve",
     "compute_abic",
     "dataset_diagnostics",
+    "geometry_search",
     "invert",
     "lcurve",
     "model_covariance",

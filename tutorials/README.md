@@ -13,7 +13,7 @@ exactly what the library does for you without turning it into a black box.
 
 ## Available notebooks
 
-A ten-part course in geodetic inverse methods. Work through them in order; the
+An eleven-part course in geodetic inverse methods (part 11 is an advanced JAX extension). Work through them in order; the
 recurring synthetic scenario introduced in notebook 03 is reused through 09.
 
 | Notebook | What it covers |
@@ -28,6 +28,7 @@ recurring synthetic scenario introduced in notebook 03 is reused through 09.
 | `08_bounds_and_constraints.ipynb` | NNLS, bounded least squares, inequality constraints, fixed-rake bases |
 | `09_uncertainty_and_resolution.ipynb` | Posterior covariance, the resolution matrix, checkerboard tests, `M_w` with error bars |
 | `10_nonlinear_geometry.ipynb` | Searching for fault geometry: variable projection, grid search, `scipy.optimize`, an MCMC outlook |
+| `11_gradient_geometry.ipynb` | Gradient-based geometry inversion on the JAX backend: `geometry_search`, multi-parameter recovery, Gauss-Newton error bars (requires `geodef[jax]`) |
 
 ## Reference material
 

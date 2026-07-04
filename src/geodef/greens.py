@@ -10,14 +10,15 @@ regularization operators (from okada_utils). Also provides the polymorphic
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.linalg
 import scipy.sparse
 
+from geodef import backend, okada85, transforms, tri
 from geodef import cache as _cache
-from geodef import okada85, transforms, tri
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -29,6 +30,157 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 # Green's matrix assembly (geographic coordinates)
 # ======================================================================
+
+
+def _displacement_batch(
+    e: np.ndarray,
+    n: np.ndarray,
+    depth: np.ndarray,
+    strike: np.ndarray,
+    dip: np.ndarray,
+    L: np.ndarray,
+    W: np.ndarray,
+    rake: float,
+    nu: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate okada85.displacement for all patches at once.
+
+    The kernel is pure elementwise math, so it broadcasts over a leading
+    patch axis: ``e``/``n`` are (npatch, nobs) patch-relative coordinates
+    and the patch parameters are (npatch,) columns.
+
+    Returns:
+        Tuple of (ue, un, uz), each of shape (npatch, nobs).
+    """
+    return okada85.displacement(
+        e,
+        n,
+        depth[:, None],
+        strike[:, None],
+        dip[:, None],
+        L[:, None],
+        W[:, None],
+        rake,
+        1.0,
+        0.0,
+        nu,
+    )
+
+
+def _strain_surface_batch(
+    e: np.ndarray,
+    n: np.ndarray,
+    depth: np.ndarray,
+    strike: np.ndarray,
+    dip: np.ndarray,
+    L: np.ndarray,
+    W: np.ndarray,
+    rake: float,
+    nu: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate okada85.strain for all patches at once.
+
+    Same broadcasting scheme as ``_displacement_batch``: ``e``/``n`` are
+    (npatch, nobs) and patch parameters are (npatch,) columns.
+
+    Returns:
+        Tuple of (unn, une, uen, uee), each of shape (npatch, nobs).
+    """
+    return okada85.strain(
+        e,
+        n,
+        depth[:, None],
+        strike[:, None],
+        dip[:, None],
+        L[:, None],
+        W[:, None],
+        rake,
+        1.0,
+        0.0,
+        nu,
+    )
+
+
+def _strain_depth_batch(
+    e: np.ndarray,
+    n: np.ndarray,
+    z: np.ndarray,
+    depth: np.ndarray,
+    strike: np.ndarray,
+    dip: np.ndarray,
+    L: np.ndarray,
+    W: np.ndarray,
+    disl1: float,
+    disl2: float,
+    disl3: float,
+    nu: float,
+) -> np.ndarray:
+    """Evaluate okada92 strain at depth for all patches at once.
+
+    Mirrors ``okada92.okada92`` (centroid transform, DC3D, rotation to
+    geographic) without the eager singular-point checks so the whole
+    batch JIT-compiles; singular lanes come back NaN, matching
+    ``allow_singular=True``. Uses unit shear modulus, as the loop path
+    does.
+
+    Returns:
+        Geographic strain tensors of shape (npatch, nobs, 3, 3).
+    """
+    from geodef import okada92
+
+    depth_c = depth[:, None]
+    strike_c = strike[:, None]
+    dip_c = dip[:, None]
+    L_c = L[:, None]
+    W_c = W[:, None]
+
+    lam = 2 * nu / (1 - 2 * nu)  # G = 1
+    alpha = (lam + 1.0) / (lam + 2.0)
+
+    cs = backend.xp.cos(backend.xp.radians(strike_c))
+    ss = backend.xp.sin(backend.xp.radians(strike_c))
+    cd = backend.xp.cos(backend.xp.radians(dip_c))
+    sd = backend.xp.sin(backend.xp.radians(dip_c))
+
+    d_top = depth_c + sd * W_c / 2
+    ec = e + cs * cd * W_c / 2
+    nc = n - ss * cd * W_c / 2
+    x_dc3d = cs * nc + ss * ec + L_c / 2
+    y_dc3d = ss * nc - cs * ec + cd * W_c
+
+    displacement, strain, _ = okada92.DC3D(
+        alpha, x_dc3d, y_dc3d, z, d_top, dip_c,
+        0.0, L_c, 0.0, W_c, disl1, disl2, disl3,
+    )
+    _, strain_geo = okada92._rotate_to_geographic(displacement, strain, ss, cs)
+    return strain_geo
+
+
+_jitted_batch_kernels: dict = {}
+
+
+def _get_batch_kernel(name: str):
+    """Return a batched assembly kernel, JIT-compiled on the JAX backend.
+
+    Args:
+        name: One of ``'displacement'``, ``'strain_surface'``,
+            ``'strain_depth'``.
+    """
+    kernels: dict[str, tuple[Callable, tuple[int, ...]]] = {
+        "displacement": (_displacement_batch, ()),
+        "strain_surface": (_strain_surface_batch, ()),
+        # slip components select code blocks inside DC3D, so they must be
+        # static under JIT (two compilations: strike-slip and dip-slip)
+        "strain_depth": (_strain_depth_batch, (8, 9, 10)),
+    }
+    func, static_argnums = kernels[name]
+    if backend.get_backend() != "jax":
+        return func
+    if name not in _jitted_batch_kernels:
+        import jax
+
+        _jitted_batch_kernels[name] = jax.jit(func, static_argnums=static_argnums)
+    return _jitted_batch_kernels[name]
 
 
 def displacement_greens(
@@ -69,6 +221,29 @@ def displacement_greens(
     nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
 
     G = np.zeros((3 * nobs, 2 * npatch))
+
+    if backend.get_backend() == "jax":
+        # Batched path: evaluate all patches in one JIT-compiled kernel call
+        # instead of looping. The geodetic transform stays on NumPy.
+        e2 = np.empty((npatch, nobs))
+        n2 = np.empty((npatch, nobs))
+        for ipatch in range(npatch):
+            e2[ipatch], n2[ipatch], _ = transforms.geod2enu(
+                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
+            )
+        patch_args = tuple(
+            np.asarray(a, dtype=float) for a in (depth, strike, dip, L, W)
+        )
+        kernel = _get_batch_kernel("displacement")
+        str_e, str_n, str_u = kernel(e2, n2, *patch_args, 0.0, nu)
+        dip_e, dip_n, dip_u = kernel(e2, n2, *patch_args, 90.0, nu)
+        G[0::3, :npatch] = backend.to_numpy(str_e).T
+        G[1::3, :npatch] = backend.to_numpy(str_n).T
+        G[2::3, :npatch] = backend.to_numpy(str_u).T
+        G[0::3, npatch:] = backend.to_numpy(dip_e).T
+        G[1::3, npatch:] = backend.to_numpy(dip_n).T
+        G[2::3, npatch:] = backend.to_numpy(dip_u).T
+        return G
 
     for ipatch in range(npatch):
         e, n, _ = transforms.geod2enu(lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0)
@@ -157,6 +332,40 @@ def strain_greens(
 
     G = np.zeros((4 * nobs, 2 * npatch))
 
+    if backend.get_backend() == "jax":
+        # Batched path: all patches in one JIT-compiled kernel call. The
+        # geodetic transform stays on NumPy.
+        e2 = np.empty((npatch, nobs))
+        n2 = np.empty((npatch, nobs))
+        for ipatch in range(npatch):
+            e2[ipatch], n2[ipatch], _ = transforms.geod2enu(
+                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
+            )
+        patch_args = tuple(
+            np.asarray(a, dtype=float) for a in (depth, strike, dip, L, W)
+        )
+        if obs_depth is None:
+            kernel = _get_batch_kernel("strain_surface")
+            str_c = kernel(e2, n2, *patch_args, 0.0, nu)
+            dip_c = kernel(e2, n2, *patch_args, 90.0, nu)
+            for i in range(4):  # rows: NN, NE, EN, EE
+                G[i::4, :npatch] = backend.to_numpy(str_c[i]).T
+                G[i::4, npatch:] = backend.to_numpy(dip_c[i]).T
+        else:
+            z_obs = -np.asarray(obs_depth, dtype=float)
+            kernel = _get_batch_kernel("strain_depth")
+            s_ss = backend.to_numpy(
+                kernel(e2, n2, z_obs, *patch_args, 1.0, 0.0, 0.0, nu)
+            )
+            s_ds = backend.to_numpy(
+                kernel(e2, n2, z_obs, *patch_args, 0.0, 1.0, 0.0, nu)
+            )
+            # rows: NN, NE, EN, EE from the 3x3 gradient tensors
+            for i, (a, b) in enumerate([(1, 1), (1, 0), (0, 1), (0, 0)]):
+                G[i::4, :npatch] = s_ss[:, :, a, b].T
+                G[i::4, npatch:] = s_ds[:, :, a, b].T
+        return G
+
     if obs_depth is None:
         for ipatch in range(npatch):
             e, n, _ = transforms.geod2enu(
@@ -206,55 +415,38 @@ def strain_greens(
         from geodef import okada92
 
         obs_depth = np.asarray(obs_depth, dtype=float)
+        z_obs = -obs_depth  # okada92 convention: Z <= 0
         G_mu = 1.0  # unit shear modulus; actual scaling done by caller
         for ipatch in range(npatch):
             e, n, _ = transforms.geod2enu(
                 lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
             )
-            for iobs in range(nobs):
-                z_obs = -float(obs_depth[iobs])  # okada92 convention: Z <= 0
-                _, strain_ss = okada92.okada92(
-                    float(e[iobs]),
-                    float(n[iobs]),
-                    z_obs,
-                    float(depth[ipatch]),
-                    float(strike[ipatch]),
-                    float(dip[ipatch]),
-                    float(L[ipatch]),
-                    float(W[ipatch]),
-                    1.0,
-                    0.0,
-                    0.0,
-                    G_mu,
-                    nu,
-                    allow_singular=True,
-                )
-                _, strain_ds = okada92.okada92(
-                    float(e[iobs]),
-                    float(n[iobs]),
-                    z_obs,
-                    float(depth[ipatch]),
-                    float(strike[ipatch]),
-                    float(dip[ipatch]),
-                    float(L[ipatch]),
-                    float(W[ipatch]),
-                    0.0,
-                    1.0,
-                    0.0,
-                    G_mu,
-                    nu,
-                    allow_singular=True,
-                )
-                row = 4 * iobs
-                # NN, NE, EN, EE from the 3x3 gradient tensor
-                G[row, ipatch] = strain_ss[1, 1]
-                G[row + 1, ipatch] = strain_ss[1, 0]
-                G[row + 2, ipatch] = strain_ss[0, 1]
-                G[row + 3, ipatch] = strain_ss[0, 0]
-                G[row, npatch + ipatch] = strain_ds[1, 1]
-                G[row + 1, npatch + ipatch] = strain_ds[1, 0]
-                G[row + 2, npatch + ipatch] = strain_ds[0, 1]
-                G[row + 3, npatch + ipatch] = strain_ds[0, 0]
+            patch_params = (
+                float(depth[ipatch]),
+                float(strike[ipatch]),
+                float(dip[ipatch]),
+                float(L[ipatch]),
+                float(W[ipatch]),
+            )
+            _, strain_ss = okada92.okada92(
+                e, n, z_obs, *patch_params, 1.0, 0.0, 0.0, G_mu, nu,
+                allow_singular=True,
+            )
+            _, strain_ds = okada92.okada92(
+                e, n, z_obs, *patch_params, 0.0, 1.0, 0.0, G_mu, nu,
+                allow_singular=True,
+            )
+            strain_ss = backend.to_numpy(strain_ss)
+            strain_ds = backend.to_numpy(strain_ds)
+            # NN, NE, EN, EE from the 3x3 gradient tensor
+            G[0::4, ipatch] = strain_ss[:, 1, 1]
+            G[1::4, ipatch] = strain_ss[:, 1, 0]
+            G[2::4, ipatch] = strain_ss[:, 0, 1]
+            G[3::4, ipatch] = strain_ss[:, 0, 0]
+            G[0::4, npatch + ipatch] = strain_ds[:, 1, 1]
+            G[1::4, npatch + ipatch] = strain_ds[:, 1, 0]
+            G[2::4, npatch + ipatch] = strain_ds[:, 0, 1]
+            G[3::4, npatch + ipatch] = strain_ds[:, 0, 0]
 
     return G
 

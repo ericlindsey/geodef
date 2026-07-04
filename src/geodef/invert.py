@@ -18,6 +18,7 @@ import scipy.optimize
 if TYPE_CHECKING:
     import matplotlib
 
+from geodef import backend
 from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
@@ -365,6 +366,39 @@ class LCurveResult:
         return ax
 
 
+_THETA_NAMES = ("e0", "n0", "depth", "strike", "dip", "length", "width")
+
+
+@dataclasses.dataclass(frozen=True)
+class GeometrySearchResult:
+    """Result of a gradient-based nonlinear geometry search.
+
+    Attributes:
+        theta: Optimal geometry, full 7-vector
+            ``[e0, n0, depth, strike, dip, length, width]`` in the local
+            Cartesian frame anchored at (ref_lat, ref_lon).
+        free: Names of the parameters that were optimized.
+        slip: Slip solved linearly at the optimal geometry (inner solve).
+        chi2: Weighted misfit ``r^T W r`` at the optimum.
+        reduced_chi2: ``chi2 / (n_data - n_free)``.
+        theta_cov: Gauss-Newton covariance of the free parameters,
+            shape (k, k), scaled by the reduced chi-squared.
+        success: Whether the optimizer reported convergence.
+        message: Optimizer status message.
+        n_iterations: Number of optimizer iterations.
+    """
+
+    theta: np.ndarray
+    free: list[str]
+    slip: np.ndarray
+    chi2: float
+    reduced_chi2: float
+    theta_cov: np.ndarray
+    success: bool
+    message: str
+    n_iterations: int
+
+
 @dataclasses.dataclass(frozen=True)
 class ABICCurveResult:
     """Result of an ABIC curve analysis.
@@ -621,6 +655,66 @@ class LinearSystem:
         misfit_norm = float(np.sqrt(residuals @ residuals))
         model_norm = float(np.sqrt((self.L @ m) @ (self.L @ m)))
         return abic, misfit_norm, model_norm
+
+    def _abic_sweep_jax(
+        self,
+        lambdas: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the ABIC sweep as one batched JAX computation.
+
+        Computes the same quantities as ``_abic_value`` at every lambda,
+        but the linear solves, log-determinants, and norms are batched
+        across the lambda axis so XLA fuses the whole sweep. The
+        posterior log-determinant uses ``slogdet(H)`` instead of filtered
+        eigenvalues; for the positive-definite systems swept here the two
+        agree.
+
+        Args:
+            lambdas: Regularization weights to sweep, shape (n,).
+
+        Returns:
+            Arrays ``(abic_values, misfits, model_norms)``, each (n,).
+        """
+        import jax.numpy as jnp
+
+        assert self.L is not None
+        n_data = len(self.d)
+        lam = jnp.asarray(lambdas)
+        GtWG = jnp.asarray(self.GtWG)
+        LtL = jnp.asarray(self.LtL)
+        Gtwd = jnp.asarray(self.Gtwd)
+        G = jnp.asarray(self.G)
+        d = jnp.asarray(self.d)
+        W = jnp.asarray(self.W)
+        L = jnp.asarray(self.L)
+
+        H = GtWG[None, :, :] + lam[:, None, None] * LtL[None, :, :]
+        rhs = jnp.broadcast_to(Gtwd, (len(lambdas), len(Gtwd)))
+        m = jnp.linalg.solve(H, rhs[..., None]).squeeze(-1)
+
+        r = d[None, :] - m @ G.T
+        misfit_weighted = jnp.einsum("nm,mk,nk->n", r, W, r)
+        penalty = lam * jnp.einsum("np,pq,nq->n", m, LtL, m)
+        total = misfit_weighted + penalty
+        total = jnp.maximum(total, jnp.finfo(total.dtype).tiny)
+        abic1 = n_data * backend.to_numpy(jnp.log(total))
+
+        # eig_LtL is lambda-independent — compute once and cache, and
+        # split sum(log(lam*|e|)) into k*log(lam) + sum(log|e|)
+        eig_LtL: np.ndarray | None = self.__dict__.get("_eig_LtL")
+        if eig_LtL is None:
+            eig_LtL = np.linalg.eigvalsh(self.LtL)
+            self.__dict__["_eig_LtL"] = eig_LtL
+        eig_pos = np.abs(eig_LtL)[np.abs(eig_LtL) > 0]
+        abic2 = len(eig_pos) * np.log(lambdas) + np.sum(np.log(eig_pos))
+
+        _, abic3 = jnp.linalg.slogdet(H)
+
+        abic = abic1 - abic2 + backend.to_numpy(abic3)
+        misfits = np.sqrt(np.sum(backend.to_numpy(r) ** 2, axis=1))
+        Lm = backend.to_numpy(m @ L.T)
+        model_norms = np.sqrt(np.sum(Lm**2, axis=1))
+        return abic, misfits, model_norms
 
     def _optimal_abic(self) -> float:
         """Find optimal smoothing strength by minimizing ABIC.
@@ -901,12 +995,15 @@ class LinearSystem:
             raise ValueError("abic_curve requires a smoothing matrix")
 
         lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
-        abic_values = np.empty(n)
-        misfits = np.empty(n)
-        model_norms = np.empty(n)
 
-        for i, lam in enumerate(lambdas):
-            abic_values[i], misfits[i], model_norms[i] = self._abic_value(lam)
+        if backend.get_backend() == "jax":
+            abic_values, misfits, model_norms = self._abic_sweep_jax(lambdas)
+        else:
+            abic_values = np.empty(n)
+            misfits = np.empty(n)
+            model_norms = np.empty(n)
+            for i, lam in enumerate(lambdas):
+                abic_values[i], misfits[i], model_norms[i] = self._abic_value(lam)
 
         optimal = float(lambdas[np.argmin(abic_values)])
         return ABICCurveResult(
@@ -1192,6 +1289,294 @@ def abic_curve(
     """
     sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
     return sys.abic_curve(smoothing_range, n)
+
+
+def _projection_matrix(datasets: list[DataSet]) -> np.ndarray:
+    """Build the linear map from stacked [E, N, U] displacements to data.
+
+    Every displacement dataset's ``project()`` is linear, so the exact
+    operator is recovered by probing it with unit basis fields. Column
+    ``3*k + c`` corresponds to component ``c`` of station ``k`` within its
+    dataset block, matching the row layout of ``gradients.rect_greens``.
+
+    Args:
+        datasets: Datasets in the same order used to stack observations.
+
+    Returns:
+        Block-diagonal projection matrix, shape (M_total, 3*nobs_total).
+    """
+    blocks = []
+    for ds in datasets:
+        n = ds.n_stations
+        zero = np.zeros(n)
+        cols = []
+        for k in range(n):
+            for c in range(3):
+                unit = [zero, zero, zero]
+                probe = np.zeros(n)
+                probe[k] = 1.0
+                unit[c] = probe
+                cols.append(ds.project(*unit))
+        blocks.append(np.column_stack(cols))
+    return scipy.linalg.block_diag(*blocks)
+
+
+def _vp_residual(
+    x,
+    theta_base,
+    free_idx,
+    e_obs,
+    n_obs,
+    P,
+    W_half,
+    d_w,
+    LtL,
+    n_length,
+    n_width,
+    col_start,
+    col_stop,
+    nu,
+):
+    """Weighted variable-projection residual and inner slip (traceable).
+
+    Assembles G(theta) with the differentiable ``gradients.rect_greens``,
+    projects into data space, solves the regularized least-squares slip,
+    and returns the weighted residual. Pure function of its arguments so
+    the JIT compilation is shared across calls with the same shapes.
+    """
+    import jax.numpy as jnp
+
+    from geodef.gradients import rect_greens
+
+    theta = theta_base.at[free_idx].set(x)
+    G3 = rect_greens(theta, e_obs, n_obs, n_length, n_width, nu)
+    G_w = W_half @ (P @ G3)[:, col_start:col_stop]
+    H = G_w.T @ G_w + LtL
+    m = jnp.linalg.solve(H, G_w.T @ d_w)
+    return d_w - G_w @ m, m
+
+
+def _vp_residual_and_jacobian(x, *args):
+    """Residual, inner slip, and forward-mode residual Jacobian.
+
+    Everything the optimizer needs comes from this one function: the
+    objective is ``r @ r``, its exact gradient is ``2 J.T @ r``, and
+    ``J`` at the optimum is the Gauss-Newton covariance Jacobian.
+    Forward-mode only — reverse-mode differentiation through the kernel
+    compiles far more slowly for no benefit at this parameter count.
+    """
+    import jax
+
+    r_w, m = _vp_residual(x, *args)
+    jac = jax.jacfwd(lambda xx: _vp_residual(xx, *args)[0])(x)
+    return r_w, m, jac
+
+
+_VP_STATIC_ARGNUMS = (9, 10, 11, 12, 13)
+_vp_jitted: dict = {}
+
+
+def _vp_kernel():
+    """The JIT-compiled variable-projection kernel, cached at module level.
+
+    Module-level caching means repeated ``geometry_search`` calls with
+    the same problem shapes (multi-start, repeated studies) reuse the
+    compilation instead of retracing per call.
+    """
+    if "kernel" not in _vp_jitted:
+        import jax
+
+        _vp_jitted["kernel"] = jax.jit(
+            _vp_residual_and_jacobian, static_argnums=_VP_STATIC_ARGNUMS
+        )
+    return _vp_jitted["kernel"]
+
+
+def geometry_search(
+    theta0: np.ndarray,
+    datasets: DataSet | list[DataSet],
+    *,
+    ref_lat: float,
+    ref_lon: float,
+    free: list[str] | None = None,
+    bounds: dict[str, tuple[float, float]] | None = None,
+    n_length: int = 1,
+    n_width: int = 1,
+    components: str = "both",
+    smoothing: str | np.ndarray | None = None,
+    smoothing_strength: float = 0.0,
+    nu: float = 0.25,
+) -> GeometrySearchResult:
+    """Gradient-based nonlinear inversion for planar fault geometry.
+
+    Minimizes the weighted data misfit over selected geometry parameters
+    with the slip distribution solved linearly inside (variable
+    projection): at each trial geometry, ``G(theta)`` is assembled with
+    the differentiable ``gradients.rect_greens`` and the regularized
+    least-squares slip is computed, and JAX differentiates the whole
+    pipeline so the optimizer (L-BFGS-B) follows exact gradients. This
+    replaces the grid-then-``minimize_scalar`` recipe of tutorial 10 and
+    scales to several simultaneous geometry parameters.
+
+    Requires the JAX backend (``geodef.backend.set_backend('jax')``).
+
+    Args:
+        theta0: Starting geometry ``[e0, n0, depth, strike, dip, length,
+            width]``; ``e0``/``n0`` are centroid offsets in meters from
+            (ref_lat, ref_lon).
+        datasets: One or more displacement datasets (GNSS, InSAR,
+            Vertical).
+        ref_lat: Latitude anchoring the local Cartesian frame.
+        ref_lon: Longitude anchoring the local Cartesian frame.
+        free: Names of parameters to optimize (subset of ``e0, n0,
+            depth, strike, dip, length, width``). Default: all seven.
+        bounds: Optional per-parameter ``(lower, upper)`` bounds, keyed
+            by parameter name.
+        n_length: Number of patches along strike.
+        n_width: Number of patches down dip.
+        components: Slip components for the inner solve: ``'both'``,
+            ``'strike'``, or ``'dip'``.
+        smoothing: Regularization type for the inner solve (as in
+            ``invert()``), or None for no regularization.
+        smoothing_strength: Regularization weight lambda for the inner
+            solve (held fixed during the search).
+        nu: Poisson's ratio.
+
+    Returns:
+        GeometrySearchResult with the optimal geometry, inner slip,
+        misfit, and a Gauss-Newton covariance for the free parameters.
+
+    Raises:
+        RuntimeError: If the JAX backend is not active.
+        ValueError: If ``free`` contains an unknown parameter name or
+            ``components`` is not supported here.
+    """
+    if backend.get_backend() != "jax":
+        raise RuntimeError(
+            "geometry_search requires the JAX backend; "
+            "call geodef.backend.set_backend('jax') first."
+        )
+    import jax.numpy as jnp
+
+    from geodef import transforms
+
+    if isinstance(datasets, DataSet):
+        datasets = [datasets]
+    if free is None:
+        free = list(_THETA_NAMES)
+    unknown = [name for name in free if name not in _THETA_NAMES]
+    if unknown:
+        raise ValueError(
+            f"Unknown free parameter(s) {unknown}; expected names from {_THETA_NAMES}."
+        )
+    if components not in ("both", "strike", "dip"):
+        raise ValueError(
+            "geometry_search supports components 'both', 'strike', or "
+            f"'dip', got {components!r}"
+        )
+
+    theta0 = np.asarray(theta0, dtype=float)
+    free_idx = np.array([_THETA_NAMES.index(name) for name in free])
+
+    # Template system provides the stacked data, weights, and (fixed)
+    # regularization operator; its Green's matrix is not used.
+    template = Fault.planar(
+        lat=ref_lat,
+        lon=ref_lon,
+        depth=theta0[2],
+        strike=theta0[3],
+        dip=theta0[4],
+        length=theta0[5],
+        width=theta0[6],
+        n_length=n_length,
+        n_width=n_width,
+    )
+    sys = LinearSystem(template, datasets, smoothing, components)
+    n_patches = n_length * n_width
+    col_start, col_stop = {
+        "both": (0, 2 * n_patches),
+        "strike": (0, n_patches),
+        "dip": (n_patches, 2 * n_patches),
+    }[components]
+
+    e_parts, n_parts = [], []
+    for ds in datasets:
+        e_ds, n_ds, _ = transforms.geod2enu(
+            ds.lat, ds.lon, np.zeros(ds.n_stations), ref_lat, ref_lon, 0.0
+        )
+        e_parts.append(e_ds)
+        n_parts.append(n_ds)
+    e_obs = np.concatenate(e_parts)
+    n_obs = np.concatenate(n_parts)
+
+    P = jnp.asarray(_projection_matrix(datasets))
+    W_half = jnp.asarray(scipy.linalg.cholesky(sys.W, lower=False))
+    d_w = jnp.asarray(sys.d_w)
+    theta_base = jnp.asarray(theta0)
+    free_j = jnp.asarray(free_idx)
+    if smoothing_strength > 0.0:
+        if sys.L is None:
+            raise ValueError("smoothing_strength > 0 requires a smoothing operator")
+        LtL = jnp.asarray(sys.LtL) * smoothing_strength
+    else:
+        LtL = jnp.zeros((sys.G.shape[1], sys.G.shape[1]))
+
+    vp_args = (
+        theta_base,
+        free_j,
+        jnp.asarray(e_obs),
+        jnp.asarray(n_obs),
+        P,
+        W_half,
+        d_w,
+        LtL,
+    )
+    vp_static = (n_length, n_width, col_start, col_stop, float(nu))
+    kernel = _vp_kernel()
+
+    def scipy_objective(x: np.ndarray) -> tuple[float, np.ndarray]:
+        r_w, _, jac = kernel(jnp.asarray(x), *vp_args, *vp_static)
+        value = float(backend.to_numpy(r_w @ r_w))
+        grad = 2.0 * backend.to_numpy(jac.T @ r_w)
+        return value, np.asarray(grad, dtype=float)
+
+    scipy_bounds = None
+    if bounds is not None:
+        scipy_bounds = [bounds.get(name, (None, None)) for name in free]
+
+    opt = scipy.optimize.minimize(
+        scipy_objective,
+        theta0[free_idx],
+        jac=True,
+        method="L-BFGS-B",
+        bounds=scipy_bounds,
+    )
+
+    x_opt = jnp.asarray(opt.x)
+    r_w, m, jac = kernel(x_opt, *vp_args, *vp_static)
+    chi2 = float(backend.to_numpy(r_w @ r_w))
+    n_data = len(sys.d)
+    k = len(free)
+    dof = max(n_data - k, 1)
+    reduced_chi2 = chi2 / dof
+
+    jtj = backend.to_numpy(jac.T @ jac)
+    theta_cov = reduced_chi2 * np.linalg.inv(jtj)
+
+    theta_opt = theta0.copy()
+    theta_opt[free_idx] = np.asarray(opt.x, dtype=float)
+
+    return GeometrySearchResult(
+        theta=theta_opt,
+        free=list(free),
+        slip=backend.to_numpy(m),
+        chi2=chi2,
+        reduced_chi2=reduced_chi2,
+        theta_cov=theta_cov,
+        success=bool(opt.success),
+        message=str(opt.message),
+        n_iterations=int(opt.nit),
+    )
 
 
 def dataset_diagnostics(

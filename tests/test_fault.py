@@ -639,9 +639,16 @@ class TestSegToPatches:
 # ======================================================================
 
 
+requires_stress_shadows = pytest.mark.skipif(
+    not Path("related/stress-shadows").exists(),
+    reason="related/stress-shadows reference data not available",
+)
+
+
 class TestSegIO:
     """Test loading and saving .seg files."""
 
+    @requires_stress_shadows
     def test_load_3d_ramp(self):
         """Load the 3D ramp test file."""
         fname = "related/stress-shadows/3d_models/test_data_3d/ramp_3d.seg"
@@ -653,6 +660,7 @@ class TestSegIO:
         np.testing.assert_allclose(f.strike, 0.0)
         np.testing.assert_allclose(f.dip, 10.0)
 
+    @requires_stress_shadows
     def test_load_2d_ramp(self):
         """Load the 2D ramp test file."""
         fname = "related/stress-shadows/2d_models/test_data_2d/ramp_2d.seg"
@@ -662,6 +670,7 @@ class TestSegIO:
         # All patches should have the same width (qW=1)
         np.testing.assert_allclose(f._width, f._width[0])
 
+    @requires_stress_shadows
     def test_load_seg_with_ref_coords(self):
         """Loading with ref_lat/ref_lon should offset the geographic coords."""
         fname = "related/stress-shadows/3d_models/test_data_3d/ramp_3d.seg"
@@ -705,6 +714,7 @@ class TestSegIO:
 
         Path(fname).unlink()
 
+    @requires_stress_shadows
     def test_load_seg_depth_increases_downdip(self):
         """Deeper patches should have greater depth values."""
         fname = "related/stress-shadows/3d_models/test_data_3d/ramp_3d.seg"

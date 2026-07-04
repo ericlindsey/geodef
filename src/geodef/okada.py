@@ -7,7 +7,7 @@ rather than okada85/okada92 directly.
 
 import numpy as np
 
-from geodef import okada85
+from geodef import backend, okada85
 from geodef.okada92 import okada92 as _okada92
 
 
@@ -73,30 +73,26 @@ def displacement(
     strike_slip = slip * np.cos(rake_rad)
     dip_slip = slip * np.sin(rake_rad)
 
-    # Use okada92 for each observation point (it takes scalar inputs)
+    # okada92 evaluates all observation points in one vectorized call
     # G=1 gives displacement directly (consistent with okada85 convention)
-    ue = np.empty(e.shape)
-    un = np.empty(e.shape)
-    uz = np.empty(e.shape)
-
-    for i in range(e.size):
-        disp, _ = _okada92(
-            e.flat[i],
-            n.flat[i],
-            z_arr.flat[i],
-            depth,
-            strike,
-            dip,
-            length,
-            width,
-            strike_slip,
-            dip_slip,
-            opening,
-            G=1.0,
-            nu=nu,
-        )
-        ue.flat[i] = disp[0, 0]
-        un.flat[i] = disp[1, 0]
-        uz.flat[i] = disp[2, 0]
+    disp, _ = _okada92(
+        e.ravel(),
+        n.ravel(),
+        z_arr.ravel(),
+        depth,
+        strike,
+        dip,
+        length,
+        width,
+        strike_slip,
+        dip_slip,
+        opening,
+        G=1.0,
+        nu=nu,
+    )
+    disp = backend.to_numpy(disp)
+    ue = disp[:, 0].reshape(e.shape)
+    un = disp[:, 1].reshape(e.shape)
+    uz = disp[:, 2].reshape(e.shape)
 
     return ue, un, uz

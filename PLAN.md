@@ -23,53 +23,144 @@ commit discipline used to reach v1.0.
 
 ---
 
-## 1. GPU / autodiff accelerator (headline effort)
+## 1. GPU / autodiff accelerator (headline effort — IN PROGRESS)
 
 **Goal.** A drop-in accelerated backend for the two hot loops — Green's-function
-assembly and the inverse solve — using a JAX (or CuPy) array backend with
-automatic differentiation. This is the single highest-leverage extension: it
-turns the dense, embarrassingly-parallel Okada/triangular kernels and the linear
-algebra of inversion into GPU work, and it makes the *nonlinear* geometry search
-(tutorial 10) gradient-based and fast.
+assembly and the inverse solve — using a **JAX** array backend with automatic
+differentiation. This is the single highest-leverage extension: it turns the
+dense, embarrassingly-parallel Okada/triangular kernels and the linear algebra
+of inversion into XLA-compiled (and, where available, GPU) work, and it makes
+the *nonlinear* geometry search (tutorial 10) gradient-based and fast.
 
 Why it fits GeoDef: the physics kernels are pure, vectorized array math with no
 Python-loop dependence, and the inverse problem is a differentiable pipeline from
 geometry → `G` → slip → predicted data → misfit. That is exactly the shape
 autodiff rewards.
 
-### Phase 1 — Backend abstraction (CPU-only, no behavior change)
-- Introduce a tiny array-namespace shim (`geodef.backend`) that resolves to
-  NumPy by default and to JAX/CuPy when installed and selected. Route the Okada
-  and triangular kernels' elementwise math through it.
-- Keep NumPy the default everywhere; the shim must be invisible to existing users
-  and to the tutorials. Cross-validate GPU/JAX output against the existing
-  Matlab reference `.npz` files to the same tolerances the CPU engines meet.
-- Deliverable: identical results, a `geodef[gpu]` extra, and a benchmark harness
-  (single-threaded, apples-to-apples, caching disabled) comparing CPU vs GPU
-  assembly for a range of patch/observation counts.
+### Decisions (settled 2026-07)
+- **JAX, not CuPy.** Phases 2–3 require autodiff, which CuPy lacks; JAX also
+  runs on plain CPUs (XLA JIT), NVIDIA, and AMD. Expectation to document
+  honestly: on Apple-silicon laptops `jax-metal` is experimental and lacks
+  float64, so the realistic laptop win is JIT-compiled CPU + `vmap`, not GPU
+  offload — benchmarks should present it that way.
+- **Backend selection:** a global switch, `geodef.set_backend("jax")` /
+  `("numpy")`, defaulting to NumPy, plus a `GEODEF_BACKEND` environment
+  variable. No per-call `backend=` arguments.
+- **Precision:** float64 default (set `jax_enable_x64` before any JAX op);
+  a documented **opt-in** float32 mode validated with looser tolerances.
+- **Phase 3 scope:** accelerate the unconstrained (`wls`) solve and batched
+  hyperparameter sweeps first; `nnls`/`bounded_ls`/`constrained` stay on the
+  SciPy CPU path (no `jaxopt`/`optax` dependency for now).
+- **Phase 2 scope:** differentiate **both** the rectangular Okada and the
+  triangular (Nikkhoo & Walter) engines from the start, so the `tri` kernel
+  refactor is designed for tracing/gradients from day one.
 
-### Phase 2 — Differentiable forward model
-- Express `G(θ)` assembly as a JAX-traceable function of the geometry parameters
-  `θ` (position, strike, dip, length, width / vertices) and expose
-  `jax.jacobian`/`jax.grad` of the predicted data with respect to `θ` and slip.
-- Validate gradients against finite differences on small problems in tests.
+### Phase 1 — Backend abstraction (CPU-only, no behavior change)
+- [x] `geodef.backend`: `set_backend()`/`get_backend()`, `GEODEF_BACKEND` env
+  var, array-namespace resolution (NumPy default, JAX when installed and
+  selected), float64 default with opt-in float32.
+- [x] Trace-safe kernel refactor (pure NumPy, behavior-preserving): rewrite
+  `tri.trimodefinder`'s `flatnonzero` + fancy-index assignment into
+  `where`/mask form via `backend.masked_eval` (NumPy gathers/scatters as
+  before; JAX evaluates full-size and selects with `where`). Validated
+  against the Matlab reference `.npz` files at existing tolerances.
+- [x] Route the `okada85` and `tri` math through the backend namespace
+  (`backend.xp` proxy); NumPy stays the default everywhere — invisible to
+  existing users and the tutorials.
+- [x] Cross-validate JAX output against the existing Matlab reference `.npz`
+  files to the same tolerances the CPU engines meet
+  (`tests/test_backend_kernels.py`, skipped when JAX is absent).
+- [x] Batched Green's assembly for the JAX path: `displacement_greens`,
+  `strain_greens` (surface okada85 path), and `strain_greens` at depth
+  (DC3D path, used by `Fault.stress_kernel`) broadcast their kernels over
+  a leading patch axis and JIT-compile the batched call; the NumPy loop
+  paths are untouched. Measured: a 100x100 self-stress kernel assembles
+  in ~12 ms steady-state on JAX/CPU vs ~550 ms on NumPy (~46x), after a
+  one-time ~6 s DC3D compile per problem shape. Triangular assembly
+  still loops; batching it needs the `tri` geometry setup made
+  trace-safe first (Phase 2 work).
+- [x] Deliverable: a `geodef[jax]` extra and `benchmarks/bench_greens.py`
+  (caching disabled, sequential runs) comparing NumPy vs JAX assembly for a
+  range of patch/observation counts. Measured on a plain multi-core CPU:
+  10-50x steady-state speedup for rectangular displacement assembly, with
+  JIT compilation (~1.5-3 s) paid once per problem shape.
+
+- [x] Vectorized DC3D rewrite (`okada92`): the scalar Fortran-style port
+  (per-point control flow, module-level common blocks) was rewritten as
+  pure, vectorized, `where`-based array math routed through the backend
+  namespace, keeping line-by-line formula correspondence with the
+  published DC3D.f. Anchored to golden data generated from the scalar
+  port (shear), validated by finite-difference displacement gradients
+  (all components), and equivalence-tested on JAX. The rewrite also
+  restored the tensile-fault DU entries that the scalar port had
+  truncated (opening-mode strains previously omitted the z-derivative
+  and part of the y-derivative terms). `greens.strain_greens` and the
+  `okada` dispatcher now evaluate all observation points per patch in
+  one call — the 100-patch fault self-stress kernel assembles ~11x
+  faster on NumPy, and the kernel is now available to the JAX backend
+  for the stress-shadows / earthquake-cycle path.
+
+### Phase 2 — Differentiable forward model (IN PROGRESS)
+- [x] `geodef.gradients`: `rect_displacement(theta, slip, ...)` traceable in
+  the native rectangle parameters and `tri_displacement(vertices, slip, ...)`
+  traceable in the vertex coordinates, plus `*_jacobian` helpers built on
+  `jax.jacfwd` returning `(d, ∂d/∂θ, ∂d/∂m)`. All Jacobians validated
+  against central finite differences (`tests/test_gradients.py`); the `tri`
+  path needed setupTDCS's construction asserts skipped under tracing and
+  the image-triangle mirror rewritten without `np.copy`/in-place writes.
+- [x] Full `G(θ)` assembly: `gradients.rect_greens(theta, ...)` builds the
+  (3*nobs, 2*N) displacement Green's matrix for a discretized planar
+  fault via a traced mirror of `Fault.planar` (same patch ordering and
+  layout as `greens.displacement_greens`, validated against that
+  pipeline); `gradients.tri_greens(vertices, ...)` does the same for a
+  triangular mesh (differentiable eagerly; jit/vmap over the mesh axis
+  still open). `gradients.los_project` maps displacement G onto InSAR
+  look vectors, matching `InSAR.project`. G(θ) Jacobians validated
+  against finite differences.
+- [ ] Remaining Phase 2: differentiable strain/stress kernels, and
+  jit/vmap support for the triangular mesh axis (needs the remaining
+  geometry-scalar branches in `tri.py` expressed as `where`).
+- **Differentiation variables (settled 2026-07).** The `tri` engine
+  differentiates with respect to the **vertex coordinates** — its native
+  parameterization, well-defined for any mesh including non-planar ones.
+  Gradients in terms of derived parameters (trace position, dip, depth of
+  a planar mesh) come free via the chain rule through a small
+  `θ → vertices` builder traced by JAX. The rectangular engine
+  differentiates its own native parameters (position, strike, dip,
+  length, width) directly.
+- Validate gradients against finite differences on small problems in tests;
+  take care near the `tri` angular-dislocation branch boundaries where the
+  `where`-selected configuration switches.
 - Deliverable: `geodef.gradients` (or similar) giving `∂d/∂θ` and `∂d/∂m` for a
   fault + dataset.
 
-### Phase 3 — Accelerated and gradient-based inversion
-- GPU-backed linear solves for the regularized normal equations and augmented
-  systems; batched hyperparameter sweeps (L-curve / ABIC / CV) evaluated in
-  parallel across `λ`.
-- Gradient-based nonlinear geometry search: replace the grid-then-`minimize`
-  recipe of tutorial 10 with a differentiable objective and a quasi-Newton or
-  Adam optimizer over `θ`, with the linear slip solved inside (variable
-  projection). Optional gradient-based / HMC sampling as a later Bayesian path.
-- Deliverable: an accelerated `invert(...)` path selected by backend, plus a new
-  advanced example notebook demonstrating end-to-end differentiable geometry
-  inversion — and honest CPU-vs-GPU benchmarks.
+### Phase 3 — Accelerated and gradient-based inversion (IN PROGRESS)
+- [x] Batched ABIC sweep: `abic_curve` evaluates all lambdas in one batched
+  JAX computation (broadcast solves + batched slogdet), transparently when
+  the JAX backend is active. ABIC first per user priority; L-curve and CV
+  sweeps can follow the same pattern.
+- [x] `invert.geometry_search`: gradient-based nonlinear planar-fault
+  geometry inversion (variable projection, wls inner solve, L-BFGS-B on
+  exact forward-mode gradients, per-parameter bounds, Gauss-Newton
+  covariance). One module-level jitted kernel returns residual + Jacobian,
+  so multi-start calls share the compilation. Raises unless the JAX
+  backend is active.
+- [x] Tutorial 11 (`11_gradient_geometry.ipynb`): end-to-end gradient-based
+  geometry inversion on the notebook-10 scenario — single-parameter parity,
+  joint dip+depth recovery with error bars, practical notes on
+  non-convexity, lambda selection, and float32 exploration. Executed by
+  pytest, skipped without JAX; tutorials 01-10 stay on the NumPy path.
+- [x] Opt-in float32 mode validated end-to-end (kernels, assembly, sweep)
+  with the explore-in-float32 / finalize-in-float64 workflow documented.
+- [ ] Batched L-curve and cross-validation sweeps on JAX (same pattern as
+  the ABIC sweep).
+- [ ] Later Bayesian path: HMC/NUTS over the differentiable geometry
+  objective (ties to roadmap item 4). Triangular (vertex-parameterized)
+  geometry optimization — e.g. along-strike dip variation on a large
+  strike-slip fault — is deliberately a separate, higher-dimensional step.
 
 ### Risks and non-goals
-- Do **not** make JAX/CuPy a hard dependency or complicate the base API.
+- Do **not** make JAX a hard dependency or complicate the base API.
 - Watch float32/float64 accuracy on GPU; the kernels are sensitive near the
   fault. Default to float64 and document any precision trade-offs.
 - Keep the teaching notebooks on the NumPy path so they stay portable.
