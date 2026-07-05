@@ -18,8 +18,10 @@ mesh = ["meshpy"]
 maps = ["cartopy"]
 # JAX backend: XLA-compiled (and GPU-capable) kernels with autodiff.
 jax = ["jax"]
+# Bayesian sampling: NUTS via blackjax on the JAX backend.
+bayes = ["jax", "blackjax"]
 # Everything optional at once, for a full research install.
-all = ["pyproj", "meshpy", "cartopy", "jax"]
+all = ["pyproj", "meshpy", "cartopy", "jax", "blackjax"]
 
 [build-system]
 requires = ["hatchling"]
@@ -94,5 +96,6 @@ module = [
     "mpl_toolkits.*",
     "netCDF4",
     "cartopy.*",
+    "blackjax.*",
 ]
 ignore_missing_imports = true

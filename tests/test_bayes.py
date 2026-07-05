@@ -324,6 +324,270 @@ class TestLogPrior:
         )
 
 
+class TestDiagnostics:
+    def test_rhat_near_one_for_iid_chains(self):
+        rng = np.random.default_rng(0)
+        chains = rng.normal(size=(4, 1000))
+        assert abs(bayes.split_rhat(chains) - 1.0) < 0.02
+
+    def test_rhat_detects_disagreeing_chains(self):
+        rng = np.random.default_rng(1)
+        chains = rng.normal(size=(4, 1000))
+        chains[0] += 5.0
+        assert bayes.split_rhat(chains) > 1.5
+
+    def test_ess_iid_close_to_total(self):
+        rng = np.random.default_rng(2)
+        chains = rng.normal(size=(4, 1000))
+        ess = bayes.effective_sample_size(chains)
+        assert 0.5 * 4000 < ess < 1.5 * 4000
+
+    def test_ess_reduced_for_correlated_chains(self):
+        rng = np.random.default_rng(3)
+        phi = 0.9
+        n = 2000
+        chains = np.zeros((4, n))
+        for c in range(4):
+            e = rng.normal(size=n)
+            for t in range(1, n):
+                chains[c, t] = phi * chains[c, t - 1] + e[t]
+        ess = bayes.effective_sample_size(chains)
+        # true tau = (1+phi)/(1-phi) = 19 -> ess ~ 8000/19 ~ 420
+        assert ess < 0.25 * 4 * n
+
+    def test_constant_chain_guards(self):
+        chains = np.ones((2, 100))
+        assert bayes.split_rhat(chains) == 1.0
+        assert bayes.effective_sample_size(chains) == 200.0
+
+
+@pytest.fixture(scope="module")
+def gnss_single_patch():
+    """GNSS data from a single-patch fault with known dip of 40 deg."""
+    backend.set_backend("numpy")
+    fault = Fault.planar(
+        lat=_REF_LAT,
+        lon=_REF_LON,
+        depth=10e3,
+        strike=0.0,
+        dip=40.0,
+        length=20e3,
+        width=10e3,
+        n_length=1,
+        n_width=1,
+    )
+    glon, glat = np.meshgrid(
+        np.linspace(_REF_LON - 0.7, _REF_LON + 0.7, 5),
+        np.linspace(_REF_LAT - 0.7, _REF_LAT + 0.7, 5),
+    )
+    glon, glat = glon.ravel(), glat.ravel()
+    ue, un, uz = fault.displacement(glat, glon, np.array([0.0]), np.array([2.0]))
+    rng = np.random.default_rng(11)
+    sigma = 0.003
+    n = len(glat)
+    data = GNSS(
+        glon,
+        glat,
+        ve=ue + rng.normal(0, sigma, n),
+        vn=un + rng.normal(0, sigma, n),
+        vu=uz + rng.normal(0, sigma, n),
+        se=np.full(n, sigma),
+        sn=np.full(n, sigma),
+        su=np.full(n, sigma),
+    )
+    backend.set_backend("jax")
+    return data
+
+
+@pytest.fixture(scope="module")
+def single_patch_result(gnss_single_patch):
+    """One NUTS run on the single-patch problem, shared across tests."""
+    pytest.importorskip("blackjax")
+    backend.set_backend("jax")
+    post = bayes.RectPosterior(
+        theta0=np.array([0.0, 0.0, 10e3, 0.0, 30.0, 20e3, 10e3]),
+        datasets=gnss_single_patch,
+        ref_lat=_REF_LAT,
+        ref_lon=_REF_LON,
+        free=["dip"],
+        theta_prior={"dip": (15.0, 70.0)},
+        mode="weak",
+        smoothing=None,
+        slip_scale=5.0,
+    )
+    result = bayes.sample(post, n_samples=400, n_warmup=400, n_chains=2, seed=0)
+    return post, result
+
+
+class TestSample:
+    def test_recovers_single_patch_dip(self, single_patch_result):
+        _, result = single_patch_result
+        assert result.samples.shape == (2, 400, 2)
+        assert result.param_names == ["dip", "log10_sigma"]
+        dip_mean = result.flat[:, 0].mean()
+        assert abs(dip_mean - 40.0) < 3.0
+        # noise scale factor should be near 1 (data sigma matches)
+        assert abs(result.flat[:, 1].mean()) < 0.3
+        assert np.all(result.rhat < 1.1)
+        assert np.all(result.ess > 40)
+        assert result.n_divergent < 0.1 * 2 * 400
+        assert 0.5 < result.acceptance_rate <= 1.0
+        assert np.all(np.isfinite(result.log_prob))
+
+    def test_hierarchical_smoke(self, gnss_data):
+        pytest.importorskip("blackjax")
+        post = _posterior(gnss_data, free=["dip"], theta_prior={"dip": (5.0, 45.0)})
+        result = bayes.sample(
+            post, n_samples=150, n_warmup=200, n_chains=2, seed=1
+        )
+        assert result.samples.shape == (2, 150, 3)
+        assert result.param_names == ["dip", "log10_sigma", "log10_lambda"]
+        assert np.all(np.isfinite(result.samples))
+        assert result.rhat.shape == (3,)
+        assert result.ess.shape == (3,)
+
+    def test_summary_and_plot(self, single_patch_result):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        _, result = single_patch_result
+        stats = result.summary()
+        for key in ("mean", "sd", "q05", "q50", "q95", "rhat", "ess"):
+            assert key in stats
+            assert stats[key].shape == (2,)
+        fig, axes = result.plot_pairs(truths=[40.0, 0.0])
+        assert axes.shape == (2, 2)
+        plt.close(fig)
+
+    def test_emcee_agrees_with_nuts(self, single_patch_result):
+        """Gradient-free ensemble MCMC on the same logpdf must find the
+        same posterior — an independent check of the NUTS machinery."""
+        emcee = pytest.importorskip("emcee")
+
+        post, result = single_patch_result
+        logpdf = jax.jit(post.logpdf)
+
+        nuts_mean = result.flat.mean(axis=0)
+        nuts_sd = result.flat.std(axis=0, ddof=1)
+
+        ndim = post.n_params
+        nwalkers = 16
+        rng = np.random.default_rng(3)
+        p0 = nuts_mean + 3.0 * nuts_sd * rng.standard_normal((nwalkers, ndim))
+        sampler = emcee.EnsembleSampler(
+            nwalkers, ndim, lambda x: float(logpdf(x))
+        )
+        sampler.run_mcmc(p0, 800, progress=False)
+        chain = sampler.get_chain(discard=300, flat=True)
+
+        for i in range(ndim):
+            assert abs(chain[:, i].mean() - nuts_mean[i]) < 0.3 * nuts_sd[i]
+            ratio = chain[:, i].std(ddof=1) / nuts_sd[i]
+            assert 0.75 < ratio < 1.35
+
+    def test_requires_blackjax_message(self, gnss_single_patch, monkeypatch):
+        """Without blackjax the error must point at the bayes extra."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "blackjax":
+                raise ImportError("No module named 'blackjax'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        post = bayes.RectPosterior(
+            theta0=np.array([0.0, 0.0, 10e3, 0.0, 30.0, 20e3, 10e3]),
+            datasets=gnss_single_patch,
+            ref_lat=_REF_LAT,
+            ref_lon=_REF_LON,
+            free=["dip"],
+            theta_prior={"dip": (15.0, 70.0)},
+            mode="weak",
+            smoothing=None,
+            slip_scale=5.0,
+        )
+        with pytest.raises(ImportError, match="geodef\\[bayes\\]"):
+            bayes.sample(post, n_samples=10, n_warmup=10, n_chains=1)
+
+
+class TestConditionalSlip:
+    def test_slip_mode_matches_manual_ridge_solve(self, gnss_data):
+        post = _posterior(gnss_data)
+        x = np.array([17.0, 27e3, 0.1, 0.5])
+        m_hat = post.slip_mode(x)
+        assert m_hat.shape == (_NL * _NW,)
+
+        theta = _THETA_TRUE.copy()
+        theta[4], theta[2] = 17.0, 27e3
+        G3 = backend.to_numpy(
+            gradients.rect_greens(theta, post._e_obs, post._n_obs, _NL, _NW)
+        )
+        G_w = (post._W_half_P @ G3)[:, post._col_start : post._col_stop]
+        lam = 10.0**0.5
+        H = G_w.T @ G_w + lam * post._LtL
+        ref = np.linalg.solve(H, G_w.T @ post._d_w)
+        np.testing.assert_allclose(m_hat, ref, rtol=1e-9)
+
+    def test_slip_draws_match_conditional_gaussian(self, gnss_data):
+        """Repeated draws at one fixed x must reproduce the analytic
+        conditional mean and covariance sigma^2 H^-1."""
+        post = _posterior(gnss_data)
+        x = np.array([15.0, 25e3, 0.0, 1.0])
+        n = 4000
+        draws = post.slip_draws(np.tile(x, (n, 1)), seed=5)
+        assert draws.shape == (n, _NL * _NW)
+
+        m_hat = post.slip_mode(x)
+        theta = _THETA_TRUE.copy()
+        G3 = backend.to_numpy(
+            gradients.rect_greens(theta, post._e_obs, post._n_obs, _NL, _NW)
+        )
+        G_w = (post._W_half_P @ G3)[:, post._col_start : post._col_stop]
+        lam = 10.0**1.0
+        H = G_w.T @ G_w + lam * post._LtL
+        cov = np.linalg.inv(H)  # sigma = 1 at log10_sigma = 0
+        sd = np.sqrt(np.diag(cov))
+
+        err_mean = np.abs(draws.mean(axis=0) - m_hat)
+        assert np.all(err_mean < 4.0 * sd / np.sqrt(n))
+        np.testing.assert_allclose(draws.std(axis=0, ddof=1), sd, rtol=0.1)
+
+    def test_predict_shape_and_mean(self, gnss_data):
+        post = _posterior(gnss_data)
+        x = np.array([15.0, 25e3, 0.0, 1.0])
+        n = 2000
+        pred = post.predict(np.tile(x, (n, 1)), seed=6)
+        assert pred.shape == (n, post.n_data)
+
+        # average prediction converges to the conditional-mode prediction
+        m_hat = post.slip_mode(x)
+        G3 = backend.to_numpy(
+            gradients.rect_greens(
+                _THETA_TRUE, post._e_obs, post._n_obs, _NL, _NW
+            )
+        )
+        P = _projection_matrix([gnss_data])
+        G_d = (P @ G3)[:, post._col_start : post._col_stop]
+        d_mode = G_d @ m_hat
+        resid = pred.mean(axis=0) - d_mode
+        assert np.max(np.abs(resid)) < 5e-3
+
+    def test_slip_draws_vary_with_geometry(self, gnss_data):
+        """Different geometry samples must produce different conditional
+        distributions (the whole point of propagating theta)."""
+        post = _posterior(gnss_data)
+        xs = np.array(
+            [[12.0, 20e3, 0.0, 1.0], [18.0, 30e3, 0.0, 1.0]]
+        )
+        draws = post.slip_draws(xs, seed=7)
+        assert draws.shape == (2, _NL * _NW)
+        assert not np.allclose(draws[0], draws[1])
+
+
 class TestGradients:
     def test_grad_matches_finite_differences(self, gnss_data):
         post = _posterior(gnss_data)
