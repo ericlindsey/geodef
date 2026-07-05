@@ -4,6 +4,7 @@ __version__ = "1.0.0"
 
 from geodef import (
     backend,
+    bayes,
     cache,
     euler,
     geomap,
@@ -41,6 +42,7 @@ from geodef.invert import (
 __all__ = [
     # Submodules
     "backend",
+    "bayes",
     "cache",
     "euler",
     "geomap",

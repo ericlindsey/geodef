@@ -47,6 +47,7 @@ geodef/
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
+| `bayes` | Collapsed Bayesian geometry inference: marginal log-posteriors, NUTS sampling (blackjax), slip credible intervals (JAX) |
 | `plot` | Visualization: slip, interpolated slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty |
 | `geomap` | Optional Cartopy geographic map plotting (basemap, fault/vector overlays) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |

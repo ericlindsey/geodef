@@ -8,6 +8,7 @@ synthetic teaching notebooks live in `tutorials/` and are executed by pytest.
 | `gorkha_earthquake/model_gorkha.ipynb` | Real-data Gorkha earthquake inversion with GNSS, InSAR, smoothing, and fixed-azimuth slip |
 | `gorkha_earthquake/setup_data.ipynb` | One-time conversion of the bundled Gorkha source data into GeoDef input files |
 | `mesh_generation.ipynb` | Building triangular fault meshes from traces, polygons, points, and slab2.0 grids |
+| `bayesian_geometry.ipynb` | Collapsed Bayesian geometry inference: NUTS posterior vs Gauss-Newton, slip credible intervals, weak-prior mode, and an emcee cross-check |
 
 ## Testing
 
