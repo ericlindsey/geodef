@@ -346,6 +346,152 @@ class TestTriGreens:
         np.testing.assert_allclose(backend.to_numpy(jac), fd, rtol=2e-5, atol=1e-12)
 
 
+class TestReverseMode:
+    """Reverse-mode (jax.grad) safety of the rectangular path.
+
+    The Bayesian solver differentiates a scalar log-density with
+    ``jax.grad``, so the okada85 kernels must be reverse-mode safe. The
+    hazard is Okada's ``arctan(xi*eta/(q*R))`` term: observation points
+    that lie exactly on the fault-plane ray (``q == 0``, easily hit by
+    symmetric synthetic grids over a dipping fault) make its autodiff
+    produce ``0 * inf = nan`` in both modes even though the value is
+    finite.
+    """
+
+    # 41-point profile across a 45-degree dipping fault; one point lands
+    # exactly on the fault-plane ray (q == 0) for this geometry.
+    _THETA_DIP = np.array([0.0, 0.0, 8e3, 0.0, 45.0, 15e3, 8e3])
+    _E_LINE = np.linspace(-20e3, 20e3, 41)
+    _N_LINE = np.zeros(41)
+
+    @staticmethod
+    def _loss(theta, slip, e_obs, n_obs):
+        import jax.numpy as jnp
+
+        d = gradients.rect_displacement(theta, slip, e_obs, n_obs)
+        return jnp.sum(d**2)
+
+    def _q_values(self, theta):
+        """Okada q coordinate of each observation for this geometry."""
+        from geodef import okada85
+
+        args = okada85.setup_args(
+            self._E_LINE,
+            self._N_LINE,
+            theta[2],
+            theta[3],
+            theta[4],
+            theta[5],
+            theta[6],
+            0.0,
+            1.0,
+            0.0,
+        )
+        return backend.to_numpy(args[4])
+
+    def test_profile_hits_fault_plane_ray(self):
+        """The test grid must actually contain a q == 0 lane."""
+        q = self._q_values(self._THETA_DIP)
+        assert np.any(q == 0.0)
+
+    @pytest.mark.parametrize(
+        "slip", [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]
+    )
+    def test_grad_finite_on_fault_plane_ray(self, slip):
+        g = jax.grad(self._loss)(
+            self._THETA_DIP, np.asarray(slip), self._E_LINE, self._N_LINE
+        )
+        assert np.all(np.isfinite(backend.to_numpy(g)))
+
+    def test_grad_matches_fd_on_fault_plane_ray(self):
+        """The q == 0 lane is a removable artefact: the displacement is
+        smooth there, so the gradient must match finite differences."""
+        slip = np.array([1.0, 0.7, 0.0])
+        g = backend.to_numpy(
+            jax.grad(self._loss)(self._THETA_DIP, slip, self._E_LINE, self._N_LINE)
+        )
+        fd = _fd_jacobian(
+            lambda th: np.asarray(
+                self._loss(th, slip, self._E_LINE, self._N_LINE)
+            ),
+            self._THETA_DIP,
+            rel_step=1e-7,
+            scale=1e3,
+        )
+        np.testing.assert_allclose(g, fd, rtol=1e-4, atol=1e-12)
+
+    def test_primal_continuous_across_fault_plane_ray(self):
+        """Values on the q == 0 lane agree with immediately adjacent
+        points (the fix must not change the physics)."""
+        slip = np.array([1.0, 0.7, 0.0])
+        q = self._q_values(self._THETA_DIP)
+        idx = int(np.argmin(np.abs(q)))
+        for de in (-1e-3, 1e-3):
+            d0 = backend.to_numpy(
+                gradients.rect_displacement(
+                    self._THETA_DIP,
+                    slip,
+                    self._E_LINE[idx : idx + 1],
+                    self._N_LINE[idx : idx + 1],
+                )
+            )
+            d1 = backend.to_numpy(
+                gradients.rect_displacement(
+                    self._THETA_DIP,
+                    slip,
+                    self._E_LINE[idx : idx + 1] + de,
+                    self._N_LINE[idx : idx + 1],
+                )
+            )
+            np.testing.assert_allclose(d0, d1, rtol=1e-4, atol=1e-10)
+
+    def test_primal_unchanged_numpy_backend(self):
+        """NumPy-backend values on the q == 0 profile match the JAX path
+        and stay warning-free."""
+        slip = np.array([1.0, 0.7, 0.0])
+        d_jax = backend.to_numpy(
+            gradients.rect_displacement(
+                self._THETA_DIP, slip, self._E_LINE, self._N_LINE
+            )
+        )
+        backend.set_backend("numpy")
+        d_np = backend.to_numpy(
+            gradients.rect_displacement(
+                self._THETA_DIP, slip, self._E_LINE, self._N_LINE
+            )
+        )
+        np.testing.assert_allclose(d_np, d_jax, rtol=1e-12, atol=1e-16)
+
+    @pytest.mark.parametrize("dip", [30.0, 60.0, 89.0])
+    def test_grad_matches_jacfwd_regular_geometry(self, dip):
+        theta = np.array([500.0, -800.0, 12e3, 37.0, dip, 15e3, 8e3])
+        g_rev = backend.to_numpy(jax.grad(self._loss)(theta, _SLIP, _E_OBS, _N_OBS))
+        g_fwd = backend.to_numpy(jax.jacfwd(self._loss)(theta, _SLIP, _E_OBS, _N_OBS))
+        assert np.all(np.isfinite(g_rev))
+        np.testing.assert_allclose(g_rev, g_fwd, rtol=1e-7, atol=1e-14)
+
+    def test_grad_finite_through_rect_greens(self):
+        import jax.numpy as jnp
+
+        def loss(theta):
+            G = gradients.rect_greens(
+                theta, self._E_LINE, self._N_LINE, n_length=3, n_width=2
+            )
+            return jnp.sum(G**2)
+
+        g = backend.to_numpy(jax.grad(loss)(self._THETA_DIP))
+        assert np.all(np.isfinite(g))
+
+    def test_grad_finite_vertical_fault_on_trace(self):
+        """Vertical fault with observations exactly on the trace."""
+        theta = np.array([0.0, 0.0, 8e3, 0.0, 90.0, 15e3, 8e3])
+        e_obs = np.array([0.0, 0.0, 0.0])
+        n_obs = np.array([2e3, 3e3, 30e3])
+        slip = np.array([1.0, 0.0, 0.0])
+        g = backend.to_numpy(jax.grad(self._loss)(theta, slip, e_obs, n_obs))
+        assert np.all(np.isfinite(g))
+
+
 class TestLosProject:
     def test_matches_manual_dot_product(self):
         backend.set_backend("numpy")

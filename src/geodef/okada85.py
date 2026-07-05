@@ -116,6 +116,25 @@ def setup_args(e,n,depth,strike,dip,L,W,rake,slip,open):
 
 
 # =================================================================
+def arctan_term(xi,eta,q,R):
+    # Okada's arctan(xi*eta/(q*R)) term [equations (25)-(27) p. 1144],
+    # rewritten so automatic differentiation stays finite when q == 0
+    # (observation on the fault-plane ray, where the naive form divides
+    # by zero and its derivative evaluates 0*inf = nan). Whichever of
+    # num/den is larger goes in the denominator, via the identity
+    # arctan(u) = sign(u)*pi/2 - arctan(1/u); at q == 0 exactly this
+    # yields Okada's prescribed value of 0 for the term.
+    num = xi*eta
+    den = q*R
+    big = xp.abs(num) > xp.abs(den)
+    den_direct = xp.where(big | (den == 0), 1.0, den)
+    num_inverse = xp.where(big, num, 1.0)
+    direct = xp.arctan(num/den_direct)
+    inverse = xp.sign(num)*xp.sign(den)*xp.pi/2 - xp.arctan(den/num_inverse)
+    return xp.where(big, inverse, direct)
+
+
+# =================================================================
 def displacement(e,n,depth,strike,dip,L,W,rake,slip,open,nu=0.25):
 
     #convert coordinate systems, radians, ensure array_like, etc.
@@ -211,7 +230,7 @@ def chinnery(f,x,p,L,W,q,dip,nu):
 # -----------------------------------------------------------------
 def ux_ss(xi,eta,q,dip,nu):
     R = xp.sqrt(xp.square(xi) + xp.square(eta) + xp.square(q))
-    u = xi*q/(R*(R + eta)) + xp.arctan(xi*eta/(q*R)) + I1(xi,eta,q,dip,nu,R)*xp.sin(dip)
+    u = xi*q/(R*(R + eta)) + arctan_term(xi,eta,q,R) + I1(xi,eta,q,dip,nu,R)*xp.sin(dip)
     return u
 
 # -----------------------------------------------------------------
@@ -237,14 +256,14 @@ def ux_ds(xi,eta,q,dip,nu):
 # -----------------------------------------------------------------
 def uy_ds(xi,eta,q,dip,nu):
     R = xp.sqrt(xp.square(xi) + xp.square(eta) + xp.square(q))
-    u = (eta*xp.cos(dip) + q*xp.sin(dip))*q/(R*(R + xi)) + xp.cos(dip)*xp.arctan(xi*eta/(q*R)) - I1(xi,eta,q,dip,nu,R)*xp.sin(dip)*xp.cos(dip)
+    u = (eta*xp.cos(dip) + q*xp.sin(dip))*q/(R*(R + xi)) + xp.cos(dip)*arctan_term(xi,eta,q,R) - I1(xi,eta,q,dip,nu,R)*xp.sin(dip)*xp.cos(dip)
     return u
 
 # -----------------------------------------------------------------
 def uz_ds(xi,eta,q,dip,nu):
     R = xp.sqrt(xp.square(xi) + xp.square(eta) + xp.square(q))
     db = eta*xp.sin(dip) - q*xp.cos(dip)
-    u = db*q/(R*(R + xi)) + xp.sin(dip)*xp.arctan(xi*eta/(q*R)) - I5(xi,eta,q,dip,nu,R,db)*xp.sin(dip)*xp.cos(dip)
+    u = db*q/(R*(R + xi)) + xp.sin(dip)*arctan_term(xi,eta,q,R) - I5(xi,eta,q,dip,nu,R,db)*xp.sin(dip)*xp.cos(dip)
     return u
 
 # tensile fault displacement subfunctions [equation (27) p. 1144]
@@ -257,14 +276,14 @@ def ux_tf(xi,eta,q,dip,nu):
 # -----------------------------------------------------------------
 def uy_tf(xi,eta,q,dip,nu):
     R = xp.sqrt(xp.square(xi) + xp.square(eta) + xp.square(q))
-    u = -(eta*xp.sin(dip) - q*xp.cos(dip))*q/(R*(R + xi)) - xp.sin(dip)*(xi*q/(R*(R + eta)) - xp.arctan(xi*eta/(q*R))) - I1(xi,eta,q,dip,nu,R)*xp.square(xp.sin(dip))
+    u = -(eta*xp.sin(dip) - q*xp.cos(dip))*q/(R*(R + xi)) - xp.sin(dip)*(xi*q/(R*(R + eta)) - arctan_term(xi,eta,q,R)) - I1(xi,eta,q,dip,nu,R)*xp.square(xp.sin(dip))
     return u
 
 # -----------------------------------------------------------------
 def uz_tf(xi,eta,q,dip,nu):
     R = xp.sqrt(xp.square(xi) + xp.square(eta) + xp.square(q))
     db = eta*xp.sin(dip) - q*xp.cos(dip)
-    u = (eta*xp.cos(dip) + q*xp.sin(dip))*q/(R*(R + xi)) + xp.cos(dip)*(xi*q/(R*(R + eta)) - xp.arctan(xi*eta/(q*R))) - I5(xi,eta,q,dip,nu,R,db)*xp.square(xp.sin(dip))
+    u = (eta*xp.cos(dip) + q*xp.sin(dip))*q/(R*(R + xi)) + xp.cos(dip)*(xi*q/(R*(R + eta)) - arctan_term(xi,eta,q,R)) - I5(xi,eta,q,dip,nu,R,db)*xp.square(xp.sin(dip))
     return u
 
 
