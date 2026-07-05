@@ -184,34 +184,57 @@ Decisions:
   the Phase 2 tri jit/vmap work.
 
 Steps (red/green TDD, one commit per step):
-- [ ] Reverse-mode safety of the rect path: NUTS wants `jax.grad` of a scalar
-  log-density, but `okada85`'s `cos(dip)` configuration branches hit the
-  0·NaN-through-`where` reverse-mode pitfall (forward mode, used so far, is
-  immune). Apply the standard double-`where` fix at those sites; test
-  `jax.grad` of scalar reductions against `jacfwd` and finite differences.
-- [ ] `geodef.bayes` log-posterior factories, reusing the `_vp_residual` /
-  `_abic_sweep_jax` machinery: (a) `profiled_logpost` — fixed lambda,
-  profiled slip (quick win, mirrors `geometry_search`'s objective);
-  (b) `marginal_logpost(theta, log_sigma, log_lambda)` — exact Gaussian slip
-  marginalization, Cholesky-based slogdet, configurable priors. Tests:
-  analytic small Gaussian linear case; agreement with `_abic_value` at
-  matched settings; gradients vs finite differences.
-- [ ] Sampler driver: `bayes.sample(logpost, ...)` wrapping blackjax NUTS
-  with window adaptation; multi-chain via `vmap`; `PosteriorResult`
-  dataclass (samples, log-probs, R-hat/ESS — small in-house
-  implementations, no arviz dependency) plus a pair-plot in `plot.py`
-  style. Float32 pilot / float64 final workflow supported as in Phase 3.
-- [ ] Conditional slip posterior: Gaussian draws of slip per theta sample
-  (vmapped), per-patch credible intervals, posterior-predictive data fits;
-  plotting hooks alongside the existing uncertainty plots.
-- [ ] Validation + docs: cross-check the same posterior against `emcee` on a
-  small problem (this is roadmap item 4's example); tutorial/example
-  notebook on the tutorial-10 scenario comparing Gauss-Newton error bars
-  from `geometry_search` against the full posterior (dip/depth trade-offs,
-  possible multimodality); `docs/bayes.md`.
-- [ ] Later (separate steps): blackjax SMC/tempering for multimodal
-  posteriors; triangular-mesh geometry sampling once tri jit/vmap lands;
-  GPU-scale joint slip sampling with positivity priors.
+- [x] Reverse-mode safety of the rect path. Investigation overturned the
+  expected failure mode: the `cos(dip)` `where` branches were already
+  reverse-mode safe, and the real hazard was Okada's
+  `arctan(xi*eta/(q*R))` term, whose autodiff produced `0*inf = nan` in
+  **both** modes when an observation lies exactly on the fault-plane ray
+  (`q == 0`, routinely hit by symmetric synthetic grids). Fixed via the
+  reciprocal identity `arctan(u) = sign(u)*pi/2 - arctan(1/u)` with
+  well-conditioned branch selection; primal values preserved (Matlab
+  reference tests) and `jax.grad` validated against `jacfwd` and finite
+  differences. Remaining documented caveat: dip gradients lose accuracy
+  within ~0.01 deg of exactly vertical (cancellation inherent in the
+  published `1/cos(dip)` formulas, both AD modes equally).
+- [x] `geodef.bayes.RectPosterior`: collapsed log-posterior over free
+  geometry + `log10_sigma` (+ `log10_lambda`), slip marginalized via
+  Cholesky. Three prior modes: `hierarchical` (sampled lambda),
+  `weak` (identity prior, fixed slip scale — the collapsed analog of
+  "unsmoothed" MCMC), and `profiled` (fixed lambda, no Occam terms).
+  Uniform-prior parameters are bound-clipped before the kernels so
+  gradients stay finite at rejected points. Validated exactly against a
+  dense multivariate-normal reference (matrix determinant lemma),
+  against `_abic_value` on an injected identical linear system, and
+  against finite-difference gradients.
+- [x] Sampler driver: `bayes.sample(post, ...)` wrapping blackjax NUTS with
+  window adaptation behind a new `geodef[bayes]` extra; all chains drawn
+  in one jitted `vmap` computation; `PosteriorResult` dataclass with
+  split R-hat and Geyer/Stan effective sample size (in-house, no arviz),
+  `summary()`, and a corner-style `plot_pairs()`. Chains start from the
+  warmup end position overdispersed by the adapted posterior scale
+  (restarting at `x0` forced every chain to re-walk the approach to the
+  mode at the small adapted step size); explicit `inits` supported for
+  multimodality probes.
+- [x] Conditional slip posterior: `slip_mode(x)`, `slip_draws(samples)`
+  (one exact Gaussian conditional draw per posterior sample — the
+  Rao-Blackwell completion, so per-patch statistics include geometry and
+  hyperparameter uncertainty), and `predict(samples)` for data-space
+  posterior predictive fields. Draw moments validated against the
+  analytic conditional Gaussian.
+- [x] Validation + docs: `emcee` cross-check on the same jitted logpdf in
+  the test suite (`tests/test_bayes.py`) and in the worked example
+  `examples/bayesian_geometry.ipynb` (roadmap item 4's example), which
+  also compares Gauss-Newton error bars from `geometry_search` against
+  the full posterior and the weak-prior mode; `docs/bayes.md` added and
+  module tables updated. Implementation note discovered en route: XLA
+  compilation of the reverse-mode gradient through the nested okada85
+  subfunctions took minutes, so `logpdf` carries a forward-mode
+  `custom_jvp` rule (`jax.jacfwd`; linear in tangents, so `jax.grad`
+  transposes through it exactly) — right-sized for the few sampled
+  parameters and compiling in seconds.
+- [ ] Later (separate steps, next phase): blackjax SMC/tempering for
+  multimodal posteriors; triangular-mesh geometry sampling once tri
+  jit/vmap lands; GPU-scale joint slip sampling with positivity priors.
 
 ### Risks and non-goals
 - Do **not** make JAX a hard dependency or complicate the base API.

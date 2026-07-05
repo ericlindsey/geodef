@@ -65,9 +65,15 @@ d, d_dvertices, d_dslip = geodef.gradients.tri_displacement_jacobian(
 Jacobians use **forward-mode** autodiff (`jax.jacfwd`), which suits the
 many-observations / few-parameters shape of geometry inversion and avoids
 the reverse-mode NaN-through-`where` pitfall in the triangular kernel's
-artefact-free configuration selection. If you build a scalar misfit and
-want `jax.grad` (reverse mode) over the triangular model, validate the
-gradients against finite differences first.
+artefact-free configuration selection. The **rectangular** path is
+reverse-mode safe: `jax.grad` of scalar misfits built on
+`rect_displacement`/`rect_greens` is validated against `jacfwd` and
+finite differences (this is what `geodef.bayes` differentiates), with
+one caveat — dip gradients lose accuracy within ~0.01 degrees of exactly
+vertical, from cancellation inherent in the published `1/cos(dip)`
+formulas (both AD modes equally). If you build a scalar misfit and want
+`jax.grad` over the **triangular** model, validate the gradients against
+finite differences first.
 
 All Jacobians are validated against central finite differences in
 `tests/test_gradients.py`.
