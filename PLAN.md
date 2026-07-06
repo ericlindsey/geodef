@@ -255,19 +255,30 @@ still be marginalized exactly (half-collapse). Precedent for joint
 slip + hyperparameter sampling under positivity: Fukuda & Johnson (2008);
 we add gradients.
 
-- [ ] **6a. `bayes.SlipPosterior` — joint slip sampling with positivity,
-  fixed geometry.** Sampled state = slip (2N) + `log10_sigma`;
+- [x] **6a. `bayes.SlipPosterior` — joint slip sampling with positivity,
+  fixed geometry.** Sampled state = slip (as whitened `z`, one per
+  component) + `log10_sigma` (+ `log10_lambda` in hierarchical mode);
   per-component positivity masks (e.g. dip-slip only) applied by softplus
-  reparameterization; whitened parameterization `z ~ N(0, I)` pushed
-  through the Cholesky factor of the unconstrained Gaussian conditional at
-  the fixed geometry, softplus applied after the affine map. Shares
-  RectPosterior's data-weighting and prior plumbing. `profiled` lambda
-  only at first: hierarchical lambda under positivity is biased unless the
-  truncated-prior normalizer Z(lambda) (an orthant probability) is
-  included — deferred, documented decision. Validation: the unconstrained
-  limit must reproduce the exact collapsed conditional moments
-  (`slip_draws`); positivity MAP vs `invert`'s nnls solve; small-problem
-  emcee cross-check on the same logpdf.
+  after a whitened affine map — `z` pushed through the Cholesky factor of a
+  fixed reference system `H0 = Gᵀ_w G_w + lambda_ref LᵀL`, centered at the
+  reference ridge solution `mu0`, with the map's log-Jacobian carried in
+  the density so the posterior is the exact truncated-Gaussian-prior
+  posterior. Geometry is fixed, so G assembles once and `fault` may be any
+  `Fault` (rectangular or triangular mesh); each gradient is one matvec, so
+  plain reverse-mode `jax.grad` suffices (no `custom_jvp`). Modes:
+  `hierarchical` / `fixed` / `weak` (no `profiled` — nothing is profiled
+  when slip is sampled). **Correction to the earlier plan note:**
+  hierarchical lambda is *not* biased under positivity. The truncated prior
+  is zero-mean with covariance ∝ `(sigma²/lambda)(LᵀL)⁺`, and an orthant is
+  a cone, so rescaling the covariance moves no mass across its boundary —
+  the normalizer Z is the *same constant* for every `(sigma, lambda)` and
+  cancels. Sampled lambda is therefore exact as built (would only bias for a
+  nonzero prior mean, e.g. a `smoothing_target`). Validated: `logpdf` vs an
+  independent NumPy reference; the exact "joint = collapsed × Gaussian
+  conditional" identity against `RectPosterior`; end-to-end sampler
+  agreement with the collapsed posterior; positivity posterior mean vs
+  `LinearSystem.invert(bounds=(0, None))`; `emcee` cross-check; gradients vs
+  finite differences. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
 - [ ] **6b. Half-collapse and joint geometry + slip.** Marginalize the
   unconstrained slip block analytically (Gaussian conditional given the
   constrained block), sampling geometry + hyperparameters + only the

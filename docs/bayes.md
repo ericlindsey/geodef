@@ -132,6 +132,91 @@ Column layout matches the inversion convention: `[:N]` strike-slip,
 
 ---
 
+## Positivity and joint slip sampling: `SlipPosterior`
+
+`RectPosterior` marginalizes slip analytically — which is possible *only*
+because the slip prior is Gaussian. The moment you want a **non-Gaussian
+slip prior** — most commonly a **positivity constraint** (dip-slip that
+cannot go negative on a thrust, or a locking fraction confined to
+`[0, 1]`) — the Gaussian integral no longer has a closed form, and slip
+has to go back into the sampled state.
+
+`SlipPosterior` does exactly that at **fixed geometry**: it samples the
+slip vector jointly with `log10_sigma` (and, in hierarchical mode,
+`log10_lambda`). Because the geometry is fixed, the Green's matrix is
+assembled **once** at construction and never re-touched, so `fault` may be
+*any* `Fault` — rectangular **or a triangular mesh** — and each `logpdf`
+gradient costs a single matrix-vector product (plain reverse-mode
+`jax.grad`, no forward-mode wrapper).
+
+```python
+post = geodef.bayes.SlipPosterior(
+    fault,                       # any Fault, fixed geometry
+    [gnss, insar],
+    components="dip",
+    mode="fixed",                # a proper posterior at one lambda
+    smoothing="laplacian",
+    smoothing_strength=1.0,
+    positive="dip",              # dip-slip constrained >= 0
+)
+
+result = geodef.bayes.sample(post, n_samples=2000, n_warmup=1000, n_chains=4)
+draws = post.slip_draws(result.flat)   # (n, n_slip), every row >= 0 where constrained
+pred = post.predict(result.flat)       # (n, n_data) posterior-predictive data
+```
+
+**Positivity is exact, not a penalty.** A whitened, softplus
+reparameterization enforces `m >= 0` on the constrained components
+identically: a fixed reference system `H0 = Gᵀ_w G_w + lambda_ref LᵀL`
+(Cholesky factor `L0`) defines an affine map `z -> v` centered at the
+reference ridge solution, then constrained components pass through
+`softplus(v)` and unconstrained ones through unchanged. The map's
+log-Jacobian is carried in the density, so the posterior is the true
+truncated-Gaussian-prior posterior, not a soft barrier.
+
+- `positive` selects the constrained components: `None`, `'strike'`,
+  `'dip'`, `'both'` (all sampled components), or a bool array of length
+  `n_slip`.
+- `slip_draws(samples)` is a **deterministic transform** here (no `seed`):
+  slip is part of the sampled state, so each posterior sample already *is*
+  one slip vector. `slip_of(x)` maps a single sample.
+
+### Mode names differ on purpose
+
+| mode | prior on slip | sampled scales |
+|------|--------------|----------------|
+| `'hierarchical'` | smoothing operator `L`, `lambda` sampled | `log10_sigma`, `log10_lambda` |
+| `'fixed'` | smoothing operator `L`, `lambda` fixed — a **proper** posterior at one lambda (Occam terms included) | `log10_sigma` |
+| `'weak'` | `L = I`, fixed `slip_scale` | `log10_sigma` |
+
+There is **no `'profiled'` mode**: nothing is profiled out here (slip is
+sampled, never point-estimated), so `RectPosterior`'s `'profiled'` — which
+drops the Occam log-determinant terms — has no analog. `'fixed'` is the
+honest single-lambda posterior.
+
+### Hierarchical lambda stays exact under positivity
+
+The truncated slip prior is a zero-mean Gaussian restricted to an orthant,
+with covariance proportional to `(sigma²/lambda)·(LᵀL)⁺`. Its truncation
+normalizer `Z` — the probability mass inside the orthant — is what would,
+in general, depend on the hyperparameters and bias a sampled `lambda`.
+But an orthant is a **cone**, and rescaling a zero-mean Gaussian's
+covariance by a scalar moves no mass across a cone boundary: `Z` is the
+*same constant* for every `(sigma, lambda)` and cancels out of the
+posterior. So `mode='hierarchical'` remains exact with positivity — no
+correction needed. (This would break for a **nonzero** prior mean, e.g. a
+`smoothing_target`, where the orthant is no longer a cone about the mean.)
+
+`SlipPosterior` shares `sample()`, the diagnostics, and `predict` with
+`RectPosterior`; only the geometry-vs-slip split of the sampled vector
+differs. Validation: the density is checked against an independent NumPy
+reimplementation and against `RectPosterior`'s collapsed formula via the
+exact "joint = collapsed × Gaussian conditional" identity, the sampler
+against the collapsed posterior and against `emcee`, and the constrained
+posterior mean against `LinearSystem.invert(bounds=(0, None))`.
+
+---
+
 ## Practical notes
 
 - **Cost.** One `logpdf` gradient evaluation is a Green's assembly plus
