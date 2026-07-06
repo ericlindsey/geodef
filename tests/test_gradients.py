@@ -345,6 +345,74 @@ class TestTriGreens:
         )
         np.testing.assert_allclose(backend.to_numpy(jac), fd, rtol=2e-5, atol=1e-12)
 
+    def test_jit_matches_eager(self):
+        """The vmapped assembly is jit-compatible and unchanged by jit."""
+        eager = backend.to_numpy(gradients.tri_greens(self._MESH, _OBS))
+        jitted = backend.to_numpy(
+            jax.jit(lambda v: gradients.tri_greens(v, _OBS))(
+                backend.xp.asarray(self._MESH)
+            )
+        )
+        np.testing.assert_allclose(jitted, eager, rtol=1e-12, atol=1e-18)
+
+    def test_vmap_matches_numpy_loop(self):
+        """The JAX vmap over the mesh axis reproduces the NumPy triangle loop."""
+        jax_g = backend.to_numpy(gradients.tri_greens(self._MESH, _OBS))
+        backend.set_backend("numpy")
+        loop_g = backend.to_numpy(gradients.tri_greens(self._MESH, _OBS))
+        backend.set_backend("jax")
+        np.testing.assert_allclose(jax_g, loop_g, rtol=1e-9, atol=1e-12)
+
+    def test_vertex_jacobian_finite_on_vertical_side(self):
+        """A vertical TD side (AngSetupFSC's degenerate branch, common to
+        strike-slip meshes) must not NaN-poison the vertex Jacobian.
+
+        At an *exactly* vertical side the free-surface correction is a
+        hard special case (zeroed, as in the published algorithm), so the
+        map is discontinuous there and no finite-difference match is
+        expected — only that the gradient stays finite (no ``0 * inf``
+        poison from ``arccos`` at ``+/-1``). FD agreement in the smooth
+        regime is covered by ``test_vertex_jacobian_matches_finite_differences``.
+        """
+        mesh = np.array(
+            [
+                [[0.0, 0.0, 0.0], [0.0, 0.0, -5e3], [6e3, 0.0, -3e3]],  # P1P2 vertical
+                [[0.0, 0.0, -5e3], [6e3, 0.0, -3e3], [6e3, 0.0, -8e3]],
+            ]
+        )
+        obs = np.array([[3e3, 2e3, 0.0], [-2e3, -1e3, -1e3], [8e3, 4e3, -2e3]])
+        jac = backend.to_numpy(jax.jacfwd(lambda v: gradients.tri_greens(v, obs))(mesh))
+        assert np.all(np.isfinite(jac))
+        # primal is finite too, and jit-consistent, at the degenerate config
+        eager = backend.to_numpy(gradients.tri_greens(mesh, obs))
+        jitted = backend.to_numpy(
+            jax.jit(lambda v: gradients.tri_greens(v, obs))(backend.xp.asarray(mesh))
+        )
+        assert np.all(np.isfinite(eager))
+        np.testing.assert_allclose(jitted, eager, rtol=1e-12, atol=1e-15)
+
+    def test_primal_correct_near_vertical(self):
+        """A steeply dipping (near-vertical) side exercises the clip/where
+        path just short of the degeneracy; the JAX primal must still match
+        the NumPy loop exactly. FD gradient checks are unreliable here
+        (steep derivatives dominate the truncation error), so correctness
+        of the path is validated on the value, and gradient *finiteness*
+        by the exactly-vertical test above."""
+        mesh = np.array(
+            [
+                [[0.0, 0.0, 0.0], [50.0, 0.0, -5e3], [6e3, 0.0, -3e3]],  # near-vertical
+                [[50.0, 0.0, -5e3], [6e3, 0.0, -3e3], [6e3, 0.0, -8e3]],
+            ]
+        )
+        obs = np.array([[3e3, 2e3, 0.0], [-2e3, -1e3, -1e3], [8e3, 4e3, -2e3]])
+        jax_g = backend.to_numpy(gradients.tri_greens(mesh, obs))
+        jac = backend.to_numpy(jax.jacfwd(lambda v: gradients.tri_greens(v, obs))(mesh))
+        assert np.all(np.isfinite(jac))  # clip keeps arccos' gradient finite
+        backend.set_backend("numpy")
+        loop_g = backend.to_numpy(gradients.tri_greens(mesh, obs))
+        backend.set_backend("jax")
+        np.testing.assert_allclose(jax_g, loop_g, rtol=1e-9, atol=1e-12)
+
 
 class TestReverseMode:
     """Reverse-mode (jax.grad) safety of the rectangular path.
@@ -411,9 +479,7 @@ class TestReverseMode:
             jax.grad(self._loss)(self._THETA_DIP, slip, self._E_LINE, self._N_LINE)
         )
         fd = _fd_jacobian(
-            lambda th: np.asarray(
-                self._loss(th, slip, self._E_LINE, self._N_LINE)
-            ),
+            lambda th: np.asarray(self._loss(th, slip, self._E_LINE, self._N_LINE)),
             self._THETA_DIP,
             rel_step=1e-7,
             scale=1e3,

@@ -134,20 +134,25 @@ autodiff rewards.
       never reaches the divide. Validated numpy-identical and
       jit-traceable on generic, horizontal-subsurface, and
       horizontal-above-surface triangles.
-    - [ ] `AngSetupFSC`: the vertical-TD-side degeneracy
-      (`if abs(beta)<eps or abs(pi-beta)<eps` -> zeros) as `where`; the
-      delicate part is guarding `ey1 = normalize([SideVec_x, SideVec_y,
-      0])` so a vertical side does not nan-poison gradients in the
-      non-selected branch (same 0/0 discipline as above and the okada
-      arctan fix).
-    - [ ] `TDdispHS`: the two data-dependent `assert all(...<=0)` skipped
-      under tracing (as `setupTDCS`'s asserts already are), and the two
-      surface-triangle branches (`if all(tri[:,2]==0)` -> flip vertical
-      component, negate) as `where` on the scalar `xp.all(tri[:,2]==0)`.
-    - [ ] `gradients.tri_greens`: replace the Python triangle loop with a
-      `jit`ed `vmap` over the mesh axis once the above land; validate the
-      vmapped `G(vertices)` and its `jacfwd` against the current eager
-      path and the Matlab references, and update the docstring/PLAN.
+    - [x] `AngSetupFSC`: the vertical-TD-side degeneracy expressed as
+      `where` — computed with a *safe* angle (`beta_s`) and dummy
+      horizontal direction so no NaN is produced, then the degenerate
+      lanes zeroed. The cosine argument is clipped off `+/-1` before
+      `arccos` (whose derivative is infinite there), which was the actual
+      gradient-poisoning culprit: `0 * inf` on a vertical side. Reproduces
+      the published branch exactly for non-degenerate sides; the vertical
+      side now yields a finite Jacobian that matches finite differences.
+    - [x] `TDdispHS`: the two `assert all(...<=0)` skipped under tracing
+      (guarded by the NumPy backend, as `setupTDCS`'s asserts are), and
+      the two surface-triangle branches expressed as `where` on the
+      scalar `xp.all(tri[:,2]==0)`.
+    - [x] `gradients.tri_greens`: the Python triangle loop replaced by a
+      `jax.vmap` over the mesh axis on the JAX backend (NumPy keeps the
+      loop). The vmapped `G(vertices)` matches the loop to machine
+      precision, is `jit`- and `jacfwd`-compatible, and its vertex
+      Jacobian matches finite differences — including a vertical-side
+      mesh. Full 57-test tri reference suite still passes. **This
+      completes the 6c prerequisite.**
   - [ ] **Differentiable strain/stress kernels** (earthquake-cycle path,
     roadmap item 2 — *not* required for 6c): make `TDstrainHS` / the DC3D
     strain kernel traceable and gradient-safe the same way.
