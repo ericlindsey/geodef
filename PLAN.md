@@ -122,9 +122,35 @@ autodiff rewards.
   still open). `gradients.los_project` maps displacement G onto InSAR
   look vectors, matching `InSAR.project`. G(θ) Jacobians validated
   against finite differences.
-- [ ] Remaining Phase 2: differentiable strain/stress kernels, and
-  jit/vmap support for the triangular mesh axis (needs the remaining
-  geometry-scalar branches in `tri.py` expressed as `where`).
+- Remaining Phase 2, split into two independent tracks:
+  - **Tri jit/vmap over the mesh axis** (unblocks 6c). `gradients.tri_greens`
+    still loops over triangles because a few per-triangle,
+    vertex-dependent Python branches in `tri.py` break tracing. The
+    remaining blockers, with `TDdispHS` as the target entry point:
+    - [x] `build_tri_coordinate_system`: the horizontal-element strike
+      degeneracy (`if norm(Vstrike)==0` plus the image-dislocation
+      `if tri[0][2]>0` flip) rewritten as `where`, selecting the
+      Northward/Southward replacement *before* `normalize` so the 0/0
+      never reaches the divide. Validated numpy-identical and
+      jit-traceable on generic, horizontal-subsurface, and
+      horizontal-above-surface triangles.
+    - [ ] `AngSetupFSC`: the vertical-TD-side degeneracy
+      (`if abs(beta)<eps or abs(pi-beta)<eps` -> zeros) as `where`; the
+      delicate part is guarding `ey1 = normalize([SideVec_x, SideVec_y,
+      0])` so a vertical side does not nan-poison gradients in the
+      non-selected branch (same 0/0 discipline as above and the okada
+      arctan fix).
+    - [ ] `TDdispHS`: the two data-dependent `assert all(...<=0)` skipped
+      under tracing (as `setupTDCS`'s asserts already are), and the two
+      surface-triangle branches (`if all(tri[:,2]==0)` -> flip vertical
+      component, negate) as `where` on the scalar `xp.all(tri[:,2]==0)`.
+    - [ ] `gradients.tri_greens`: replace the Python triangle loop with a
+      `jit`ed `vmap` over the mesh axis once the above land; validate the
+      vmapped `G(vertices)` and its `jacfwd` against the current eager
+      path and the Matlab references, and update the docstring/PLAN.
+  - [ ] **Differentiable strain/stress kernels** (earthquake-cycle path,
+    roadmap item 2 — *not* required for 6c): make `TDstrainHS` / the DC3D
+    strain kernel traceable and gradient-safe the same way.
 - **Differentiation variables (settled 2026-07).** The `tri` engine
   differentiates with respect to the **vertex coordinates** — its native
   parameterization, well-defined for any mesh including non-planar ones.

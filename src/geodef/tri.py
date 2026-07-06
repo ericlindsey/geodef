@@ -121,17 +121,20 @@ def build_tri_coordinate_system(tri):
     # downward, the strike and dip vectors point Southward and Westward,
     # respectively.
     Vnorm = normalize(xp.cross(tri[1] - tri[0], tri[2] - tri[0]))
-    eY = xp.array([0, 1, 0])
-    eZ = xp.array([0, 0, 1])
-    Vstrike = xp.cross(eZ, Vnorm)
-    if xp.linalg.norm(Vstrike) == 0:
-        Vstrike = eY * Vnorm[2]
-        # TODO: check this correction from TDdispHS:
-        #% For horizontal elements in case of half-space calculation!!!
-        #% Correct the strike vector of image dislocation only
-        if tri[0][2]>0:
-            Vstrike = -Vstrike
-    Vstrike = normalize(Vstrike)
+    eY = xp.array([0.0, 1.0, 0.0])
+    eZ = xp.array([0.0, 0.0, 1.0])
+    Vstrike_raw = xp.cross(eZ, Vnorm)
+    # Horizontal element: Vnorm is (anti)parallel to eZ, so the raw strike
+    # vector vanishes and the strike is taken Northward/Southward instead.
+    # For the image dislocation (a vertex above the free surface) that
+    # replacement is flipped. Both special cases are expressed as `where`
+    # and selected *before* normalize, so the degenerate 0/0 never reaches
+    # the divide — keeping the construction trace- and gradient-safe for
+    # jit/vmap over a mesh (matches the published TDdispHS correction).
+    is_horiz = xp.linalg.norm(Vstrike_raw) == 0
+    sign = xp.where(tri[0][2] > 0, -1.0, 1.0)
+    Vstrike_horiz = eY * Vnorm[2] * sign
+    Vstrike = normalize(xp.where(is_horiz, Vstrike_horiz, Vstrike_raw))
     Vdip = xp.cross(Vnorm, Vstrike)
     return xp.array([Vnorm, Vstrike, Vdip])
 
