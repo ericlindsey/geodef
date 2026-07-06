@@ -215,6 +215,44 @@ exact "joint = collapsed × Gaussian conditional" identity, the sampler
 against the collapsed posterior and against `emcee`, and the constrained
 posterior mean against `LinearSystem.invert(bounds=(0, None))`.
 
+### Positivity *with* free geometry: `RectPosterior(positive=…)`
+
+`SlipPosterior` holds geometry fixed. When you want positivity **and** an
+uncertain geometry — sample the two jointly — pass `positive` straight to
+`RectPosterior`:
+
+```python
+post = geodef.bayes.RectPosterior(
+    theta0, [gnss], ref_lat=-2.0, ref_lon=100.0,
+    free=["dip", "depth"],                 # geometry sampled...
+    theta_prior={"dip": (5.0, 45.0), "depth": (10e3, 40e3)},
+    n_length=8, n_width=4,
+    components="both", mode="hierarchical", smoothing="laplacian",
+    positive="dip",                        # ...and dip-slip constrained >= 0
+)
+result = geodef.bayes.sample(post)
+draws = post.slip_draws(result.flat)       # deterministic here; >= 0 where constrained
+```
+
+With `positive=None` (the default) `RectPosterior` is exactly the
+collapsed sampler documented above — nothing changes. Setting `positive`
+makes the slip prior truncated, so slip can no longer be marginalized and
+rejoins the sampled state as a whitened block **appended after the
+hyperparameters**: `param_names` becomes `[*free, log10_sigma,
+(log10_lambda), z0, z1, …]`. The whitening reference is built once at
+`theta0`, and `G(θ)` is re-assembled per evaluation — but only the
+assembly sits inside a `custom_jvp`, so each gradient traces the Okada
+kernel **seven times** (once per geometry parameter) no matter how many
+slip components are sampled. `slip_draws` on this path is a deterministic
+transform of each sample (the `seed` is ignored), and the returned slip
+respects the constraint exactly. The same joint-vs-collapsed identity and
+`emcee` cross-check validate it.
+
+Cost note: joint sampling is markedly heavier than the collapsed sampler
+(hundreds of dimensions instead of a handful), so prefer collapsed
+`RectPosterior`/`SlipPosterior` unless you specifically need positivity or
+another non-Gaussian slip prior *together with* geometry uncertainty.
+
 ---
 
 ## Practical notes

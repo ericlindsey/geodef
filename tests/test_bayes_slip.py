@@ -673,3 +673,261 @@ class TestAPISmoke:
         x = np.concatenate([rng.normal(size=n_z) * 0.1, [0.0], [0.5]])
         jitted = jax.jit(post.logpdf)
         np.testing.assert_allclose(float(jitted(x)), float(post.logpdf(x)), rtol=1e-12)
+
+
+# ======================================================================
+# RectPosterior positivity path: joint geometry + slip sampling
+# ======================================================================
+#
+# The same whitened-softplus positivity machinery, but with free
+# geometry: slip rejoins the sampled state as a whitened block appended
+# after the hyperparameters, and G(theta) is re-assembled per evaluation
+# through a single custom_jvp so the Okada kernel is traced seven times
+# per gradient regardless of slip size.
+
+_THETA_TRUE = np.array(
+    [
+        0.0,
+        0.0,
+        _TRUE["depth"],
+        _TRUE["strike"],
+        _TRUE["dip"],
+        _TRUE["length"],
+        _TRUE["width"],
+    ]
+)
+
+
+@pytest.fixture(scope="module")
+def gnss_positive(fault3x3):
+    """GNSS data from an all-positive dip-slip bump (positivity well specified).
+
+    Distinct from ``gnss_signed``: here the truth respects the
+    constraint, so recovering geometry *and* non-negative slip is the
+    correct answer and dip should come back near its true value.
+    """
+    backend.set_backend("numpy")
+    fault = fault3x3
+    n_patches = fault.n_patches
+    i = np.arange(n_patches) % _NL
+    j = np.arange(n_patches) // _NL
+    slip_ds = 3.0 * np.exp(-(((i - 1.0) / 1.0) ** 2 + (j - 1.0) ** 2))
+    glon, glat = np.meshgrid(np.linspace(99.3, 100.7, 7), np.linspace(-2.7, -1.3, 7))
+    glon, glat = glon.ravel(), glat.ravel()
+    ue, un, uz = fault.displacement(glat, glon, np.zeros(n_patches), slip_ds)
+    rng = np.random.default_rng(11)
+    sigma = 0.001
+    n = len(glat)
+    data = GNSS(
+        glon,
+        glat,
+        ve=ue + rng.normal(0, sigma, n),
+        vn=un + rng.normal(0, sigma, n),
+        vu=uz + rng.normal(0, sigma, n),
+        se=np.full(n, sigma),
+        sn=np.full(n, sigma),
+        su=np.full(n, sigma),
+    )
+    backend.set_backend("jax")
+    return data
+
+
+def _rect(datasets, **overrides):
+    kwargs = dict(
+        theta0=_THETA_TRUE,
+        datasets=datasets,
+        ref_lat=_REF_LAT,
+        ref_lon=_REF_LON,
+        free=["dip"],
+        theta_prior={"dip": (5.0, 45.0)},
+        n_length=_NL,
+        n_width=_NW,
+        components="dip",
+        mode="profiled",
+        smoothing="laplacian",
+        smoothing_strength=1.0,
+    )
+    kwargs.update(overrides)
+    return bayes.RectPosterior(**kwargs)
+
+
+class TestRectPositiveConstruction:
+    def test_layout_appends_z_after_hypers(self, gnss_signed):
+        post = _rect(gnss_signed, positive="dip")
+        n_slip = _NL * _NW
+        assert post._joint
+        assert post._n_hyper == 2  # dip, log10_sigma (profiled: no lambda)
+        assert post.param_names == ["dip", "log10_sigma"] + [
+            f"z{i}" for i in range(n_slip)
+        ]
+        assert post.n_params == 2 + n_slip
+        assert post.x0.shape == (2 + n_slip,)
+        assert np.all(np.isneginf(post._lo[2:]))
+        assert np.all(np.isposinf(post._hi[2:]))
+
+    def test_hierarchical_layout_has_lambda(self, gnss_signed):
+        post = _rect(
+            gnss_signed, positive="dip", mode="hierarchical", smoothing_strength=1.0
+        )
+        n_slip = _NL * _NW
+        assert post._n_hyper == 3
+        assert post.param_names[:3] == ["dip", "log10_sigma", "log10_lambda"]
+        assert post.n_params == 3 + n_slip
+
+    def test_positive_none_stays_collapsed(self, gnss_signed):
+        post = _rect(gnss_signed, positive=None)
+        assert not post._joint
+        assert post.param_names == ["dip", "log10_sigma"]
+        assert post.n_params == 2
+
+
+class TestRectPositiveDensity:
+    def test_joint_equals_collapsed_times_conditional(self, gnss_signed):
+        """With an all-False mask (identity map) and fixed geometry, the
+        joint density must equal the collapsed density plus the exact
+        Gaussian-conditional correction — both on the same rect_greens G,
+        so the tolerance is tight."""
+        from geodef.gradients import rect_greens
+
+        common = dict(
+            theta0=_THETA_TRUE,
+            datasets=gnss_signed,
+            ref_lat=_REF_LAT,
+            ref_lon=_REF_LON,
+            free=[],
+            theta_prior=None,
+            n_length=_NL,
+            n_width=_NW,
+            components="dip",
+            mode="hierarchical",
+            smoothing="laplacian",
+        )
+        coll = bayes.RectPosterior(**common)
+        n_slip = _NL * _NW
+        joint = bayes.RectPosterior(**common, positive=np.zeros(n_slip, dtype=bool))
+
+        theta0 = np.asarray(_THETA_TRUE, dtype=float)
+        G3 = backend.to_numpy(
+            rect_greens(
+                backend.xp.asarray(theta0),
+                joint._e_obs,
+                joint._n_obs,
+                _NL,
+                _NW,
+                0.25,
+            )
+        )
+        G_w = (joint._W_half_P @ G3)[:, joint._col_start : joint._col_stop]
+
+        rng = np.random.default_rng(2)
+        for _ in range(4):
+            ls, ll = rng.uniform(-1, 1), rng.uniform(-2, 2)
+            z = rng.normal(size=n_slip) * 0.5
+            c = float(
+                coll.log_prior(np.array([ls, ll]))
+                + coll.log_likelihood(np.array([ls, ll]))
+            )
+            joint_val = float(joint.logpdf(np.concatenate([[ls, ll], z])))
+
+            sigma2, lam = 10.0 ** (2 * ls), 10.0**ll
+            v = joint._mu0 + scipy.linalg.solve_triangular(joint._L0.T, z, lower=False)
+            H = G_w.T @ G_w + lam * joint._LtL
+            m_hat = np.linalg.solve(H, G_w.T @ joint._d_w)
+            log_cond = scipy.stats.multivariate_normal.logpdf(
+                v, mean=m_hat, cov=sigma2 * np.linalg.inv(H)
+            )
+            np.testing.assert_allclose(
+                joint_val, c + log_cond + joint._logJ_affine, atol=1e-6
+            )
+
+    def test_grad_matches_finite_differences(self, gnss_signed):
+        post = _rect(gnss_signed, positive="dip")
+        rng = np.random.default_rng(4)
+        x = post.x0.copy()
+        x[0] = 16.0  # dip
+        x[post._n_hyper :] = 0.2 * rng.normal(size=post._n_slip)
+        g = backend.to_numpy(jax.grad(post.logpdf)(x))
+        assert np.all(np.isfinite(g))
+        fd = np.zeros_like(x)
+        for i in range(len(x)):
+            h = 1e-5 * max(abs(x[i]), 1e-3)
+            xp_, xm = x.copy(), x.copy()
+            xp_[i] += h
+            xm[i] -= h
+            fd[i] = (float(post.logpdf(xp_)) - float(post.logpdf(xm))) / (2 * h)
+        np.testing.assert_allclose(g, fd, rtol=1e-3, atol=1e-6)
+
+    def test_slip_mode_respects_positivity(self, gnss_signed):
+        post = _rect(gnss_signed, positive="dip")
+        x = post.x0.copy()
+        x[post._n_hyper :] = -0.5  # push whitened coords negative
+        assert np.all(post.slip_mode(x) >= 0.0)
+
+
+class TestRectPositiveSampling:
+    def test_recovers_dip_and_positive_slip(self, gnss_positive):
+        pytest.importorskip("blackjax")
+        post = _rect(gnss_positive, free=["dip"], positive="dip")
+        result = bayes.sample(post, n_samples=800, n_warmup=800, n_chains=2, seed=0)
+        dip = result.flat[:, 0]
+        assert abs(dip.mean() - _TRUE["dip"]) < 4.0
+        draws = post.slip_draws(result.flat)
+        assert np.all(draws >= 0.0)
+        assert draws.shape == (result.flat.shape[0], _NL * _NW)
+
+    def test_emcee_agrees_with_nuts(self, fault1x2, gnss_1x2_signed):
+        pytest.importorskip("blackjax")
+        emcee = pytest.importorskip("emcee")
+        theta1x2 = np.array([0.0, 0.0, 10e3, 0.0, 40.0, 20e3, 10e3])
+        post = bayes.RectPosterior(
+            theta0=theta1x2,
+            datasets=gnss_1x2_signed,
+            ref_lat=_REF_LAT,
+            ref_lon=_REF_LON,
+            free=["dip"],
+            theta_prior={"dip": (20.0, 60.0)},
+            n_length=2,
+            n_width=1,
+            components="dip",
+            mode="profiled",
+            smoothing="damping",
+            smoothing_strength=1.0,
+            positive="dip",
+        )
+        assert post.n_params == 4  # dip, log10_sigma, z0, z1
+
+        result = bayes.sample(post, n_samples=800, n_warmup=800, n_chains=2, seed=0)
+        nuts_mean = result.flat.mean(axis=0)
+        nuts_sd = result.flat.std(axis=0, ddof=1)
+
+        logpdf = jax.jit(post.logpdf)
+        ndim, nwalkers = post.n_params, 16
+        rng = np.random.default_rng(3)
+        p0 = nuts_mean + 2.0 * nuts_sd * rng.standard_normal((nwalkers, ndim))
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lambda x: float(logpdf(x)))
+        sampler.run_mcmc(p0, 1000, progress=False)
+        chain = sampler.get_chain(discard=400, flat=True)
+        for i in range(ndim):
+            assert abs(chain[:, i].mean() - nuts_mean[i]) < 0.4 * nuts_sd[i]
+            assert 0.6 < chain[:, i].std(ddof=1) / nuts_sd[i] < 1.5
+
+
+class TestRectPositiveAPI:
+    def test_slip_draws_deterministic(self, gnss_signed):
+        post = _rect(gnss_signed, positive="dip")
+        rng = np.random.default_rng(5)
+        samples = np.stack(
+            [
+                np.concatenate([[15.0, 0.0], rng.normal(size=post._n_slip) * 0.2])
+                for _ in range(4)
+            ]
+        )
+        a = post.slip_draws(samples, seed=1)
+        b = post.slip_draws(samples, seed=999)
+        np.testing.assert_allclose(a, b)  # seed ignored on the joint path
+        np.testing.assert_allclose(a[0], post.slip_mode(samples[0]), rtol=1e-6)
+
+    def test_predict_shape(self, gnss_signed):
+        post = _rect(gnss_signed, positive="dip")
+        samples = np.stack([post.x0, post.x0])
+        assert post.predict(samples).shape == (2, post.n_data)

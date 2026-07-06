@@ -279,13 +279,40 @@ we add gradients.
   agreement with the collapsed posterior; positivity posterior mean vs
   `LinearSystem.invert(bounds=(0, None))`; `emcee` cross-check; gradients vs
   finite differences. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
-- [ ] **6b. Half-collapse and joint geometry + slip.** Marginalize the
-  unconstrained slip block analytically (Gaussian conditional given the
-  constrained block), sampling geometry + hyperparameters + only the
-  sign-constrained component — halves the slip dimension in the common
-  one-constrained-component case. Whitening at a reference theta (the
-  `geometry_search` MAP). Per-leapfrog cost now includes the jitted
-  G(theta) assembly from Phases 1–2.
+- **6b. Joint geometry + slip with positivity, then half-collapse.**
+  Staged in two commits (decided 2026-07).
+  - [x] **6b-1. Joint geometry + full slip sampling.** `RectPosterior`
+    gains a `positive=` argument; `positive=None` stays exactly the
+    collapsed sampler (unchanged code path), while setting it makes the
+    slip prior truncated so the whole slip vector rejoins the sampled
+    state as a whitened block appended after the hyperparameters and is
+    sampled jointly with geometry. Reuses 6a's whitened-softplus transform
+    (extracted to the shared `_slip_transform` helper) with free `theta`
+    through `rect_greens`. Key implementation point: the differentiation
+    `custom_jvp` is placed around `G(theta)` **alone** (its tangent is
+    `jacfwd` over the 7 geometry params), so plain reverse-mode `jax.grad`
+    over the whole `logpdf` traces the Okada kernel only 7 times per
+    gradient regardless of the (large) slip block — unlike the collapsed
+    path's whole-`logpdf` forward-mode wrapper, which would scale with the
+    slip dimension. Validated: exact "joint = collapsed × Gaussian
+    conditional" identity (all-False mask, ~1e-11), gradient vs finite
+    differences through the kernel, geometry+positive-slip recovery, and
+    an `emcee` cross-check. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
+  - [ ] **6b-2. Half-collapse (efficiency).** Marginalize the
+    *unconstrained* slip block analytically (Gaussian conditional given
+    the constrained block) so only geometry + hyperparameters + the
+    sign-constrained component are sampled — halves the slip dimension in
+    the common one-constrained-component (`positive='dip'`,
+    `components='both'`) case. Closed form derived (design note): with
+    `H_f = Gᵀ_f G_f + λ K_ff`, `b = Gᵀ_f r_c − λ K_cfᵀ m_c`,
+    `S_c = ‖r_c‖² + λ m_cᵀ K_cc m_c − bᵀ H_f⁻¹ b`, the log-marginal is
+    `−(n+p_c)/2·log(2πσ²) + ½(r logλ + logdet_sum) − ½logdet H_f
+    − S_c/(2σ²)` [+ orthant], reducing to the collapsed formula at
+    `p_c=0` and to 6b-1 at `p_f=0`. Same G-level `custom_jvp`;
+    `slip_draws` completes the marginalized block from its exact Gaussian
+    conditional per draw. Test via the exact
+    `6b1_joint(m_c, m_f) = 6b2_marginal(m_c) + log N(m_f; H_f⁻¹b, σ²H_f⁻¹)`
+    identity against the already-validated 6b-1 density.
 - [ ] **6c. Triangular-mesh geometry sampling (`bayes.TriPosterior`).**
   Prerequisite: the remaining Phase 2 tri jit/vmap work. Parameterization
   decision: **no remeshing inside the sampler** — connectivity flips are
