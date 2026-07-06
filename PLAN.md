@@ -298,21 +298,29 @@ we add gradients.
     conditional" identity (all-False mask, ~1e-11), gradient vs finite
     differences through the kernel, geometry+positive-slip recovery, and
     an `emcee` cross-check. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
-  - [ ] **6b-2. Half-collapse (efficiency).** Marginalize the
+  - [x] **6b-2. Half-collapse (efficiency).** Marginalizes the
     *unconstrained* slip block analytically (Gaussian conditional given
     the constrained block) so only geometry + hyperparameters + the
-    sign-constrained component are sampled — halves the slip dimension in
+    sign-constrained components are sampled — halves the slip dimension in
     the common one-constrained-component (`positive='dip'`,
-    `components='both'`) case. Closed form derived (design note): with
-    `H_f = Gᵀ_f G_f + λ K_ff`, `b = Gᵀ_f r_c − λ K_cfᵀ m_c`,
+    `components='both'`) case. Made **automatic**: `positive` alone
+    decides which components stay in the state; the rest are always
+    marginalized. Closed form: with `H_f = Gᵀ_f G_f + λ K_ff`,
+    `b = Gᵀ_f r_c − λ K_cfᵀ m_c`,
     `S_c = ‖r_c‖² + λ m_cᵀ K_cc m_c − bᵀ H_f⁻¹ b`, the log-marginal is
     `−(n+p_c)/2·log(2πσ²) + ½(r logλ + logdet_sum) − ½logdet H_f
     − S_c/(2σ²)` [+ orthant], reducing to the collapsed formula at
-    `p_c=0` and to 6b-1 at `p_f=0`. Same G-level `custom_jvp`;
-    `slip_draws` completes the marginalized block from its exact Gaussian
-    conditional per draw. Test via the exact
-    `6b1_joint(m_c, m_f) = 6b2_marginal(m_c) + log N(m_f; H_f⁻¹b, σ²H_f⁻¹)`
-    identity against the already-validated 6b-1 density.
+    `p_c=0` and to 6b-1 at `p_f=0`. The constrained block is whitened by
+    the **Schur complement** of the reference `H0` (its exact marginal
+    precision, = `H0` when nothing is marginalized), so `_slip_transform`
+    is reused unchanged. `slip_draws` completes the marginalized block
+    from its exact Gaussian conditional per draw (seed-dependent), while
+    the constrained block stays deterministic and non-negative.
+    Validated: the marginal vs an independent NumPy reference of the
+    `H_f`/`S_c` formula (~1e-11), exact reduction to the collapsed
+    posterior at `p_c=0`, gradients vs finite differences through the
+    marginalization, a partial bool mask, and the split determinism of
+    `slip_draws`.
 - [ ] **6c. Triangular-mesh geometry sampling (`bayes.TriPosterior`).**
   Prerequisite: the remaining Phase 2 tri jit/vmap work. Parameterization
   decision: **no remeshing inside the sampler** — connectivity flips are

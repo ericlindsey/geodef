@@ -236,22 +236,40 @@ draws = post.slip_draws(result.flat)       # deterministic here; >= 0 where cons
 
 With `positive=None` (the default) `RectPosterior` is exactly the
 collapsed sampler documented above — nothing changes. Setting `positive`
-makes the slip prior truncated, so slip can no longer be marginalized and
-rejoins the sampled state as a whitened block **appended after the
-hyperparameters**: `param_names` becomes `[*free, log10_sigma,
-(log10_lambda), z0, z1, …]`. The whitening reference is built once at
-`theta0`, and `G(θ)` is re-assembled per evaluation — but only the
-assembly sits inside a `custom_jvp`, so each gradient traces the Okada
-kernel **seven times** (once per geometry parameter) no matter how many
-slip components are sampled. `slip_draws` on this path is a deterministic
-transform of each sample (the `seed` is ignored), and the returned slip
-respects the constraint exactly. The same joint-vs-collapsed identity and
-`emcee` cross-check validate it.
+makes the slip prior truncated on the selected components, which is no
+longer conjugate *there*.
 
-Cost note: joint sampling is markedly heavier than the collapsed sampler
-(hundreds of dimensions instead of a handful), so prefer collapsed
-`RectPosterior`/`SlipPosterior` unless you specifically need positivity or
-another non-Gaussian slip prior *together with* geometry uncertainty.
+**Only the constrained components rejoin the sampled state** — the
+unconstrained slip is still marginalized analytically (a *half-collapse*).
+So `positive='dip'` with `components='both'` samples the dip block and
+integrates the strike block out, and `param_names` becomes `[*free,
+log10_sigma, (log10_lambda), z…]` with one `z` per **constrained**
+component. The sampled dimension therefore grows by `p_c` (constrained
+count), not by the full slip size. Two limits fall out for free:
+`positive` constraining nothing reduces exactly to the collapsed sampler,
+and constraining everything gives a fully joint slip sampler.
+
+The constrained block is whitened by the Schur complement of a reference
+system built once at `theta0` (its exact marginal precision), and `G(θ)`
+is re-assembled per evaluation — but only the assembly sits inside a
+`custom_jvp`, so each gradient traces the Okada kernel **seven times**
+(once per geometry parameter) no matter how many components are sampled.
+The marginalization adds one `p_f × p_f` Cholesky per evaluation.
+
+`slip_draws` returns the **full** slip: the constrained block is the
+deterministic softplus map (non-negative exactly, `seed`-independent),
+while the marginalized block is completed from its Gaussian conditional —
+a genuine draw, so it uses `seed`. `slip_mode` sets that block to its
+conditional mean instead. The half-collapse marginal is validated against
+an independent NumPy reference of the `H_f`/`S_c` formula, against the
+collapsed posterior in the all-marginalized limit, and by an `emcee`
+cross-check.
+
+Cost note: even half-collapsed, positivity sampling is markedly heavier
+than the collapsed sampler (tens–hundreds of dimensions instead of a
+handful), so prefer collapsed `RectPosterior`/`SlipPosterior` unless you
+specifically need positivity or another non-Gaussian slip prior *together
+with* geometry uncertainty.
 
 ---
 

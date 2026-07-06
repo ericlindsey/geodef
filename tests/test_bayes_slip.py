@@ -751,6 +751,65 @@ def _rect(datasets, **overrides):
     return bayes.RectPosterior(**kwargs)
 
 
+def _rect_marginal_reference(post, x):
+    """Independent NumPy evaluation of the half-collapsed logpdf.
+
+    Reimplements the derived marginal — softplus-whitened constrained
+    slip, analytic marginalization of the unconstrained block via
+    ``H_f``/``S_c``, and the hyperparameter priors — from ``post``'s own
+    frozen matrices, so it validates the JAX implementation against the
+    math rather than against itself.
+    """
+    from geodef.gradients import rect_greens
+
+    nf = len(post.free)
+    nh = post._n_hyper
+    theta = np.asarray(post._theta0, dtype=float).copy()
+    if nf:
+        theta[post._free_idx] = x[:nf]
+    ls = x[nf]
+    sigma2 = 10.0 ** (2.0 * ls)
+    lam = post._lambda_fixed if post._lambda_fixed is not None else 10.0 ** x[nf + 1]
+    z = x[nh:]
+
+    g3 = backend.to_numpy(
+        rect_greens(backend.xp.asarray(theta), post._e_obs, post._n_obs, _NL, _NW, 0.25)
+    )
+    g_w = (post._W_half_P @ g3)[:, post._col_start : post._col_stop]
+    v = post._mu0 + scipy.linalg.solve_triangular(post._L0.T, z, lower=False)
+    m_c = _softplus_np(v)
+    log_j = np.sum(_log_sigmoid_np(v)) + post._logJ_affine
+
+    c, fi = post._c_idx, post._f_idx
+    r_c = post._d_w - g_w[:, c] @ m_c
+    quad = r_c @ r_c + lam * (m_c @ post._LtL[np.ix_(c, c)] @ m_c)
+    if len(fi) > 0:
+        g_f = g_w[:, fi]
+        h_f = g_f.T @ g_f + lam * post._LtL[np.ix_(fi, fi)]
+        b = g_f.T @ r_c - lam * (post._LtL[np.ix_(c, fi)].T @ m_c)
+        s_c = quad - b @ np.linalg.solve(h_f, b)
+        _, logdet_hf = np.linalg.slogdet(h_f)
+    else:
+        s_c, logdet_hf = quad, 0.0
+
+    n_marg = post.n_data + len(c)
+    marg = (
+        -0.5 * n_marg * np.log(2.0 * np.pi * sigma2)
+        + 0.5 * (post._logdet_rank * np.log(lam) + post._logdet_sum)
+        - 0.5 * logdet_hf
+        - s_c / (2.0 * sigma2)
+    )
+    hyper = 0.0
+    for k in range(nh):
+        lo, hi = post._lo[k], post._hi[k]
+        if post._is_uniform[k]:
+            hyper += -np.log(hi - lo) if lo <= x[k] <= hi else -np.inf
+        else:
+            zk = (x[k] - post._mu[k]) / post._sd[k]
+            hyper += -0.5 * zk**2 - np.log(post._sd[k]) - 0.5 * np.log(2.0 * np.pi)
+    return hyper + log_j + marg
+
+
 class TestRectPositiveConstruction:
     def test_layout_appends_z_after_hypers(self, gnss_signed):
         post = _rect(gnss_signed, positive="dip")
@@ -782,20 +841,17 @@ class TestRectPositiveConstruction:
 
 
 class TestRectPositiveDensity:
-    def test_joint_equals_collapsed_times_conditional(self, gnss_signed):
-        """With an all-False mask (identity map) and fixed geometry, the
-        joint density must equal the collapsed density plus the exact
-        Gaussian-conditional correction — both on the same rect_greens G,
-        so the tolerance is tight."""
-        from geodef.gradients import rect_greens
-
+    def test_all_marginalized_equals_collapsed(self, gnss_signed):
+        """An all-False mask constrains nothing, so every slip component
+        is marginalized: the half-collapse must collapse all the way back
+        to the plain ``positive=None`` posterior, exactly."""
         common = dict(
             theta0=_THETA_TRUE,
             datasets=gnss_signed,
             ref_lat=_REF_LAT,
             ref_lon=_REF_LON,
-            free=[],
-            theta_prior=None,
+            free=["dip"],
+            theta_prior={"dip": (5.0, 45.0)},
             n_length=_NL,
             n_width=_NW,
             components="dip",
@@ -804,40 +860,13 @@ class TestRectPositiveDensity:
         )
         coll = bayes.RectPosterior(**common)
         n_slip = _NL * _NW
-        joint = bayes.RectPosterior(**common, positive=np.zeros(n_slip, dtype=bool))
-
-        theta0 = np.asarray(_THETA_TRUE, dtype=float)
-        G3 = backend.to_numpy(
-            rect_greens(
-                backend.xp.asarray(theta0),
-                joint._e_obs,
-                joint._n_obs,
-                _NL,
-                _NW,
-                0.25,
-            )
-        )
-        G_w = (joint._W_half_P @ G3)[:, joint._col_start : joint._col_stop]
-
+        allf = bayes.RectPosterior(**common, positive=np.zeros(n_slip, dtype=bool))
+        assert allf.n_params == coll.n_params  # no z appended
         rng = np.random.default_rng(2)
-        for _ in range(4):
-            ls, ll = rng.uniform(-1, 1), rng.uniform(-2, 2)
-            z = rng.normal(size=n_slip) * 0.5
-            c = float(
-                coll.log_prior(np.array([ls, ll]))
-                + coll.log_likelihood(np.array([ls, ll]))
-            )
-            joint_val = float(joint.logpdf(np.concatenate([[ls, ll], z])))
-
-            sigma2, lam = 10.0 ** (2 * ls), 10.0**ll
-            v = joint._mu0 + scipy.linalg.solve_triangular(joint._L0.T, z, lower=False)
-            H = G_w.T @ G_w + lam * joint._LtL
-            m_hat = np.linalg.solve(H, G_w.T @ joint._d_w)
-            log_cond = scipy.stats.multivariate_normal.logpdf(
-                v, mean=m_hat, cov=sigma2 * np.linalg.inv(H)
-            )
+        for _ in range(5):
+            x = np.array([rng.uniform(8, 40), rng.uniform(-1, 1), rng.uniform(-4, 4)])
             np.testing.assert_allclose(
-                joint_val, c + log_cond + joint._logJ_affine, atol=1e-6
+                float(allf.logpdf(x)), float(coll.logpdf(x)), atol=1e-7
             )
 
     def test_grad_matches_finite_differences(self, gnss_signed):
@@ -931,3 +960,91 @@ class TestRectPositiveAPI:
         post = _rect(gnss_signed, positive="dip")
         samples = np.stack([post.x0, post.x0])
         assert post.predict(samples).shape == (2, post.n_data)
+
+
+# ======================================================================
+# Half-collapse: only the constrained block is sampled; the
+# unconstrained block is marginalized analytically.
+# ======================================================================
+
+
+class TestRectHalfCollapse:
+    def test_layout_marginalizes_unconstrained_block(self, gnss_signed):
+        """components='both', positive='dip' samples only the dip block;
+        the strike block is marginalized, so it is absent from the state."""
+        post = _rect(gnss_signed, components="both", positive="dip")
+        n_patch = _NL * _NW
+        assert post._n_hyper == 2  # dip, log10_sigma (profiled)
+        assert len(post._c_idx) == n_patch  # dip block sampled
+        assert len(post._f_idx) == n_patch  # strike block marginalized
+        np.testing.assert_array_equal(post._c_idx, np.arange(n_patch, 2 * n_patch))
+        np.testing.assert_array_equal(post._f_idx, np.arange(n_patch))
+        assert post.n_params == 2 + n_patch  # not 2 + 2*n_patch
+
+    def test_marginal_matches_numpy_reference(self, gnss_signed):
+        post = _rect(gnss_signed, components="both", positive="dip")
+        rng = np.random.default_rng(0)
+        for _ in range(4):
+            x = post.x0.copy()
+            x[0] = rng.uniform(10, 30)
+            x[1] = rng.uniform(-0.5, 0.5)
+            x[post._n_hyper :] = 0.4 * rng.normal(size=len(post._c_idx))
+            np.testing.assert_allclose(
+                float(post.logpdf(x)), _rect_marginal_reference(post, x), rtol=1e-9
+            )
+
+    def test_grad_matches_finite_differences(self, gnss_signed):
+        post = _rect(gnss_signed, components="both", positive="dip")
+        rng = np.random.default_rng(1)
+        x = post.x0.copy()
+        x[0] = 17.0
+        x[post._n_hyper :] = 0.3 * rng.normal(size=len(post._c_idx))
+        g = backend.to_numpy(jax.grad(post.logpdf)(x))
+        assert np.all(np.isfinite(g))
+        fd = np.zeros_like(x)
+        for i in range(len(x)):
+            h = 1e-5 * max(abs(x[i]), 1e-3)
+            xp_, xm = x.copy(), x.copy()
+            xp_[i] += h
+            xm[i] -= h
+            fd[i] = (float(post.logpdf(xp_)) - float(post.logpdf(xm))) / (2 * h)
+        np.testing.assert_allclose(g, fd, rtol=2e-3, atol=1e-6)
+
+    def test_bool_mask_partial(self, gnss_signed):
+        """A partial bool mask constrains some patches and marginalizes
+        the rest; the reference still matches."""
+        n_patch = _NL * _NW
+        mask = np.zeros(n_patch, dtype=bool)
+        mask[[0, 4, 8]] = True
+        post = _rect(gnss_signed, positive=mask)
+        np.testing.assert_array_equal(post._c_idx, [0, 4, 8])
+        assert post.n_params == post._n_hyper + 3
+        x = post.x0.copy()
+        x[0] = 16.0
+        x[post._n_hyper :] = np.array([0.3, -0.2, 0.5])
+        np.testing.assert_allclose(
+            float(post.logpdf(x)), _rect_marginal_reference(post, x), rtol=1e-9
+        )
+
+    def test_slip_draws_split_determinism(self, gnss_signed):
+        """The constrained block is deterministic and non-negative; the
+        marginalized block is a genuine conditional draw (seed matters)."""
+        post = _rect(gnss_signed, components="both", positive="dip")
+        rng = np.random.default_rng(2)
+        samples = np.stack(
+            [
+                np.concatenate([[15.0, 0.0], rng.normal(size=len(post._c_idx)) * 0.2])
+                for _ in range(5)
+            ]
+        )
+        a = post.slip_draws(samples, seed=1)
+        b = post.slip_draws(samples, seed=2)
+        assert a.shape == (5, 2 * _NL * _NW)
+        # constrained (dip) block: deterministic and non-negative
+        np.testing.assert_allclose(a[:, post._c_idx], b[:, post._c_idx])
+        assert np.all(a[:, post._c_idx] >= 0.0)
+        # marginalized (strike) block: varies with the seed
+        assert not np.allclose(a[:, post._f_idx], b[:, post._f_idx])
+        # slip_mode reconstructs the full vector with the dip block >= 0
+        assert post.slip_mode(samples[0]).shape == (2 * _NL * _NW,)
+        assert np.all(post.slip_mode(samples[0])[post._c_idx] >= 0.0)

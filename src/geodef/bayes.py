@@ -158,18 +158,22 @@ class RectPosterior:
         slip_scale: Prior slip scale in meters for ``'weak'`` — the
             prior is ``m ~ N(0, (sigma * slip_scale)^2 I)``.
         positive: Positivity constraint on slip. ``None`` (default)
-            keeps the fully collapsed sampler (slip marginalized
+            keeps the fully collapsed sampler (all slip marginalized
             analytically). Setting it — ``'strike'``, ``'dip'``,
             ``'both'``, or a bool array of length ``n_slip`` — makes the
-            slip prior a **truncated** Gaussian, which is no longer
-            conjugate, so the whole slip vector rejoins the sampled state
-            as a whitened block appended after the hyperparameters and is
-            sampled jointly with geometry. Constrained components pass
-            through a softplus so ``m >= 0`` holds exactly; the map's
-            log-Jacobian is carried in the density. Each gradient still
-            traces the Okada kernel only seven times (a ``custom_jvp``
-            around ``G(theta)``), regardless of how many slip components
-            are sampled.
+            slip prior a **truncated** Gaussian on the selected
+            components, which is no longer conjugate there. Only those
+            constrained components rejoin the sampled state (a whitened
+            block appended after the hyperparameters, passed through a
+            softplus so ``m >= 0`` holds exactly, with the map's
+            log-Jacobian carried in the density); the **unconstrained**
+            slip is still marginalized analytically (a half-collapse), so
+            the sampled dimension grows only by the number of constrained
+            components. This reduces to the fully collapsed sampler when
+            no component is constrained, and to a fully joint slip
+            sampler when all are. Each gradient traces the Okada kernel
+            only seven times (a ``custom_jvp`` around ``G(theta)``),
+            regardless of how many components are sampled.
         log10_sigma_prior: Uniform prior bounds on ``log10_sigma``.
         log10_lambda_prior: Uniform prior bounds on ``log10_lambda``
             (hierarchical mode only).
@@ -401,19 +405,49 @@ class RectPosterior:
         lam_ref = self._lam_ref
         sigma_ref = 1.0
         H0 = G_w0.T @ G_w0 + lam_ref * self._LtL
-        L0 = scipy.linalg.cholesky(H0, lower=True)
-        mu0 = scipy.linalg.cho_solve((L0, True), G_w0.T @ self._d_w)
+        mu0_full = scipy.linalg.solve(H0, G_w0.T @ self._d_w, assume_a="pos")
+
+        # Half-collapse: only the positivity-constrained components stay
+        # in the sampled state; the unconstrained block is marginalized
+        # analytically (its Gaussian conditional is integrated in the
+        # density, and completed post-hoc in slip draws). The sampled
+        # block is whitened by the Schur complement of the reference H0 —
+        # its exact marginal precision — which reduces to H0 itself when
+        # every component is constrained (nothing to marginalize).
+        c_idx = np.flatnonzero(self._mask)
+        f_idx = np.flatnonzero(~self._mask)
+        self._c_idx = c_idx
+        self._f_idx = f_idx
+        p_c = len(c_idx)
+
+        if len(f_idx) > 0:
+            H_cc = H0[np.ix_(c_idx, c_idx)]
+            H_cf = H0[np.ix_(c_idx, f_idx)]
+            H_ff = H0[np.ix_(f_idx, f_idx)]
+            schur = H_cc - H_cf @ scipy.linalg.solve(H_ff, H_cf.T, assume_a="pos")
+        else:
+            schur = H0[np.ix_(c_idx, c_idx)]
+        L0 = scipy.linalg.cholesky(schur, lower=True)
         self._sigma_ref = sigma_ref
         self._L0 = L0
-        self._mu0 = mu0
-        self._logJ_affine = n_slip * np.log(sigma_ref) - float(
+        self._mu0 = mu0_full[c_idx]
+        # All sampled components are constrained, so the transform's
+        # softplus applies to every one of them.
+        self._mask_c = np.ones(p_c, dtype=bool)
+        self._logJ_affine = p_c * np.log(sigma_ref) - float(
             np.sum(np.log(np.diagonal(L0)))
         )
 
-        self.param_names = list(self.param_names) + [f"z{i}" for i in range(n_slip)]
-        self.x0 = np.concatenate([self.x0, np.zeros(n_slip)])
-        self._lo = np.concatenate([self._lo, np.full(n_slip, -np.inf)])
-        self._hi = np.concatenate([self._hi, np.full(n_slip, np.inf)])
+        # Fixed regularization sub-blocks for the marginalization.
+        K = self._LtL
+        self._K_cc = K[np.ix_(c_idx, c_idx)]
+        self._K_cf = K[np.ix_(c_idx, f_idx)]
+        self._K_ff = K[np.ix_(f_idx, f_idx)]
+
+        self.param_names = list(self.param_names) + [f"z{i}" for i in c_idx]
+        self.x0 = np.concatenate([self.x0, np.zeros(p_c)])
+        self._lo = np.concatenate([self._lo, np.full(p_c, -np.inf)])
+        self._hi = np.concatenate([self._hi, np.full(p_c, np.inf)])
         self.n_params = len(self.param_names)
 
     def _build_logpdf(self) -> Any:
@@ -479,22 +513,24 @@ class RectPosterior:
             return raw_G(theta), jnp.tensordot(jac, t, axes=([2], [0]))
 
         self._G_of_theta = G_of_theta
-
-        def logpdf(x: Any) -> Any:
-            return self._log_prior_joint(x) + self._log_likelihood_joint(x)
-
-        return logpdf
+        return self._logpdf_joint
 
     def _assemble_joint(self, x: Any) -> tuple:
-        """Joint-path ingredients at sampled x (traceable).
+        """Half-collapsed density ingredients at sampled x (traceable).
+
+        Assembles ``G(theta)``, maps the whitened block to the
+        constrained slip ``m_c``, and analytically marginalizes the
+        unconstrained slip block: ``H_f = G_f^T G_f + lam K_ff``,
+        ``b = G_f^T r_c - lam K_cf^T m_c`` with ``r_c = d_w - G_c m_c``,
+        and ``S_c = ||r_c||^2 + lam m_c^T K_cc m_c - b^T H_f^-1 b``.
+        Reduces to the fully joint density (no marginalization) when
+        every component is constrained.
 
         Returns:
-            Tuple ``(sigma2, lam, G_w, m, logJ)``: noise variance,
-            regularization strength, weighted Green's matrix at the
-            sampled geometry, slip vector (whitened + softplus), and the
-            log-Jacobian of the ``z -> m`` map.
+            Tuple ``(sigma2, lam, m_c, logJ, S_c, logdet_Hf)``.
         """
         import jax.numpy as jnp
+        from jax.scipy.linalg import cho_solve
 
         x = jnp.clip(jnp.asarray(x), jnp.asarray(self._lo), jnp.asarray(self._hi))
         n_free = len(self.free)
@@ -510,47 +546,74 @@ class RectPosterior:
         G3 = self._G_of_theta(theta)
         G_w = (jnp.asarray(self._W_half_P) @ G3)[:, self._col_start : self._col_stop]
         z = x[self._n_hyper :]
-        m, logJ = _slip_transform(
-            z, self._mu0, self._L0, self._mask, self._sigma_ref, self._logJ_affine
+        m_c, logJ = _slip_transform(
+            z, self._mu0, self._L0, self._mask_c, self._sigma_ref, self._logJ_affine
         )
-        return sigma2, lam, G_w, m, logJ
 
-    def _log_likelihood_joint(self, x: Any) -> Any:
-        """Gaussian data log-likelihood at sampled slip and geometry."""
+        G_c = G_w[:, jnp.asarray(self._c_idx)]
+        r_c = jnp.asarray(self._d_w) - G_c @ m_c
+        quad_cc = m_c @ jnp.asarray(self._K_cc) @ m_c
+        if len(self._f_idx) > 0:
+            G_f = G_w[:, jnp.asarray(self._f_idx)]
+            H_f = G_f.T @ G_f + lam * jnp.asarray(self._K_ff)
+            chol_Hf = jnp.linalg.cholesky(H_f)
+            b = G_f.T @ r_c - lam * (jnp.asarray(self._K_cf).T @ m_c)
+            y = cho_solve((chol_Hf, True), b)
+            S_c = r_c @ r_c + lam * quad_cc - b @ y
+            logdet_Hf = 2.0 * jnp.sum(jnp.log(jnp.diagonal(chol_Hf)))
+        else:
+            S_c = r_c @ r_c + lam * quad_cc
+            logdet_Hf = jnp.asarray(0.0)
+        return sigma2, lam, m_c, logJ, S_c, logdet_Hf
+
+    def _hyper_logprior(self, x: Any) -> Any:
+        """Uniform/normal priors on the sampled hyperparameters (traceable)."""
         import jax.numpy as jnp
 
-        sigma2, _, G_w, m, _ = self._assemble_joint(x)
-        r = jnp.asarray(self._d_w) - G_w @ m
-        n = self.n_data
-        return -0.5 * n * jnp.log(2.0 * jnp.pi * sigma2) - (r @ r) / (2.0 * sigma2)
-
-    def _log_prior_joint(self, x: Any) -> Any:
-        """Hyperparameter priors + truncated-Gaussian slip prior + Jacobian."""
-        import jax.numpy as jnp
-
-        x = jnp.asarray(x)
-        nh = self._n_hyper
-        xh = x[:nh]
-        lo, hi = jnp.asarray(self._lo[:nh]), jnp.asarray(self._hi[:nh])
+        xh = jnp.asarray(x)[: self._n_hyper]
+        lo, hi = (
+            jnp.asarray(self._lo[: self._n_hyper]),
+            jnp.asarray(self._hi[: self._n_hyper]),
+        )
         in_bounds = (xh >= lo) & (xh <= hi)
         lp_uniform = jnp.where(in_bounds, -jnp.log(hi - lo), -jnp.inf)
         zc = (xh - jnp.asarray(self._mu)) / jnp.asarray(self._sd)
         lp_normal = (
             -0.5 * zc**2 - jnp.log(jnp.asarray(self._sd)) - 0.5 * jnp.log(2.0 * jnp.pi)
         )
-        hyper_lp = jnp.sum(
-            jnp.where(jnp.asarray(self._is_uniform), lp_uniform, lp_normal)
+        return jnp.sum(jnp.where(jnp.asarray(self._is_uniform), lp_uniform, lp_normal))
+
+    def _logpdf_joint(self, x: Any) -> Any:
+        """Half-collapsed joint log-posterior (single assembly, traceable)."""
+        import jax.numpy as jnp
+
+        sigma2, lam, _, logJ, S_c, logdet_Hf = self._assemble_joint(x)
+        n_marg = self.n_data + len(self._c_idx)
+        marg = (
+            -0.5 * n_marg * jnp.log(2.0 * jnp.pi * sigma2)
+            + 0.5 * (self._logdet_rank * jnp.log(lam) + self._logdet_sum)
+            - 0.5 * logdet_Hf
+            - S_c / (2.0 * sigma2)
+        )
+        return self._hyper_logprior(x) + logJ + marg
+
+    def _log_likelihood_joint(self, x: Any) -> Any:
+        """Half-collapsed marginal log-likelihood (slip integrated/profiled)."""
+        import jax.numpy as jnp
+
+        sigma2, lam, _, _, S_c, logdet_Hf = self._assemble_joint(x)
+        n_marg = self.n_data + len(self._c_idx)
+        return (
+            -0.5 * n_marg * jnp.log(2.0 * jnp.pi * sigma2)
+            + 0.5 * (self._logdet_rank * jnp.log(lam) + self._logdet_sum)
+            - 0.5 * logdet_Hf
+            - S_c / (2.0 * sigma2)
         )
 
-        sigma2, lam, _, m, logJ = self._assemble_joint(x)
-        p = self._n_slip
-        quad = m @ jnp.asarray(self._LtL) @ m
-        log_prior_m = (
-            -0.5 * p * jnp.log(2.0 * jnp.pi * sigma2)
-            + 0.5 * (self._logdet_rank * jnp.log(lam) + self._logdet_sum)
-            - lam * quad / (2.0 * sigma2)
-        )
-        return hyper_lp + log_prior_m + logJ
+    def _log_prior_joint(self, x: Any) -> Any:
+        """Hyperparameter priors + whitening Jacobian (sampled-space prior)."""
+        _, _, _, logJ, _, _ = self._assemble_joint(x)
+        return self._hyper_logprior(x) + logJ
 
     @staticmethod
     def _parse_prior(name: str, spec: tuple) -> tuple:
@@ -712,19 +775,64 @@ class RectPosterior:
 
         Returns:
             Conditional slip mode, shape (n_slip,). On the positivity
-            (joint-slip) path there is no conditional to take a mode of;
-            this returns the slip vector that ``x`` maps to directly.
+            (joint-slip) path this is the full slip vector at ``x``: the
+            constrained block mapped through the softplus, and the
+            marginalized block set to its conditional mean.
         """
         if self._joint:
-            return backend.to_numpy(self._assemble_joint(np.asarray(x, dtype=float))[3])
+            m, _ = self._joint_reconstruct(np.asarray(x, dtype=float), None)
+            return backend.to_numpy(m)
         return backend.to_numpy(self._assemble(np.asarray(x, dtype=float))[4])
 
-    def _joint_slip_pred(self, x: Any) -> tuple:
-        """Slip and unweighted predicted data at x on the joint path."""
-        import jax.numpy as jnp
-        from jax.scipy.linalg import solve_triangular
+    def _joint_reconstruct(self, x: Any, key: Any) -> tuple:
+        """Full slip and unweighted prediction at x on the positivity path.
 
-        _, _, G_w, m, _ = self._assemble_joint(x)
+        The constrained block is the deterministic softplus map of the
+        sampled ``z``; the marginalized block is completed from its exact
+        Gaussian conditional ``m_f | m_c, x, d ~ N(H_f^-1 b, sigma^2
+        H_f^-1)`` — drawn when ``key`` is a PRNG key, or set to the
+        conditional mean when ``key`` is None (used by :meth:`slip_mode`).
+        """
+        import jax
+        import jax.numpy as jnp
+        from jax.scipy.linalg import cho_solve, solve_triangular
+
+        x = jnp.clip(jnp.asarray(x), jnp.asarray(self._lo), jnp.asarray(self._hi))
+        n_free = len(self.free)
+        theta = jnp.asarray(self._theta0)
+        if n_free:
+            theta = theta.at[jnp.asarray(self._free_idx)].set(x[:n_free])
+        sigma2 = 10.0 ** (2.0 * x[n_free])
+        if self._lambda_fixed is not None:
+            lam = jnp.asarray(self._lambda_fixed)
+        else:
+            lam = 10.0 ** x[n_free + 1]
+
+        G3 = self._G_of_theta(theta)
+        G_w = (jnp.asarray(self._W_half_P) @ G3)[:, self._col_start : self._col_stop]
+        z = x[self._n_hyper :]
+        m_c, _ = _slip_transform(
+            z, self._mu0, self._L0, self._mask_c, self._sigma_ref, self._logJ_affine
+        )
+        c_idx = jnp.asarray(self._c_idx)
+        m = jnp.zeros(self._n_slip, dtype=m_c.dtype).at[c_idx].set(m_c)
+        if len(self._f_idx) > 0:
+            f_idx = jnp.asarray(self._f_idx)
+            G_c = G_w[:, c_idx]
+            r_c = jnp.asarray(self._d_w) - G_c @ m_c
+            G_f = G_w[:, f_idx]
+            H_f = G_f.T @ G_f + lam * jnp.asarray(self._K_ff)
+            chol_Hf = jnp.linalg.cholesky(H_f)
+            b = G_f.T @ r_c - lam * (jnp.asarray(self._K_cf).T @ m_c)
+            m_f_mean = cho_solve((chol_Hf, True), b)
+            if key is None:
+                m_f = m_f_mean
+            else:
+                eps = jax.random.normal(key, m_f_mean.shape, dtype=m_f_mean.dtype)
+                m_f = m_f_mean + jnp.sqrt(sigma2) * solve_triangular(
+                    chol_Hf.T, eps, lower=False
+                )
+            m = m.at[f_idx].set(m_f)
         d_pred = solve_triangular(jnp.asarray(self._W_half), G_w @ m, lower=False)
         return m, d_pred
 
@@ -754,7 +862,10 @@ class RectPosterior:
 
         samples = np.atleast_2d(np.asarray(samples, dtype=float))
         if self._joint:
-            m, d_pred = jax.jit(jax.vmap(self._joint_slip_pred))(jnp.asarray(samples))
+            keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
+            m, d_pred = jax.jit(jax.vmap(self._joint_reconstruct))(
+                jnp.asarray(samples), keys
+            )
             return backend.to_numpy(m), backend.to_numpy(d_pred)
         keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
         m, d_pred = jax.jit(jax.vmap(self._draw_one))(jnp.asarray(samples), keys)
@@ -769,15 +880,19 @@ class RectPosterior:
         (Rao-Blackwellization), so per-patch statistics of the result
         include geometry and hyperparameter uncertainty.
 
-        On the positivity path slip is already part of ``x``, so this is
-        instead a **deterministic** transform of each sample row (``seed``
-        is ignored) and the returned draws respect the constraint exactly.
+        On the positivity path the constrained block is already part of
+        ``x`` (a deterministic softplus map, ``seed``-independent, and
+        non-negative exactly), while the marginalized unconstrained block
+        is completed from its Gaussian conditional — one draw per sample,
+        so it does use ``seed``. When every component is constrained
+        nothing is marginalized and the whole result is deterministic.
 
         Args:
             samples: Sampled parameter vectors, shape (n, n_params) —
                 e.g. ``PosteriorResult.flat`` (optionally thinned).
-            seed: PRNG seed for the conditional draws (collapsed path
-                only; ignored on the positivity path).
+            seed: PRNG seed for the conditional draws — of the full slip
+                on the collapsed path, of the marginalized block on the
+                positivity path.
 
         Returns:
             Slip draws, shape (n, n_slip). Columns follow the
