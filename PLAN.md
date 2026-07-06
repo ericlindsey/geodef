@@ -237,9 +237,65 @@ Steps (red/green TDD, one commit per step):
   `custom_jvp` rule (`jax.jacfwd`; linear in tangents, so `jax.grad`
   transposes through it exactly) — right-sized for the few sampled
   parameters and compiling in seconds.
-- [ ] Later (separate steps, next phase): blackjax SMC/tempering for
-  multimodal posteriors; triangular-mesh geometry sampling once tri
-  jit/vmap lands; GPU-scale joint slip sampling with positivity priors.
+- [ ] Step 6 — beyond the collapsed sampler (planned 2026-07; sub-steps
+  below, one commit each, in order).
+
+#### Phase 4, step 6 — positivity, triangular geometry, tempering
+
+**Key finding on positivity vs. marginalization.** The analytic collapse
+exists only because the Gaussian slip prior is conjugate; truncating it to
+the positive orthant turns the marginal likelihood into a ratio of orthant
+probabilities with no closed form at hundreds of dimensions. So positivity
+puts slip back into the sampled state — but the speed is recovered another
+way: whitened joint sampling has a per-leapfrog gradient cost of one
+`(3*nobs, 2N)` matvec, jit/vmapped over chains, and that same compiled code
+is the GPU path. The dimension cost lands in NUTS trajectory length, which
+whitening keeps in check. Where a component's prior stays Gaussian, it can
+still be marginalized exactly (half-collapse). Precedent for joint
+slip + hyperparameter sampling under positivity: Fukuda & Johnson (2008);
+we add gradients.
+
+- [ ] **6a. `bayes.SlipPosterior` — joint slip sampling with positivity,
+  fixed geometry.** Sampled state = slip (2N) + `log10_sigma`;
+  per-component positivity masks (e.g. dip-slip only) applied by softplus
+  reparameterization; whitened parameterization `z ~ N(0, I)` pushed
+  through the Cholesky factor of the unconstrained Gaussian conditional at
+  the fixed geometry, softplus applied after the affine map. Shares
+  RectPosterior's data-weighting and prior plumbing. `profiled` lambda
+  only at first: hierarchical lambda under positivity is biased unless the
+  truncated-prior normalizer Z(lambda) (an orthant probability) is
+  included — deferred, documented decision. Validation: the unconstrained
+  limit must reproduce the exact collapsed conditional moments
+  (`slip_draws`); positivity MAP vs `invert`'s nnls solve; small-problem
+  emcee cross-check on the same logpdf.
+- [ ] **6b. Half-collapse and joint geometry + slip.** Marginalize the
+  unconstrained slip block analytically (Gaussian conditional given the
+  constrained block), sampling geometry + hyperparameters + only the
+  sign-constrained component — halves the slip dimension in the common
+  one-constrained-component case. Whitening at a reference theta (the
+  `geometry_search` MAP). Per-leapfrog cost now includes the jitted
+  G(theta) assembly from Phases 1–2.
+- [ ] **6c. Triangular-mesh geometry sampling (`bayes.TriPosterior`).**
+  Prerequisite: the remaining Phase 2 tri jit/vmap work. Parameterization
+  decision: **no remeshing inside the sampler** — connectivity flips are
+  posterior discontinuities and break static shapes. Instead, freeze one
+  reference mesh (connectivity plus per-vertex (along-strike, down-dip)
+  parameter coordinates) and let theta be values at a coarse set of
+  control knots (corners plus a few interior knots for curvature — depth
+  or local dip at a small (u, v) grid, ~5–15 parameters), pushed through a
+  fixed smooth interpolant (tensor-product spline or RBF with fixed
+  centers) that warps every vertex. Differentiable, one jit, chain rule
+  through the traced theta -> vertices builder per the Phase 2 decision.
+  Bounds come from knot priors (dip in (0, 90), seismogenic depth range)
+  with softplus increments where monotonicity matters. The slip prior
+  stays Gaussian here, so the full collapse still applies. Tests must
+  cover warps crossing the angular-dislocation branch boundaries.
+- [ ] **6d. Tempered SMC (`bayes.sample_smc`).** Glue around blackjax
+  `adaptive_tempered_smc`: prior-draw sampler from the parsed prior
+  specs, the existing NUTS kernel as the mutation step, adaptive
+  schedule; returns a `PosteriorResult` plus a log-evidence estimate
+  (free model comparison). De-risks 6a/6b multimodality. Independently
+  deferrable if blackjax API churn makes it costly.
 
 ### Risks and non-goals
 - Do **not** make JAX a hard dependency or complicate the base API.
