@@ -4,11 +4,13 @@
 
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
-(locked fault / coupling) applications. As of **v1.0** the runtime library, the
-eleven-part tutorial course, and the per-module documentation are complete; `ruff`
-and `mypy` pass cleanly and the suite runs warning-free. Forward-looking work
-(a GPU/autodiff accelerator, earthquake-cycle modeling, more Green's engines)
-is tracked in `PLAN.md`.
+(locked fault / coupling) applications. As of **v1.1** the runtime library, the
+eleven-part tutorial course, the per-module documentation, and the optional JAX
+accelerator (differentiable forward models, gradient-based `geometry_search`, and
+the collapsed Bayesian sampler `geodef.bayes`) are complete; `ruff` and `mypy`
+pass cleanly and the suite runs warning-free. Remaining forward-looking work
+(earthquake-cycle modeling, more Green's engines, batched L-curve/CV sweeps,
+triangular-mesh geometry sampling) is tracked in `PLAN.md`.
 
 **Read `PYTHON.md` before editing any code.**
 
@@ -23,7 +25,7 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 884 tests collected across 18 files
+├── tests/                 # 926 tests collected across 24 files
 ├── tutorials/             # Eleven-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
@@ -37,11 +39,13 @@ geodef/
 
 | Module | What it provides |
 |--------|-----------------|
+| `backend` | Array backend selection: NumPy (default) or JAX, precision control |
 | `okada85` | Surface displacements, tilts, strains (Okada 1985) |
 | `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
 | `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
 | `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
+| `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
@@ -111,8 +115,9 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**883 tests passing, 1 skipped, 884 collected** across 18 test files covering
-all modules. Reference data in `tests/reference_data/` — Matlab-generated
-`.npz` files for cross-validation of Green's function engines. A few `Fault.load`
-tests need reference data under `related/stress-shadows/` and are skipped when
-it is absent.
+**926 tests collected** across 24 test files covering all modules. Reference
+data in `tests/reference_data/` — Matlab-generated `.npz` files for
+cross-validation of Green's function engines. Tests skip rather than fail when
+their optional dependency is absent: a few `Fault.load` tests need reference
+data under `related/stress-shadows/`, and the JAX/blackjax-gated backend,
+gradient, and Bayesian tests need `geodef[jax]` / `geodef[bayes]`.

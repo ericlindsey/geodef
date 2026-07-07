@@ -59,7 +59,7 @@ class TestTopLevelAPI:
         import geodef
 
         assert isinstance(geodef.__version__, str)
-        assert geodef.__version__ == "1.0.0"
+        assert geodef.__version__ == "1.1.0"
 
     def test_dataset_classes_importable(self):
         import geodef
