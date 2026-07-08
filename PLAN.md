@@ -1,9 +1,14 @@
 # PLAN.md — Forward-Looking Roadmap for GeoDef
 
-**GeoDef v1.0 has shipped.** The runtime library, the ten-part tutorial course,
-the per-module documentation, and clean `ruff`/`mypy`/warning-free tooling are
-all complete. This document is now **forward-looking only**: it records where the
-project is headed, not what has already been done.
+**GeoDef v1.1 has shipped.** The runtime library, the eleven-part tutorial
+course, the per-module documentation, and clean `ruff`/`mypy`/warning-free
+tooling are all complete, and the headline JAX accelerator (roadmap item 1) has
+substantially landed: the differentiable forward models, gradient-based
+`geometry_search`, and the collapsed Bayesian sampler `geodef.bayes` (Phase 4)
+are all in. This document is **forward-looking**: the checklists below record the
+completed JAX phases for context, but the open work is the unchecked items
+(batched L-curve/CV sweeps, differentiable strain/stress and triangular-mesh
+jit/vmap) plus roadmap items 2–4.
 
 **Read `PYTHON.md` before editing any code.**
 

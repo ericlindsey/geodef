@@ -4,11 +4,13 @@
 
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
-(locked fault / coupling) applications. As of **v1.0** the runtime library, the
-eleven-part tutorial course, and the per-module documentation are complete; `ruff`
-and `mypy` pass cleanly and the suite runs warning-free. Forward-looking work
-(a GPU/autodiff accelerator, earthquake-cycle modeling, more Green's engines)
-is tracked in `PLAN.md`.
+(locked fault / coupling) applications. As of **v1.1** the runtime library, the
+eleven-part tutorial course, the per-module documentation, and the optional JAX
+accelerator (differentiable forward models, gradient-based `geometry_search`, and
+the collapsed Bayesian sampler `geodef.bayes`) are complete; `ruff` and `mypy`
+pass cleanly and the suite runs warning-free. Remaining forward-looking work
+(earthquake-cycle modeling, more Green's engines, batched L-curve/CV sweeps,
+triangular-mesh geometry sampling) is tracked in `PLAN.md`.
 
 **Read `PYTHON.md` before editing any code.**
 
@@ -23,7 +25,7 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 992 tests collected across 23 files
+├── tests/                 # 926 tests collected across 24 files
 ├── tutorials/             # Eleven-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
@@ -113,9 +115,10 @@ Commit granularity guidelines:
 uv run pytest
 ```
 
-**992 tests collected** across 23 test files covering all modules. Reference
+**926 tests collected** across 24 test files covering all modules. Reference
 data in `tests/reference_data/` — Matlab-generated `.npz` files for
 cross-validation of Green's function engines, plus golden okada92 outputs
 captured from the pre-vectorization scalar port. A few `Fault.load` tests
 need reference data under `related/stress-shadows/` and are skipped when it
-is absent; JAX-backend tests are skipped when JAX is not installed.
+is absent; the JAX/blackjax-gated backend, gradient, and Bayesian tests are
+skipped when those optional dependencies are not installed.

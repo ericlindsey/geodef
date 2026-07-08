@@ -4,9 +4,22 @@ A Python library for forward and inverse modeling of fault slip in elastic
 half-spaces. Targets coseismic (earthquake) and interseismic (coupling)
 applications.
 
-Status: **v1.0** — the runtime library, the eleven-part tutorial course, and the
-per-module documentation are complete. `ruff` and `mypy` pass cleanly and the
-test suite runs warning-free.
+It ships rectangular (Okada 1985/1992) and triangular (Nikkhoo & Walter 2015)
+dislocation engines, Green's-matrix assembly, and a full linear-inversion stack
+(regularization, hyperparameter selection, bounds, uncertainty and resolution),
+all on a pure-NumPy default path. An **optional JAX backend** JIT-compiles the
+Green's-function kernels through XLA — on ordinary CPUs and on GPUs when
+available — and makes the whole geometry → `G` → slip → data pipeline
+**automatically differentiable**. That unlocks gradient-based nonlinear geometry
+inversion (`geodef.gradients`, `invert.geometry_search`) and a collapsed
+**Bayesian** geometry sampler (`geodef.bayes`, NUTS via blackjax). NumPy stays
+the default everywhere; nothing changes for existing users unless a backend is
+explicitly selected.
+
+Status: **v1.1** — the runtime library, the eleven-part tutorial course, the
+per-module documentation, and the optional JAX accelerator (differentiable
+forward models, gradient-based and Bayesian geometry inference) are complete.
+`ruff` and `mypy` pass cleanly and the test suite runs warning-free.
 
 ## Install
 
@@ -17,8 +30,14 @@ uv pip install -e .
 uv pip install -e ".[geo]"    # pyproj geodetic transforms / slab2.0 sampling
 uv pip install -e ".[mesh]"   # meshpy triangular mesh generation
 uv pip install -e ".[maps]"   # cartopy geographic map plotting
+uv pip install -e ".[jax]"    # JAX backend: JIT/GPU kernels + autodiff
+uv pip install -e ".[bayes]"  # Bayesian geometry sampling (jax + blackjax)
 uv pip install -e ".[all]"    # everything optional
 ```
+
+On a machine with an NVIDIA GPU, install JAX's CUDA build instead of the plain
+`[jax]` extra (see [`docs/backend.md`](docs/backend.md) for precision and GPU
+notes).
 
 ## Quick start
 
@@ -60,6 +79,35 @@ fixed_azimuth = geodef.invert(fault, gnss,
                               components='azimuth', slip_azimuth=15.0)
 ```
 
+## Differentiable and Bayesian modeling (JAX)
+
+Selecting the JAX backend JIT-compiles the kernels and makes the forward model
+differentiable — no change to the calls above, and the teaching notebooks stay
+on the NumPy path.
+
+```python
+geodef.backend.set_backend("jax")      # pip install geodef[jax]
+
+# Starting geometry [e0, n0, depth, strike, dip, length, width]
+theta0 = np.array([0.0, 0.0, 25e3, 90.0, 15.0, 100e3, 50e3])
+
+# Gradient-based nonlinear geometry inversion (variable projection + L-BFGS-B)
+gs = geodef.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+                            free=["dip", "depth"])
+print(gs.theta, gs.theta_cov)          # best-fit geometry + Gauss-Newton covariance
+
+# Full posterior over geometry + hyperparameters (slip marginalized), via NUTS
+from geodef import bayes                # pip install geodef[bayes]
+post = bayes.RectPosterior(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+                           free=["dip", "depth"])
+result = bayes.sample(post, n_chains=4)
+print(result.summary())                # R-hat, ESS, credible intervals
+```
+
+See [`docs/backend.md`](docs/backend.md), [`docs/gradients.md`](docs/gradients.md),
+and [`docs/bayes.md`](docs/bayes.md) for the full APIs, and
+`examples/bayesian_geometry.ipynb` for a worked posterior study.
+
 ## Tutorials
 
 An eleven-part course in geodetic inverse methods, taught with synthetic data and
@@ -70,9 +118,11 @@ executed by the pytest suite so it stays aligned with the runtime API:
 5. Choosing the regularization strength (L-curve / ABIC / CV) ·
 6. Joint GNSS + InSAR · 7. Correlated InSAR noise ·
 8. Bounds and constraints · 9. Uncertainty and resolution ·
-10. Nonlinear geometry search.
+10. Nonlinear geometry search · 11. Gradient-based geometry inversion on the
+JAX backend (requires `geodef[jax]`).
 
-See [`tutorials/README.md`](tutorials/README.md) for the full path.
+Notebooks 1–10 run on the NumPy default path; notebook 11 is an advanced JAX
+extension. See [`tutorials/README.md`](tutorials/README.md) for the full path.
 `tutorials/reference_plots.ipynb` is an exhaustive gallery of the plot functions.
 
 ## Examples
@@ -83,6 +133,9 @@ Project and real-data examples live in `examples/`.
 |----------|---------------|
 | `examples/gorkha_earthquake/model_gorkha.ipynb` | Real-data Gorkha earthquake inversion with GNSS, InSAR, smoothing, and fixed-azimuth slip |
 | `examples/mesh_generation.ipynb` | Building triangular fault meshes from traces, polygons, points, and slab2.0 |
+| `examples/bayesian_geometry.ipynb` | Collapsed Bayesian geometry inference: NUTS posterior vs Gauss-Newton, slip credible intervals, and an emcee cross-check |
+
+See [`examples/README.md`](examples/README.md) for the full list.
 
 ## Module reference
 
@@ -101,16 +154,29 @@ Full API docs with examples are in `docs/`:
 | [`docs/okada.md`](docs/okada.md) | `okada` dispatcher + `okada85` / `okada92` direct access |
 | [`docs/cache.md`](docs/cache.md) | Disk caching configuration |
 | [`docs/transforms.md`](docs/transforms.md) | Geodetic coordinate transforms |
+| [`docs/backend.md`](docs/backend.md) | JAX backend selection, precision, and GPU notes |
+| [`docs/gradients.md`](docs/gradients.md) | Differentiable forward models and Jacobians (JAX) |
+| [`docs/bayes.md`](docs/bayes.md) | Collapsed Bayesian geometry inference (NUTS / blackjax) |
 
 ## Testing
 
 ```bash
-uv run pytest -q   # 887 passed, 1 skipped, 888 collected
+uv run pytest -q   # 926 tests collected across 24 test files
 ```
 
 The tutorial notebooks and a Gorkha example smoke test run as part of the suite.
-A handful of `Fault.load` tests need reference data under `related/stress-shadows/`
-and are skipped when it is absent.
+Tests are skipped rather than failed when their optional dependency is absent:
+the JAX/blackjax-gated backend, gradient, and Bayesian tests skip without
+`geodef[jax]` / `geodef[bayes]`, and a handful of `Fault.load` tests need
+reference data under `related/stress-shadows/`.
+
+## Development
+
+Contributor and roadmap docs live at the repository root:
+
+- [`PYTHON.md`](PYTHON.md) — mandatory coding standards and tooling (read before editing any code).
+- [`PLAN.md`](PLAN.md) — the forward-looking roadmap (GPU/autodiff, earthquake-cycle modeling, more Green's engines).
+- [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) — agent onboarding guides for automated contributors.
 
 ## AI co-authorship
 
