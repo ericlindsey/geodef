@@ -114,7 +114,422 @@ def _slip_transform(
     return m, logJ
 
 
-class RectPosterior:
+class _CollapsedPosterior:
+    """Base class for collapsed (slip-marginalized) geometry posteriors.
+
+    Holds everything that is generic over the weighted-Green's-matrix
+    assembly ``self._assemble(x)``: the whole-``logpdf`` forward-mode
+    ``custom_jvp`` wrapper, prior parsing/clipping, the collapsed slip
+    linear algebra (:meth:`_collapse_terms`), the traceable density
+    pieces (``log_likelihood``, ``log_prior``, ``logpdf``), and the
+    conditional slip posterior / posterior predictive (``slip_mode``,
+    ``slip_draws``, ``predict``). A subclass implements ``_assemble`` to
+    plug in its own forward model (e.g. a rectangular Okada patch grid
+    or a warped triangular mesh); everything else here is inherited
+    unchanged.
+
+    A subclass whose slip prior stops being conjugate in some parameter
+    regime (:class:`RectPosterior`'s positivity path) may set
+    ``self._joint = True`` and override ``_log_likelihood_joint``,
+    ``_log_prior_joint``, and ``_joint_reconstruct``; ``log_likelihood``,
+    ``log_prior``, ``slip_mode``, and ``_vmapped_draws`` dispatch to
+    those instead of the collapsed path whenever ``_joint`` is set. The
+    base implementations of the three raise ``NotImplementedError`` —
+    they only exist to satisfy mypy and are never reached while
+    ``_joint`` stays False.
+
+    Attributes a subclass's ``__init__`` must set:
+        _lo, _hi: Per-parameter lower/upper bounds, ``+-inf`` for
+            normal-prior entries.
+        _is_uniform: Bool array, True where the prior is uniform (vs.
+            normal).
+        _mu, _sd: Normal-prior mean/sd, unused where ``_is_uniform``.
+        n_data: Number of (weighted, stacked) observations.
+        _include_logdet: Whether ``log_likelihood`` includes the Occam
+            (log-determinant) terms (False in ``'profiled'`` mode).
+        _logdet_rank, _logdet_sum: Precomputed pseudo-determinant pieces
+            of the slip-prior precision (rank and sum of log positive
+            eigenvalues).
+        _LtL: Slip-prior regularization matrix ``L^T L``.
+        _d_w: Weighted, stacked observation vector.
+        _W_half: Upper-Cholesky factor of the data weight matrix (used
+            to undo weighting in predictions).
+        _lambda_fixed: Fixed ``lambda`` (``'weak'``/``'profiled'``
+            modes) or None when ``lambda`` is sampled
+            (``'hierarchical'``).
+        free: Names of the sampled free geometry/warp parameters.
+        param_names: Full sampled-parameter layout.
+        n_params: ``len(param_names)``.
+        x0: Initial sampled-parameter vector.
+        _logpdf_fn: The callable ``logpdf`` dispatches to — typically
+            ``self._build_logpdf()`` (collapsed path) or a joint-path
+            equivalent.
+    """
+
+    _joint: bool = False
+
+    # Attribute contract (see class docstring); declared here, unset,
+    # purely so mypy can check the base-class methods below. Subclasses
+    # assign real values in their own ``__init__``.
+    _lo: np.ndarray
+    _hi: np.ndarray
+    _is_uniform: np.ndarray
+    _mu: np.ndarray
+    _sd: np.ndarray
+    n_data: int
+    _include_logdet: bool
+    _logdet_rank: int
+    _logdet_sum: float
+    _LtL: np.ndarray
+    _d_w: np.ndarray
+    _W_half: np.ndarray
+    _lambda_fixed: float | None
+    free: list[str]
+    param_names: list[str]
+    n_params: int
+    x0: np.ndarray
+    _logpdf_fn: Any
+
+    def _build_logpdf(self) -> Any:
+        """Wrap the log-posterior with a forward-mode differentiation rule.
+
+        XLA compilation of the reverse-mode gradient through the nested
+        okada85 subfunctions is pathologically slow (minutes, vs seconds
+        for the forward pass), while forward-mode compiles quickly and —
+        with only a handful of sampled parameters — evaluates just as
+        fast. A ``custom_jvp`` rule built on ``jax.jacfwd`` makes every
+        downstream transform (``jax.grad`` in NUTS included) use forward
+        mode; the rule is linear in the tangents, so reverse mode
+        transposes through it exactly.
+        """
+        import jax
+        import jax.numpy as jnp
+
+        def raw(x: Any) -> Any:
+            return self.log_prior(x) + self.log_likelihood(x)
+
+        wrapped = jax.custom_jvp(raw)
+
+        @wrapped.defjvp
+        def _jvp(primals: tuple, tangents: tuple) -> tuple:
+            (x,), (t,) = primals, tangents
+            return raw(x), jnp.dot(jax.jacfwd(raw)(x), t)
+
+        return wrapped
+
+    @staticmethod
+    def _parse_prior(name: str, spec: tuple) -> tuple:
+        """Normalize a prior spec to ('uniform', lo, hi) or ('normal', mu, sd)."""
+        if len(spec) == 2:
+            lo, hi = map(float, spec)
+            if not lo < hi:
+                raise ValueError(f"theta_prior[{name!r}]: bounds must have lo < hi")
+            return ("uniform", lo, hi)
+        if len(spec) == 3 and spec[0] == "normal":
+            mu, sd = map(float, spec[1:])
+            if sd <= 0:
+                raise ValueError(f"theta_prior[{name!r}]: sd must be positive")
+            return ("normal", mu, sd)
+        raise ValueError(
+            f"theta_prior[{name!r}] must be (lo, hi) or ('normal', mu, sd), "
+            f"got {spec!r}"
+        )
+
+    # ------------------------------------------------------------------
+    # Traceable density pieces
+    # ------------------------------------------------------------------
+
+    def _clip(self, x: Any) -> Any:
+        """Clip uniform-prior parameters into bounds (traceable)."""
+        import jax.numpy as jnp
+
+        return jnp.clip(jnp.asarray(x), jnp.asarray(self._lo), jnp.asarray(self._hi))
+
+    def _assemble(self, x: Any) -> tuple:
+        """Marginalization ingredients at sampled parameters x (traceable).
+
+        A subclass assembles the weighted Green's matrix ``G_w`` for its
+        own forward model at (bound-clipped) ``x`` and calls
+        :meth:`_collapse_terms` to complete the collapsed slip linear
+        algebra.
+
+        Returns:
+            Tuple ``(sigma2, lam, G_w, chol_H, m_hat, S)``: noise
+            variance factor, prior strength, weighted Green's matrix,
+            Cholesky factor of ``H = G_w^T G_w + lam LtL``, conditional
+            slip mode, and the total misfit
+            ``S = ||d_w - G_w m||^2 + lam ||L m||^2``.
+
+        Raises:
+            NotImplementedError: Always in the base class; subclasses
+                must override.
+        """
+        raise NotImplementedError("Subclasses must implement _assemble")
+
+    def _collapse_terms(self, G_w: Any, lam: Any) -> tuple:
+        """Collapsed slip linear algebra at a weighted Green's matrix (traceable).
+
+        Shared by every ``_assemble`` implementation: given ``G_w`` and
+        the prior strength ``lam``, forms ``H = G_w^T G_w + lam LtL``,
+        its Cholesky factor, the conditional slip mode ``m_hat`` (the
+        ridge solution), and the total misfit that feeds the collapsed
+        log-likelihood.
+
+        Args:
+            G_w: Weighted Green's matrix, shape (n_data, n_slip).
+            lam: Slip-prior strength (scalar).
+
+        Returns:
+            Tuple ``(chol_H, m_hat, S)``: Cholesky factor of
+            ``H = G_w^T G_w + lam LtL``, conditional slip mode, and the
+            total misfit ``S = ||d_w - G_w m_hat||^2 + lam ||L m_hat||^2``.
+        """
+        import jax.numpy as jnp
+        from jax.scipy.linalg import cho_solve
+
+        LtL = jnp.asarray(self._LtL)
+        d_w = jnp.asarray(self._d_w)
+
+        H = G_w.T @ G_w + lam * LtL
+        chol_H = jnp.linalg.cholesky(H)
+        m_hat = cho_solve((chol_H, True), G_w.T @ d_w)
+        r = d_w - G_w @ m_hat
+        S = r @ r + lam * (m_hat @ LtL @ m_hat)
+        return chol_H, m_hat, S
+
+    def _misfit_total(self, x: npt.ArrayLike) -> np.ndarray:
+        """Total misfit S = ||d_w - G_w m||^2 + lam ||L m||^2 at x."""
+        return self._assemble(x)[5]
+
+    def log_likelihood(self, x: npt.ArrayLike) -> np.ndarray:
+        """Collapsed log-likelihood log p(d_w | x) (traceable).
+
+        The exact Gaussian marginal over slip in the hierarchical and
+        weak modes (up to the constant ``log|W|/2`` from weighting the
+        data, and using the pseudo-determinant convention when the
+        smoothing operator is rank-deficient); the profiled objective
+        without the Occam log-determinant terms in profiled mode.
+
+        Args:
+            x: Sampled parameter vector, ordered as ``param_names``.
+
+        Returns:
+            Scalar log-likelihood.
+        """
+        import jax.numpy as jnp
+
+        if self._joint:
+            return cast(np.ndarray, self._log_likelihood_joint(x))
+        sigma2, lam, _, chol_H, _, S = self._assemble(x)
+        n = self.n_data
+        ll = -0.5 * n * jnp.log(2.0 * jnp.pi * sigma2) - S / (2.0 * sigma2)
+        if self._include_logdet:
+            logdet_H = 2.0 * jnp.sum(jnp.log(jnp.diagonal(chol_H)))
+            logdet_prior = self._logdet_rank * jnp.log(lam) + self._logdet_sum
+            ll = ll + 0.5 * (logdet_prior - logdet_H)
+        return ll
+
+    def log_prior(self, x: npt.ArrayLike) -> np.ndarray:
+        """Log-prior over the sampled parameters (traceable).
+
+        Args:
+            x: Sampled parameter vector, ordered as ``param_names``.
+
+        Returns:
+            Scalar log-prior; ``-inf`` outside uniform bounds.
+        """
+        import jax.numpy as jnp
+
+        if self._joint:
+            return cast(np.ndarray, self._log_prior_joint(x))
+        x = jnp.asarray(x)
+        lo = jnp.asarray(self._lo)
+        hi = jnp.asarray(self._hi)
+        in_bounds = (x >= lo) & (x <= hi)
+        lp_uniform = jnp.where(in_bounds, -jnp.log(hi - lo), -jnp.inf)
+        z = (x - jnp.asarray(self._mu)) / jnp.asarray(self._sd)
+        lp_normal = (
+            -0.5 * z**2 - jnp.log(jnp.asarray(self._sd)) - 0.5 * jnp.log(2.0 * jnp.pi)
+        )
+        terms = jnp.where(jnp.asarray(self._is_uniform), lp_uniform, lp_normal)
+        return cast(np.ndarray, jnp.sum(terms))
+
+    def logpdf(self, x: npt.ArrayLike) -> np.ndarray:
+        """Log-posterior density (traceable, differentiable).
+
+        Equals ``log_prior(x) + log_likelihood(x)``; the likelihood is
+        evaluated at bound-clipped parameters so its gradient stays
+        finite at rejected points. On the collapsed path (``positive is
+        None``) differentiation goes through a whole-``logpdf``
+        forward-mode ``custom_jvp`` rule (see ``_build_logpdf``); on the
+        positivity path it is plain reverse-mode with the ``custom_jvp``
+        placed around ``G(theta)`` alone (see ``_build_logpdf_positive``).
+        Either way both ``jax.grad`` and ``jax.jacfwd`` work and compile
+        quickly.
+
+        Args:
+            x: Sampled parameter vector, ordered as ``param_names``.
+
+        Returns:
+            Scalar log-posterior; ``-inf`` outside uniform prior bounds.
+        """
+        return cast(np.ndarray, self._logpdf_fn(x))
+
+    def _log_likelihood_joint(self, x: Any) -> Any:
+        """Half-collapsed marginal log-likelihood (slip integrated/profiled).
+
+        Base stub — only overridden by a subclass whose slip prior stops
+        being conjugate in some parameter regime and sets
+        ``self._joint = True`` (e.g. :class:`RectPosterior`'s positivity
+        path).
+
+        Raises:
+            NotImplementedError: Always in the base class.
+        """
+        raise NotImplementedError(
+            "_log_likelihood_joint must be implemented by subclasses with _joint=True"
+        )
+
+    def _log_prior_joint(self, x: Any) -> Any:
+        """Hyperparameter priors + whitening Jacobian (sampled-space prior).
+
+        Base stub — only overridden by a subclass whose slip prior stops
+        being conjugate in some parameter regime and sets
+        ``self._joint = True`` (e.g. :class:`RectPosterior`'s positivity
+        path).
+
+        Raises:
+            NotImplementedError: Always in the base class.
+        """
+        raise NotImplementedError(
+            "_log_prior_joint must be implemented by subclasses with _joint=True"
+        )
+
+    def _joint_reconstruct(self, x: Any, key: Any) -> tuple:
+        """Full slip and unweighted prediction at x on the joint-slip path.
+
+        Base stub — only overridden by a subclass whose slip prior stops
+        being conjugate in some parameter regime and sets
+        ``self._joint = True`` (e.g. :class:`RectPosterior`'s positivity
+        path).
+
+        Raises:
+            NotImplementedError: Always in the base class.
+        """
+        raise NotImplementedError(
+            "_joint_reconstruct must be implemented by subclasses with _joint=True"
+        )
+
+    # ------------------------------------------------------------------
+    # Conditional slip posterior and posterior predictive
+    # ------------------------------------------------------------------
+
+    def slip_mode(self, x: npt.ArrayLike) -> np.ndarray:
+        """Conditional slip mode (= mean) at sampled parameters x.
+
+        The slip conditional on ``x`` is Gaussian,
+        ``m | x, d ~ N(m_hat, sigma^2 H^-1)`` with
+        ``H = G_w^T G_w + lam L^T L``; this returns ``m_hat``.
+
+        Args:
+            x: Sampled parameter vector, ordered as ``param_names``.
+
+        Returns:
+            Conditional slip mode, shape (n_slip,). On the positivity
+            (joint-slip) path this is the full slip vector at ``x``: the
+            constrained block mapped through the softplus, and the
+            marginalized block set to its conditional mean.
+        """
+        if self._joint:
+            m, _ = self._joint_reconstruct(np.asarray(x, dtype=float), None)
+            return backend.to_numpy(m)
+        return backend.to_numpy(self._assemble(np.asarray(x, dtype=float))[4])
+
+    def _draw_one(self, x: Any, key: Any) -> tuple:
+        """One conditional slip draw and its data-space prediction.
+
+        Draws ``m = m_hat + sigma * L_H^-T z`` (exact conditional
+        Gaussian via the Cholesky factor of H) and maps it to
+        unweighted data space. Traceable; vmapped over posterior
+        samples by :meth:`slip_draws` and :meth:`predict`.
+        """
+        import jax
+        import jax.numpy as jnp
+        from jax.scipy.linalg import solve_triangular
+
+        sigma2, _, G_w, chol_H, m_hat, _ = self._assemble(x)
+        z = jax.random.normal(key, m_hat.shape, dtype=m_hat.dtype)
+        m = m_hat + jnp.sqrt(sigma2) * solve_triangular(chol_H.T, z, lower=False)
+        # unweighted prediction: W_half is upper triangular, so undo it
+        d_pred = solve_triangular(jnp.asarray(self._W_half), G_w @ m, lower=False)
+        return m, d_pred
+
+    def _vmapped_draws(self, samples: npt.ArrayLike, seed: int) -> tuple:
+        """Conditional draws and predictions for each sample row."""
+        jax = _require_jax()
+        import jax.numpy as jnp
+
+        samples = np.atleast_2d(np.asarray(samples, dtype=float))
+        if self._joint:
+            keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
+            m, d_pred = jax.jit(jax.vmap(self._joint_reconstruct))(
+                jnp.asarray(samples), keys
+            )
+            return backend.to_numpy(m), backend.to_numpy(d_pred)
+        keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
+        m, d_pred = jax.jit(jax.vmap(self._draw_one))(jnp.asarray(samples), keys)
+        return backend.to_numpy(m), backend.to_numpy(d_pred)
+
+    def slip_draws(self, samples: npt.ArrayLike, seed: int = 0) -> np.ndarray:
+        """Exact conditional slip draws, one per posterior sample.
+
+        Completes the collapsed sampler: drawing one slip vector from
+        the Gaussian conditional ``p(m | x, d)`` per posterior sample
+        of ``x`` yields draws from the joint posterior ``p(m, x | d)``
+        (Rao-Blackwellization), so per-patch statistics of the result
+        include geometry and hyperparameter uncertainty.
+
+        On the positivity path the constrained block is already part of
+        ``x`` (a deterministic softplus map, ``seed``-independent, and
+        non-negative exactly), while the marginalized unconstrained block
+        is completed from its Gaussian conditional — one draw per sample,
+        so it does use ``seed``. When every component is constrained
+        nothing is marginalized and the whole result is deterministic.
+
+        Args:
+            samples: Sampled parameter vectors, shape (n, n_params) —
+                e.g. ``PosteriorResult.flat`` (optionally thinned).
+            seed: PRNG seed for the conditional draws — of the full slip
+                on the collapsed path, of the marginalized block on the
+                positivity path.
+
+        Returns:
+            Slip draws, shape (n, n_slip). Columns follow the
+            components layout (``[:N]`` strike-slip then ``[N:]``
+            dip-slip when components='both').
+        """
+        return self._vmapped_draws(samples, seed)[0]
+
+    def predict(self, samples: npt.ArrayLike, seed: int = 0) -> np.ndarray:
+        """Posterior-predictive mean field at each posterior sample.
+
+        Maps one conditional slip draw per sample to unweighted data
+        space (``G(theta) m``, projected like the observations), so
+        row statistics give credible intervals for the noise-free
+        predicted data.
+
+        Args:
+            samples: Sampled parameter vectors, shape (n, n_params).
+            seed: PRNG seed for the conditional slip draws.
+
+        Returns:
+            Predictions, shape (n, n_data), rows ordered like the
+            stacked observation vector.
+        """
+        return self._vmapped_draws(samples, seed)[1]
+
+
+class RectPosterior(_CollapsedPosterior):
     """Collapsed log-posterior for planar-fault geometry and scales.
 
     The sampled parameter vector ``x`` stacks the free geometry
@@ -450,33 +865,6 @@ class RectPosterior:
         self._hi = np.concatenate([self._hi, np.full(p_c, np.inf)])
         self.n_params = len(self.param_names)
 
-    def _build_logpdf(self) -> Any:
-        """Wrap the log-posterior with a forward-mode differentiation rule.
-
-        XLA compilation of the reverse-mode gradient through the nested
-        okada85 subfunctions is pathologically slow (minutes, vs seconds
-        for the forward pass), while forward-mode compiles quickly and —
-        with only a handful of sampled parameters — evaluates just as
-        fast. A ``custom_jvp`` rule built on ``jax.jacfwd`` makes every
-        downstream transform (``jax.grad`` in NUTS included) use forward
-        mode; the rule is linear in the tangents, so reverse mode
-        transposes through it exactly.
-        """
-        import jax
-        import jax.numpy as jnp
-
-        def raw(x: Any) -> Any:
-            return self.log_prior(x) + self.log_likelihood(x)
-
-        wrapped = jax.custom_jvp(raw)
-
-        @wrapped.defjvp
-        def _jvp(primals: tuple, tangents: tuple) -> tuple:
-            (x,), (t,) = primals, tangents
-            return raw(x), jnp.dot(jax.jacfwd(raw)(x), t)
-
-        return wrapped
-
     # ------------------------------------------------------------------
     # Positivity (joint slip) path
     # ------------------------------------------------------------------
@@ -615,34 +1003,6 @@ class RectPosterior:
         _, _, _, logJ, _, _ = self._assemble_joint(x)
         return self._hyper_logprior(x) + logJ
 
-    @staticmethod
-    def _parse_prior(name: str, spec: tuple) -> tuple:
-        """Normalize a prior spec to ('uniform', lo, hi) or ('normal', mu, sd)."""
-        if len(spec) == 2:
-            lo, hi = map(float, spec)
-            if not lo < hi:
-                raise ValueError(f"theta_prior[{name!r}]: bounds must have lo < hi")
-            return ("uniform", lo, hi)
-        if len(spec) == 3 and spec[0] == "normal":
-            mu, sd = map(float, spec[1:])
-            if sd <= 0:
-                raise ValueError(f"theta_prior[{name!r}]: sd must be positive")
-            return ("normal", mu, sd)
-        raise ValueError(
-            f"theta_prior[{name!r}] must be (lo, hi) or ('normal', mu, sd), "
-            f"got {spec!r}"
-        )
-
-    # ------------------------------------------------------------------
-    # Traceable density pieces
-    # ------------------------------------------------------------------
-
-    def _clip(self, x: Any) -> Any:
-        """Clip uniform-prior parameters into bounds (traceable)."""
-        import jax.numpy as jnp
-
-        return jnp.clip(jnp.asarray(x), jnp.asarray(self._lo), jnp.asarray(self._hi))
-
     def _assemble(self, x: Any) -> tuple:
         """Marginalization ingredients at sampled parameters x (traceable).
 
@@ -654,7 +1014,6 @@ class RectPosterior:
             ``S = ||d_w - G_w m||^2 + lam ||L m||^2``.
         """
         import jax.numpy as jnp
-        from jax.scipy.linalg import cho_solve
 
         x = self._clip(x)
         n_free = len(self.free)
@@ -671,118 +1030,8 @@ class RectPosterior:
             theta, self._e_obs, self._n_obs, self._n_length, self._n_width, self._nu
         )
         G_w = (jnp.asarray(self._W_half_P) @ G3)[:, self._col_start : self._col_stop]
-        LtL = jnp.asarray(self._LtL)
-        d_w = jnp.asarray(self._d_w)
-
-        H = G_w.T @ G_w + lam * LtL
-        chol_H = jnp.linalg.cholesky(H)
-        m_hat = cho_solve((chol_H, True), G_w.T @ d_w)
-        r = d_w - G_w @ m_hat
-        S = r @ r + lam * (m_hat @ LtL @ m_hat)
+        chol_H, m_hat, S = self._collapse_terms(G_w, lam)
         return sigma2, lam, G_w, chol_H, m_hat, S
-
-    def _misfit_total(self, x: npt.ArrayLike) -> np.ndarray:
-        """Total misfit S = ||d_w - G_w m||^2 + lam ||L m||^2 at x."""
-        return self._assemble(x)[5]
-
-    def log_likelihood(self, x: npt.ArrayLike) -> np.ndarray:
-        """Collapsed log-likelihood log p(d_w | x) (traceable).
-
-        The exact Gaussian marginal over slip in the hierarchical and
-        weak modes (up to the constant ``log|W|/2`` from weighting the
-        data, and using the pseudo-determinant convention when the
-        smoothing operator is rank-deficient); the profiled objective
-        without the Occam log-determinant terms in profiled mode.
-
-        Args:
-            x: Sampled parameter vector, ordered as ``param_names``.
-
-        Returns:
-            Scalar log-likelihood.
-        """
-        import jax.numpy as jnp
-
-        if self._joint:
-            return cast(np.ndarray, self._log_likelihood_joint(x))
-        sigma2, lam, _, chol_H, _, S = self._assemble(x)
-        n = self.n_data
-        ll = -0.5 * n * jnp.log(2.0 * jnp.pi * sigma2) - S / (2.0 * sigma2)
-        if self._include_logdet:
-            logdet_H = 2.0 * jnp.sum(jnp.log(jnp.diagonal(chol_H)))
-            logdet_prior = self._logdet_rank * jnp.log(lam) + self._logdet_sum
-            ll = ll + 0.5 * (logdet_prior - logdet_H)
-        return ll
-
-    def log_prior(self, x: npt.ArrayLike) -> np.ndarray:
-        """Log-prior over the sampled parameters (traceable).
-
-        Args:
-            x: Sampled parameter vector, ordered as ``param_names``.
-
-        Returns:
-            Scalar log-prior; ``-inf`` outside uniform bounds.
-        """
-        import jax.numpy as jnp
-
-        if self._joint:
-            return cast(np.ndarray, self._log_prior_joint(x))
-        x = jnp.asarray(x)
-        lo = jnp.asarray(self._lo)
-        hi = jnp.asarray(self._hi)
-        in_bounds = (x >= lo) & (x <= hi)
-        lp_uniform = jnp.where(in_bounds, -jnp.log(hi - lo), -jnp.inf)
-        z = (x - jnp.asarray(self._mu)) / jnp.asarray(self._sd)
-        lp_normal = (
-            -0.5 * z**2 - jnp.log(jnp.asarray(self._sd)) - 0.5 * jnp.log(2.0 * jnp.pi)
-        )
-        terms = jnp.where(jnp.asarray(self._is_uniform), lp_uniform, lp_normal)
-        return cast(np.ndarray, jnp.sum(terms))
-
-    def logpdf(self, x: npt.ArrayLike) -> np.ndarray:
-        """Log-posterior density (traceable, differentiable).
-
-        Equals ``log_prior(x) + log_likelihood(x)``; the likelihood is
-        evaluated at bound-clipped parameters so its gradient stays
-        finite at rejected points. On the collapsed path (``positive is
-        None``) differentiation goes through a whole-``logpdf``
-        forward-mode ``custom_jvp`` rule (see ``_build_logpdf``); on the
-        positivity path it is plain reverse-mode with the ``custom_jvp``
-        placed around ``G(theta)`` alone (see ``_build_logpdf_positive``).
-        Either way both ``jax.grad`` and ``jax.jacfwd`` work and compile
-        quickly.
-
-        Args:
-            x: Sampled parameter vector, ordered as ``param_names``.
-
-        Returns:
-            Scalar log-posterior; ``-inf`` outside uniform prior bounds.
-        """
-        return cast(np.ndarray, self._logpdf_fn(x))
-
-    # ------------------------------------------------------------------
-    # Conditional slip posterior and posterior predictive
-    # ------------------------------------------------------------------
-
-    def slip_mode(self, x: npt.ArrayLike) -> np.ndarray:
-        """Conditional slip mode (= mean) at sampled parameters x.
-
-        The slip conditional on ``x`` is Gaussian,
-        ``m | x, d ~ N(m_hat, sigma^2 H^-1)`` with
-        ``H = G_w^T G_w + lam L^T L``; this returns ``m_hat``.
-
-        Args:
-            x: Sampled parameter vector, ordered as ``param_names``.
-
-        Returns:
-            Conditional slip mode, shape (n_slip,). On the positivity
-            (joint-slip) path this is the full slip vector at ``x``: the
-            constrained block mapped through the softplus, and the
-            marginalized block set to its conditional mean.
-        """
-        if self._joint:
-            m, _ = self._joint_reconstruct(np.asarray(x, dtype=float), None)
-            return backend.to_numpy(m)
-        return backend.to_numpy(self._assemble(np.asarray(x, dtype=float))[4])
 
     def _joint_reconstruct(self, x: Any, key: Any) -> tuple:
         """Full slip and unweighted prediction at x on the positivity path.
@@ -835,89 +1084,6 @@ class RectPosterior:
             m = m.at[f_idx].set(m_f)
         d_pred = solve_triangular(jnp.asarray(self._W_half), G_w @ m, lower=False)
         return m, d_pred
-
-    def _draw_one(self, x: Any, key: Any) -> tuple:
-        """One conditional slip draw and its data-space prediction.
-
-        Draws ``m = m_hat + sigma * L_H^-T z`` (exact conditional
-        Gaussian via the Cholesky factor of H) and maps it to
-        unweighted data space. Traceable; vmapped over posterior
-        samples by :meth:`slip_draws` and :meth:`predict`.
-        """
-        import jax
-        import jax.numpy as jnp
-        from jax.scipy.linalg import solve_triangular
-
-        sigma2, _, G_w, chol_H, m_hat, _ = self._assemble(x)
-        z = jax.random.normal(key, m_hat.shape, dtype=m_hat.dtype)
-        m = m_hat + jnp.sqrt(sigma2) * solve_triangular(chol_H.T, z, lower=False)
-        # unweighted prediction: W_half is upper triangular, so undo it
-        d_pred = solve_triangular(jnp.asarray(self._W_half), G_w @ m, lower=False)
-        return m, d_pred
-
-    def _vmapped_draws(self, samples: npt.ArrayLike, seed: int) -> tuple:
-        """Conditional draws and predictions for each sample row."""
-        jax = _require_jax()
-        import jax.numpy as jnp
-
-        samples = np.atleast_2d(np.asarray(samples, dtype=float))
-        if self._joint:
-            keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
-            m, d_pred = jax.jit(jax.vmap(self._joint_reconstruct))(
-                jnp.asarray(samples), keys
-            )
-            return backend.to_numpy(m), backend.to_numpy(d_pred)
-        keys = jax.random.split(jax.random.PRNGKey(seed), samples.shape[0])
-        m, d_pred = jax.jit(jax.vmap(self._draw_one))(jnp.asarray(samples), keys)
-        return backend.to_numpy(m), backend.to_numpy(d_pred)
-
-    def slip_draws(self, samples: npt.ArrayLike, seed: int = 0) -> np.ndarray:
-        """Exact conditional slip draws, one per posterior sample.
-
-        Completes the collapsed sampler: drawing one slip vector from
-        the Gaussian conditional ``p(m | x, d)`` per posterior sample
-        of ``x`` yields draws from the joint posterior ``p(m, x | d)``
-        (Rao-Blackwellization), so per-patch statistics of the result
-        include geometry and hyperparameter uncertainty.
-
-        On the positivity path the constrained block is already part of
-        ``x`` (a deterministic softplus map, ``seed``-independent, and
-        non-negative exactly), while the marginalized unconstrained block
-        is completed from its Gaussian conditional — one draw per sample,
-        so it does use ``seed``. When every component is constrained
-        nothing is marginalized and the whole result is deterministic.
-
-        Args:
-            samples: Sampled parameter vectors, shape (n, n_params) —
-                e.g. ``PosteriorResult.flat`` (optionally thinned).
-            seed: PRNG seed for the conditional draws — of the full slip
-                on the collapsed path, of the marginalized block on the
-                positivity path.
-
-        Returns:
-            Slip draws, shape (n, n_slip). Columns follow the
-            components layout (``[:N]`` strike-slip then ``[N:]``
-            dip-slip when components='both').
-        """
-        return self._vmapped_draws(samples, seed)[0]
-
-    def predict(self, samples: npt.ArrayLike, seed: int = 0) -> np.ndarray:
-        """Posterior-predictive mean field at each posterior sample.
-
-        Maps one conditional slip draw per sample to unweighted data
-        space (``G(theta) m``, projected like the observations), so
-        row statistics give credible intervals for the noise-free
-        predicted data.
-
-        Args:
-            samples: Sampled parameter vectors, shape (n, n_params).
-            seed: PRNG seed for the conditional slip draws.
-
-        Returns:
-            Predictions, shape (n, n_data), rows ordered like the
-            stacked observation vector.
-        """
-        return self._vmapped_draws(samples, seed)[1]
 
 
 class SlipPosterior:
