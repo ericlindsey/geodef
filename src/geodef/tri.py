@@ -121,17 +121,20 @@ def build_tri_coordinate_system(tri):
     # downward, the strike and dip vectors point Southward and Westward,
     # respectively.
     Vnorm = normalize(xp.cross(tri[1] - tri[0], tri[2] - tri[0]))
-    eY = xp.array([0, 1, 0])
-    eZ = xp.array([0, 0, 1])
-    Vstrike = xp.cross(eZ, Vnorm)
-    if xp.linalg.norm(Vstrike) == 0:
-        Vstrike = eY * Vnorm[2]
-        # TODO: check this correction from TDdispHS:
-        #% For horizontal elements in case of half-space calculation!!!
-        #% Correct the strike vector of image dislocation only
-        if tri[0][2]>0:
-            Vstrike = -Vstrike
-    Vstrike = normalize(Vstrike)
+    eY = xp.array([0.0, 1.0, 0.0])
+    eZ = xp.array([0.0, 0.0, 1.0])
+    Vstrike_raw = xp.cross(eZ, Vnorm)
+    # Horizontal element: Vnorm is (anti)parallel to eZ, so the raw strike
+    # vector vanishes and the strike is taken Northward/Southward instead.
+    # For the image dislocation (a vertex above the free surface) that
+    # replacement is flipped. Both special cases are expressed as `where`
+    # and selected *before* normalize, so the degenerate 0/0 never reaches
+    # the divide — keeping the construction trace- and gradient-safe for
+    # jit/vmap over a mesh (matches the published TDdispHS correction).
+    is_horiz = xp.linalg.norm(Vstrike_raw) == 0
+    sign = xp.where(tri[0][2] > 0, -1.0, 1.0)
+    Vstrike_horiz = eY * Vnorm[2] * sign
+    Vstrike = normalize(xp.where(is_horiz, Vstrike_horiz, Vstrike_raw))
     Vdip = xp.cross(Vnorm, Vstrike)
     return xp.array([Vnorm, Vstrike, Vdip])
 
@@ -376,8 +379,12 @@ def TDdispHS(obs,tri,slip,nu):
     if xp.ndim(obs)<2:
         obs=xp.array(obs,ndmin=2)
 
-    assert all(obs[:,2]<=0), 'Half-space solution: observation Z coordinates must be zero or negative!'
-    assert all(tri[:,2]<=0), 'Half-space solution: triangle Z coordinates must be zero or negative!'
+    # Half-space validity checks; skipped on the JAX backend because a
+    # traced array has no concrete truth value (e.g. under jit/vmap over
+    # a mesh). NumPy runs remain guarded.
+    if backend.get_backend() == "numpy":
+        assert all(obs[:,2]<=0), 'Half-space solution: observation Z coordinates must be zero or negative!'
+        assert all(tri[:,2]<=0), 'Half-space solution: triangle Z coordinates must be zero or negative!'
 
     # Calculate main dislocation contribution to displacements
     uMS = TDdispFS(obs, tri, slip, nu)
@@ -390,14 +397,17 @@ def TDdispHS(obs,tri,slip,nu):
     # or in-place write, so vertex coordinates can be differentiated)
     tri_img = tri * xp.asarray([1.0, 1.0, -1.0])
     uIS = TDdispFS(obs, tri_img, slip, nu)
-    if all(tri[:,2]==0):
-        # flip the vertical component without an in-place write (trace-safe)
-        uIS = uIS * xp.asarray([1.0, 1.0, -1.0])
+
+    # Surface-triangle special case (every vertex on the free surface):
+    # flip the image vertical component and negate the total. Expressed
+    # as `where` on the scalar condition so it stays trace-safe; for a
+    # subsurface mesh the condition is uniformly False and nothing moves.
+    is_surf = xp.all(tri[:,2]==0)
+    uIS = xp.where(is_surf, uIS * xp.asarray([1.0, 1.0, -1.0]), uIS)
 
     # Calculate the complete displacement vector components in EFCS
     u = uMS+uIS+uFSC
-    if all(tri[:,2]==0):
-        u = -u
+    u = xp.where(is_surf, -u, u)
 
     return u
 
@@ -432,55 +442,75 @@ def AngSetupFSC(obs,bX,bY,bZ,PA,PB,nu):
 
     # Calculate TD side vector and the angle of the angular dislocation pair
     SideVec = PB-PA
-    eZ = xp.array([0, 0, 1])
-    beta = xp.arccos(-SideVec.dot(eZ)/xp.linalg.norm(SideVec))
+    eZ = xp.array([0.0, 0.0, 1.0])
+    cos_arg = -SideVec.dot(eZ)/xp.linalg.norm(SideVec)
 
-    if (xp.abs(beta) < xp.finfo(float).eps or xp.abs(xp.pi-beta) < xp.finfo(float).eps):
-        ue = xp.zeros(npts)
-        un = xp.zeros(npts)
-        uv = xp.zeros(npts)
-    else:
-        ey1 = normalize(xp.array([SideVec[0],SideVec[1],0]))
-        ey3 = -eZ
-        ey2 = xp.cross(ey3,ey1)
-        A = xp.array([ey1,ey2,ey3]) # Transformation matrix
+    # A vertical TD side (beta ~ 0 or pi, i.e. cos_arg ~ +/-1) makes the
+    # pair's correction vanish, but the else-branch math below would
+    # divide by zero there (its horizontal projection is null). Rather
+    # than a data-dependent branch, compute everything with a *safe*
+    # angle and a dummy horizontal direction so no NaN is ever produced,
+    # then zero the degenerate lanes with `where`. The cosine argument is
+    # also clipped off +/-1 before `arccos`, whose derivative is infinite
+    # there — otherwise `0 * inf` would poison the gradient of a vertical
+    # side. This keeps the routine trace- and gradient-safe for jit/vmap
+    # over a mesh (including the vertical-side triangles common to
+    # strike-slip faults) while reproducing the published branch exactly
+    # for non-degenerate sides.
+    eps = xp.finfo(float).eps
+    is_deg = (cos_arg >= 1.0 - eps) | (cos_arg <= -1.0 + eps)
+    beta = xp.arccos(xp.clip(cos_arg, -1.0 + eps, 1.0 - eps))
+    beta_s = xp.where(is_deg, xp.pi / 2.0, beta)
 
-        # Transform coordinates from EFCS to the first ADCS
-        y1A,y2A,y3A = CoordTrans(obs[:,0]-PA[0],obs[:,1]-PA[1],obs[:,2]-PA[2],A)
-        # Transform coordinates from EFCS to the second ADCS
-        y1AB,y2AB,y3AB = CoordTrans(SideVec[0],SideVec[1],SideVec[2],A)
-        y1B = y1A-y1AB
-        y2B = y2A-y2AB
-        y3B = y3A-y3AB
+    horiz = xp.array([SideVec[0], SideVec[1], 0.0])
+    horiz_safe = xp.where(is_deg, xp.array([1.0, 0.0, 0.0]), horiz)
+    ey1 = normalize(horiz_safe)
+    ey3 = -eZ
+    ey2 = xp.cross(ey3,ey1)
+    A = xp.array([ey1,ey2,ey3]) # Transformation matrix
 
-        # Transform slip vector components from EFCS to ADCS
-        b1,b2,b3 = CoordTrans(bX,bY,bZ,A)
+    # Transform coordinates from EFCS to the first ADCS
+    y1A,y2A,y3A = CoordTrans(obs[:,0]-PA[0],obs[:,1]-PA[1],obs[:,2]-PA[2],A)
+    # Transform coordinates from EFCS to the second ADCS
+    y1AB,y2AB,y3AB = CoordTrans(SideVec[0],SideVec[1],SideVec[2],A)
+    y1B = y1A-y1AB
+    y2B = y2A-y2AB
+    y3B = y3A-y3AB
 
-        # Determine the best arteact-free configuration for the calculation
-        # points near the free furface
-        Ipos = (beta*y1A >= 0)
-        Ineg = xp.logical_not(Ipos)
+    # Transform slip vector components from EFCS to ADCS
+    b1,b2,b3 = CoordTrans(bX,bY,bZ,A)
 
-        # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
-        # masks with fill=0 sum to the full per-lane selection
-        vA_p = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta,b1,b2,b3,nu,-PA[2]),
-            Ipos, (y1A,y2A,y3A), 3, fill=0.0)
-        vB_p = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta,b1,b2,b3,nu,-PB[2]),
-            Ipos, (y1B,y2B,y3B), 3, fill=0.0)
-        vA_n = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PA[2]),
-            Ineg, (y1A,y2A,y3A), 3, fill=0.0)
-        vB_n = backend.masked_eval(
-            lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta,b1,b2,b3,nu,-PB[2]),
-            Ineg, (y1B,y2B,y3B), 3, fill=0.0)
+    # Determine the best arteact-free configuration for the calculation
+    # points near the free furface
+    Ipos = (beta_s*y1A >= 0)
+    Ineg = xp.logical_not(Ipos)
 
-        # Calculate total Free Surface Correction to displacements in ADCS
-        v1,v2,v3 = (bp+bn-ap-an for ap,bp,an,bn in zip(vA_p,vB_p,vA_n,vB_n))
+    # Configuration I (Ipos lanes) and II (Ineg lanes); the disjoint
+    # masks with fill=0 sum to the full per-lane selection
+    vA_p = backend.masked_eval(
+        lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta_s,b1,b2,b3,nu,-PA[2]),
+        Ipos, (y1A,y2A,y3A), 3, fill=0.0)
+    vB_p = backend.masked_eval(
+        lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,-xp.pi+beta_s,b1,b2,b3,nu,-PB[2]),
+        Ipos, (y1B,y2B,y3B), 3, fill=0.0)
+    vA_n = backend.masked_eval(
+        lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta_s,b1,b2,b3,nu,-PA[2]),
+        Ineg, (y1A,y2A,y3A), 3, fill=0.0)
+    vB_n = backend.masked_eval(
+        lambda p1,p2,p3: AngDisDispFSC(p1,p2,p3,beta_s,b1,b2,b3,nu,-PB[2]),
+        Ineg, (y1B,y2B,y3B), 3, fill=0.0)
 
-        # Transform total Free Surface Correction to displacements from ADCS to EFCS
-        ue,un,uv = CoordTrans(v1,v2,v3,A.T)
+    # Calculate total Free Surface Correction to displacements in ADCS
+    v1,v2,v3 = (bp+bn-ap-an for ap,bp,an,bn in zip(vA_p,vB_p,vA_n,vB_n))
+
+    # Transform total Free Surface Correction to displacements from ADCS to EFCS
+    ue,un,uv = CoordTrans(v1,v2,v3,A.T)
+
+    # Zero the vanishing contribution on a vertical side (trace-safe).
+    zeros = xp.zeros(npts)
+    ue = xp.where(is_deg, zeros, ue)
+    un = xp.where(is_deg, zeros, un)
+    uv = xp.where(is_deg, zeros, uv)
 
     return ue,un,uv
 

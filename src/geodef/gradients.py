@@ -219,9 +219,10 @@ def tri_greens(
     for one observation point; columns ``[:ntri]`` are strike-slip and
     ``[ntri:]`` dip-slip.
 
-    The triangles are evaluated in a Python loop, so this traces (and
-    differentiates) eagerly but does not yet support ``jax.jit``/``vmap``
-    over the mesh axis.
+    On the JAX backend the triangles are evaluated with ``jax.vmap`` over
+    the mesh axis, so the call is ``jit``- and ``jacfwd``/``grad``-
+    compatible (the ``tri`` kernel's geometry branches are all
+    ``where``-based). The NumPy backend keeps the plain triangle loop.
 
     Args:
         vertices: Mesh vertex coordinates, shape (ntri, 3, 3), z <= 0.
@@ -235,6 +236,19 @@ def tri_greens(
     ntri = int(np.asarray(np.shape(vertices))[0])
     ss = xp.asarray([1.0, 0.0, 0.0])
     ds = xp.asarray([0.0, 1.0, 0.0])
+
+    if backend.get_backend() == "jax":
+        import jax
+
+        def _col(v, slip):
+            return xp.reshape(tri.TDdispHS(obs, v, slip, nu), (-1,))
+
+        batched = jax.vmap(_col, in_axes=(0, None))
+        # each is (ntri, 3*nobs); transpose so triangle indexes the column
+        disp_ss = batched(vertices_a, ss)
+        disp_ds = batched(vertices_a, ds)
+        return xp.concatenate([disp_ss.T, disp_ds.T], axis=1)
+
     cols_ss = [
         xp.reshape(tri.TDdispHS(obs, vertices_a[i], ss, nu), (-1,)) for i in range(ntri)
     ]

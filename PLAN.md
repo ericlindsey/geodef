@@ -122,9 +122,40 @@ autodiff rewards.
   still open). `gradients.los_project` maps displacement G onto InSAR
   look vectors, matching `InSAR.project`. G(θ) Jacobians validated
   against finite differences.
-- [ ] Remaining Phase 2: differentiable strain/stress kernels, and
-  jit/vmap support for the triangular mesh axis (needs the remaining
-  geometry-scalar branches in `tri.py` expressed as `where`).
+- Remaining Phase 2, split into two independent tracks:
+  - **Tri jit/vmap over the mesh axis** (unblocks 6c). `gradients.tri_greens`
+    still loops over triangles because a few per-triangle,
+    vertex-dependent Python branches in `tri.py` break tracing. The
+    remaining blockers, with `TDdispHS` as the target entry point:
+    - [x] `build_tri_coordinate_system`: the horizontal-element strike
+      degeneracy (`if norm(Vstrike)==0` plus the image-dislocation
+      `if tri[0][2]>0` flip) rewritten as `where`, selecting the
+      Northward/Southward replacement *before* `normalize` so the 0/0
+      never reaches the divide. Validated numpy-identical and
+      jit-traceable on generic, horizontal-subsurface, and
+      horizontal-above-surface triangles.
+    - [x] `AngSetupFSC`: the vertical-TD-side degeneracy expressed as
+      `where` — computed with a *safe* angle (`beta_s`) and dummy
+      horizontal direction so no NaN is produced, then the degenerate
+      lanes zeroed. The cosine argument is clipped off `+/-1` before
+      `arccos` (whose derivative is infinite there), which was the actual
+      gradient-poisoning culprit: `0 * inf` on a vertical side. Reproduces
+      the published branch exactly for non-degenerate sides; the vertical
+      side now yields a finite Jacobian that matches finite differences.
+    - [x] `TDdispHS`: the two `assert all(...<=0)` skipped under tracing
+      (guarded by the NumPy backend, as `setupTDCS`'s asserts are), and
+      the two surface-triangle branches expressed as `where` on the
+      scalar `xp.all(tri[:,2]==0)`.
+    - [x] `gradients.tri_greens`: the Python triangle loop replaced by a
+      `jax.vmap` over the mesh axis on the JAX backend (NumPy keeps the
+      loop). The vmapped `G(vertices)` matches the loop to machine
+      precision, is `jit`- and `jacfwd`-compatible, and its vertex
+      Jacobian matches finite differences — including a vertical-side
+      mesh. Full 57-test tri reference suite still passes. **This
+      completes the 6c prerequisite.**
+  - [ ] **Differentiable strain/stress kernels** (earthquake-cycle path,
+    roadmap item 2 — *not* required for 6c): make `TDstrainHS` / the DC3D
+    strain kernel traceable and gradient-safe the same way.
 - **Differentiation variables (settled 2026-07).** The `tri` engine
   differentiates with respect to the **vertex coordinates** — its native
   parameterization, well-defined for any mesh including non-planar ones.
@@ -237,9 +268,126 @@ Steps (red/green TDD, one commit per step):
   `custom_jvp` rule (`jax.jacfwd`; linear in tangents, so `jax.grad`
   transposes through it exactly) — right-sized for the few sampled
   parameters and compiling in seconds.
-- [ ] Later (separate steps, next phase): blackjax SMC/tempering for
-  multimodal posteriors; triangular-mesh geometry sampling once tri
-  jit/vmap lands; GPU-scale joint slip sampling with positivity priors.
+- [ ] Step 6 — beyond the collapsed sampler (planned 2026-07; sub-steps
+  below, one commit each, in order).
+
+#### Phase 4, step 6 — positivity, triangular geometry, tempering
+
+**Key finding on positivity vs. marginalization.** The analytic collapse
+exists only because the Gaussian slip prior is conjugate; truncating it to
+the positive orthant turns the marginal likelihood into a ratio of orthant
+probabilities with no closed form at hundreds of dimensions. So positivity
+puts slip back into the sampled state — but the speed is recovered another
+way: whitened joint sampling has a per-leapfrog gradient cost of one
+`(3*nobs, 2N)` matvec, jit/vmapped over chains, and that same compiled code
+is the GPU path. The dimension cost lands in NUTS trajectory length, which
+whitening keeps in check. Where a component's prior stays Gaussian, it can
+still be marginalized exactly (half-collapse). Precedent for joint
+slip + hyperparameter sampling under positivity: Fukuda & Johnson (2008);
+we add gradients.
+
+- [x] **6a. `bayes.SlipPosterior` — joint slip sampling with positivity,
+  fixed geometry.** Sampled state = slip (as whitened `z`, one per
+  component) + `log10_sigma` (+ `log10_lambda` in hierarchical mode);
+  per-component positivity masks (e.g. dip-slip only) applied by softplus
+  after a whitened affine map — `z` pushed through the Cholesky factor of a
+  fixed reference system `H0 = Gᵀ_w G_w + lambda_ref LᵀL`, centered at the
+  reference ridge solution `mu0`, with the map's log-Jacobian carried in
+  the density so the posterior is the exact truncated-Gaussian-prior
+  posterior. Geometry is fixed, so G assembles once and `fault` may be any
+  `Fault` (rectangular or triangular mesh); each gradient is one matvec, so
+  plain reverse-mode `jax.grad` suffices (no `custom_jvp`). Modes:
+  `hierarchical` / `fixed` / `weak` (no `profiled` — nothing is profiled
+  when slip is sampled). **Correction to the earlier plan note:**
+  hierarchical lambda is *not* biased under positivity. The truncated prior
+  is zero-mean with covariance ∝ `(sigma²/lambda)(LᵀL)⁺`, and an orthant is
+  a cone, so rescaling the covariance moves no mass across its boundary —
+  the normalizer Z is the *same constant* for every `(sigma, lambda)` and
+  cancels. Sampled lambda is therefore exact as built (would only bias for a
+  nonzero prior mean, e.g. a `smoothing_target`). Validated: `logpdf` vs an
+  independent NumPy reference; the exact "joint = collapsed × Gaussian
+  conditional" identity against `RectPosterior`; end-to-end sampler
+  agreement with the collapsed posterior; positivity posterior mean vs
+  `LinearSystem.invert(bounds=(0, None))`; `emcee` cross-check; gradients vs
+  finite differences. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
+- **6b. Joint geometry + slip with positivity, then half-collapse.**
+  Staged in two commits (decided 2026-07).
+  - [x] **6b-1. Joint geometry + full slip sampling.** `RectPosterior`
+    gains a `positive=` argument; `positive=None` stays exactly the
+    collapsed sampler (unchanged code path), while setting it makes the
+    slip prior truncated so the whole slip vector rejoins the sampled
+    state as a whitened block appended after the hyperparameters and is
+    sampled jointly with geometry. Reuses 6a's whitened-softplus transform
+    (extracted to the shared `_slip_transform` helper) with free `theta`
+    through `rect_greens`. Key implementation point: the differentiation
+    `custom_jvp` is placed around `G(theta)` **alone** (its tangent is
+    `jacfwd` over the 7 geometry params), so plain reverse-mode `jax.grad`
+    over the whole `logpdf` traces the Okada kernel only 7 times per
+    gradient regardless of the (large) slip block — unlike the collapsed
+    path's whole-`logpdf` forward-mode wrapper, which would scale with the
+    slip dimension. Validated: exact "joint = collapsed × Gaussian
+    conditional" identity (all-False mask, ~1e-11), gradient vs finite
+    differences through the kernel, geometry+positive-slip recovery, and
+    an `emcee` cross-check. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
+  - [x] **6b-2. Half-collapse (efficiency).** Marginalizes the
+    *unconstrained* slip block analytically (Gaussian conditional given
+    the constrained block) so only geometry + hyperparameters + the
+    sign-constrained components are sampled — halves the slip dimension in
+    the common one-constrained-component (`positive='dip'`,
+    `components='both'`) case. Made **automatic**: `positive` alone
+    decides which components stay in the state; the rest are always
+    marginalized. Closed form: with `H_f = Gᵀ_f G_f + λ K_ff`,
+    `b = Gᵀ_f r_c − λ K_cfᵀ m_c`,
+    `S_c = ‖r_c‖² + λ m_cᵀ K_cc m_c − bᵀ H_f⁻¹ b`, the log-marginal is
+    `−(n+p_c)/2·log(2πσ²) + ½(r logλ + logdet_sum) − ½logdet H_f
+    − S_c/(2σ²)` [+ orthant], reducing to the collapsed formula at
+    `p_c=0` and to 6b-1 at `p_f=0`. The constrained block is whitened by
+    the **Schur complement** of the reference `H0` (its exact marginal
+    precision, = `H0` when nothing is marginalized), so `_slip_transform`
+    is reused unchanged. `slip_draws` completes the marginalized block
+    from its exact Gaussian conditional per draw (seed-dependent), while
+    the constrained block stays deterministic and non-negative.
+    Validated: the marginal vs an independent NumPy reference of the
+    `H_f`/`S_c` formula (~1e-11), exact reduction to the collapsed
+    posterior at `p_c=0`, gradients vs finite differences through the
+    marginalization, a partial bool mask, and the split determinism of
+    `slip_draws`.
+- [x] **6c. Triangular-mesh geometry sampling (`bayes.TriWarp` +
+  `bayes.TriPosterior`).** As planned: **no remeshing inside the
+  sampler**. `TriWarp` freezes one reference mesh (public
+  `Fault.vertices` property added) and parameterizes it with normal-
+  direction offsets (meters) at a coarse knot grid on the mesh's
+  best-fit plane (SVD), interpolated to every vertex by a Gaussian RBF
+  whose weights are precomputed — so `vertices(theta) = V0 + n_hat (B
+  theta)` is an exact **linear**, watertight, one-jit map. Setup tools
+  per user request: `plot()` (3D preview of reference/warped mesh +
+  labeled knots), `check()` (half-space validation for choosing
+  priors), and `fault(theta)` (a real `Fault` usable with every
+  existing forward/plot tool). `TriPosterior` subclasses the
+  `_CollapsedPosterior` base (extracted first as its own
+  behavior-preserving commit; 82-test regression green), plugging
+  `tri_greens(warp.vertices(theta))` into the shared collapsed
+  machinery: same modes, diagnostics, `slip_draws`, `predict`; obs
+  frame mirrors `greens.tri_displacement_greens` exactly (weighted G at
+  theta=0 matches `LinearSystem.G_w` to ~3e-15, tested); vertices are
+  z-clamped before the kernel with the true half-space violation
+  carried as `-inf` in `log_prior`. A `knots0` starting point was added
+  after a sampling post-mortem: with tight data and a start far from
+  the mode, the initial misfit makes the posterior so stiff in
+  `log10_sigma` (gradient ~1e6) that blackjax warmup collapses
+  (~100% divergences) — the surface itself is smooth and peaks at the
+  truth (probed directly), so the fix is starting from a best estimate,
+  as `RectPosterior` does via `theta0`. Validated: TriWarp closed-form
+  invariants (interpolation, linearity, watertightness, jit); density
+  vs an independent NumPy reimplementation; gradients vs finite
+  differences; end-to-end knot recovery under NUTS.
+  (`tests/test_bayes_tri.py`, `docs/bayes.md`.)
+- [ ] **6d. Tempered SMC (`bayes.sample_smc`).** Glue around blackjax
+  `adaptive_tempered_smc`: prior-draw sampler from the parsed prior
+  specs, the existing NUTS kernel as the mutation step, adaptive
+  schedule; returns a `PosteriorResult` plus a log-evidence estimate
+  (free model comparison). De-risks 6a/6b multimodality. Independently
+  deferrable if blackjax API churn makes it costly.
 
 ### Risks and non-goals
 - Do **not** make JAX a hard dependency or complicate the base API.
