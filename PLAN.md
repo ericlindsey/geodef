@@ -352,21 +352,36 @@ we add gradients.
     posterior at `p_c=0`, gradients vs finite differences through the
     marginalization, a partial bool mask, and the split determinism of
     `slip_draws`.
-- [ ] **6c. Triangular-mesh geometry sampling (`bayes.TriPosterior`).**
-  Prerequisite: the remaining Phase 2 tri jit/vmap work. Parameterization
-  decision: **no remeshing inside the sampler** — connectivity flips are
-  posterior discontinuities and break static shapes. Instead, freeze one
-  reference mesh (connectivity plus per-vertex (along-strike, down-dip)
-  parameter coordinates) and let theta be values at a coarse set of
-  control knots (corners plus a few interior knots for curvature — depth
-  or local dip at a small (u, v) grid, ~5–15 parameters), pushed through a
-  fixed smooth interpolant (tensor-product spline or RBF with fixed
-  centers) that warps every vertex. Differentiable, one jit, chain rule
-  through the traced theta -> vertices builder per the Phase 2 decision.
-  Bounds come from knot priors (dip in (0, 90), seismogenic depth range)
-  with softplus increments where monotonicity matters. The slip prior
-  stays Gaussian here, so the full collapse still applies. Tests must
-  cover warps crossing the angular-dislocation branch boundaries.
+- [x] **6c. Triangular-mesh geometry sampling (`bayes.TriWarp` +
+  `bayes.TriPosterior`).** As planned: **no remeshing inside the
+  sampler**. `TriWarp` freezes one reference mesh (public
+  `Fault.vertices` property added) and parameterizes it with normal-
+  direction offsets (meters) at a coarse knot grid on the mesh's
+  best-fit plane (SVD), interpolated to every vertex by a Gaussian RBF
+  whose weights are precomputed — so `vertices(theta) = V0 + n_hat (B
+  theta)` is an exact **linear**, watertight, one-jit map. Setup tools
+  per user request: `plot()` (3D preview of reference/warped mesh +
+  labeled knots), `check()` (half-space validation for choosing
+  priors), and `fault(theta)` (a real `Fault` usable with every
+  existing forward/plot tool). `TriPosterior` subclasses the
+  `_CollapsedPosterior` base (extracted first as its own
+  behavior-preserving commit; 82-test regression green), plugging
+  `tri_greens(warp.vertices(theta))` into the shared collapsed
+  machinery: same modes, diagnostics, `slip_draws`, `predict`; obs
+  frame mirrors `greens.tri_displacement_greens` exactly (weighted G at
+  theta=0 matches `LinearSystem.G_w` to ~3e-15, tested); vertices are
+  z-clamped before the kernel with the true half-space violation
+  carried as `-inf` in `log_prior`. A `knots0` starting point was added
+  after a sampling post-mortem: with tight data and a start far from
+  the mode, the initial misfit makes the posterior so stiff in
+  `log10_sigma` (gradient ~1e6) that blackjax warmup collapses
+  (~100% divergences) — the surface itself is smooth and peaks at the
+  truth (probed directly), so the fix is starting from a best estimate,
+  as `RectPosterior` does via `theta0`. Validated: TriWarp closed-form
+  invariants (interpolation, linearity, watertightness, jit); density
+  vs an independent NumPy reimplementation; gradients vs finite
+  differences; end-to-end knot recovery under NUTS.
+  (`tests/test_bayes_tri.py`, `docs/bayes.md`.)
 - [ ] **6d. Tempered SMC (`bayes.sample_smc`).** Glue around blackjax
   `adaptive_tempered_smc`: prior-draw sampler from the parsed prior
   specs, the existing NUTS kernel as the mutation step, adaptive

@@ -688,6 +688,15 @@ class Fault:
         return self._engine
 
     @property
+    def vertices(self) -> np.ndarray | None:
+        """Triangle vertices in local ENU, shape (N, 3, 3).
+
+        ``None`` for rectangular faults; use :attr:`vertices_3d` /
+        :attr:`vertices_2d` for their corner geometry instead.
+        """
+        return self._vertices
+
+    @property
     def grid_shape(self) -> tuple[int, int] | None:
         """Grid dimensions ``(n_length, n_width)`` for structured grids, else None."""
         return self._grid_shape

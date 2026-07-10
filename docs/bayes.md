@@ -273,6 +273,84 @@ with* geometry uncertainty.
 
 ---
 
+## Triangular-mesh geometry: `TriWarp` + `TriPosterior`
+
+`RectPosterior` samples the seven parameters of a planar rectangle. For a
+**triangular mesh** — a curved slab interface, an irregular rupture — the
+native geometry parameters are the vertex coordinates: hundreds of them,
+mutually constrained, and impossible to bound sensibly one by one. And
+regenerating the mesh inside a sampler is worse: every connectivity flip
+is a **discontinuity** in the posterior and breaks JAX's static shapes.
+
+`TriWarp` solves this with a *fixed-connectivity warp*: freeze one
+reference mesh, place a handful of **control knots** on its best-fit
+plane, and let the sampled parameters θ be normal-direction offsets **in
+meters** at those knots, smoothly interpolated to every vertex by a
+Gaussian RBF whose weights are precomputed. The warp is an exact linear
+map `vertices(θ) = V₀ + n̂·(Bθ)` — differentiable in one jit, watertight
+by construction (coincident vertices share an offset), and interpretable
+enough to set priors on directly.
+
+### Setup workflow — look before you sample
+
+```python
+fault = geodef.Fault.from_triangles(nodes, ref_lat, ref_lon, triangles=tri)
+
+warp = geodef.bayes.TriWarp(fault, n_knots=(3, 2))   # or knots=(nk, 2) array
+warp.knots_uv, warp.knots_xyz    # where the knots sit
+warp.length_scale                # RBF smoothness (m); override if needed
+
+warp.plot()                              # reference mesh + knot layout
+warp.plot(theta=[500, 0, -800, 0, 0, 0]) # preview a candidate warp
+warp.check([2000, 0, 0, 0, 0, 0])        # False -> breaks the half-space;
+                                         #   tighten knot_prior accordingly
+trial = warp.fault(theta)                # a real Fault: use ANY existing
+                                         #   forward/plotting tool on it
+```
+
+The preview loop matters: pick knot locations and a `length_scale` that
+can actually express the geometry you suspect, and use `check` to find
+offset bounds that keep every vertex below the surface — those bounds
+become `knot_prior`.
+
+### Sampling
+
+```python
+post = geodef.bayes.TriPosterior(
+    warp, [gnss, insar],
+    knot_prior=(-2000.0, 2000.0),    # one spec for all knots,
+    #           or [spec0, spec1, ...] per knot; ('normal', mu, sd) works too
+    components="both", mode="hierarchical", smoothing="laplacian",
+)
+result = geodef.bayes.sample(post)   # param_names: knot0..knotK, log10_sigma, log10_lambda
+draws = post.slip_draws(result.flat)
+best_fault = warp.fault(result.summary()["q50"][: warp.n_knots])
+```
+
+The slip prior stays Gaussian here, so the **full collapse applies
+unchanged**: `TriPosterior` shares `RectPosterior`'s marginal-likelihood
+math, modes (`hierarchical` / `weak` / `profiled`), diagnostics,
+`slip_draws`, and `predict` — only the forward geometry differs. Two
+tri-specific details:
+
+- **Half-space guard.** Knot offsets that would push a vertex above
+  `z = 0` get `log_prior = -inf` (the sample is rejected); the kernel
+  itself always sees z-clamped vertices so gradients stay finite during
+  leapfrog excursions. Set `knot_prior` inside the `check`-validated
+  range so the guard stays inactive in practice.
+- **Cost.** Each evaluation assembles the triangular Green's matrix
+  (vmapped over the mesh) — heavier than the Okada kernel, and the
+  one-time XLA compile of the geometry Jacobian runs a couple of minutes
+  per problem shape. Steady-state sampling is again milliseconds per
+  step.
+
+Validation mirrors the rectangular path: the weighted `G` at θ = 0 equals
+`LinearSystem.G_w` to machine precision (the obs-frame anchor), the
+density matches an independent NumPy reimplementation, gradients match
+finite differences, and a known warp is recovered end-to-end.
+
+---
+
 ## Practical notes
 
 - **Cost.** One `logpdf` gradient evaluation is a Green's assembly plus
