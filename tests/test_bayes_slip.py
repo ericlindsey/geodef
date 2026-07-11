@@ -469,6 +469,7 @@ class TestCollapseConsistency:
 # ======================================================================
 
 
+@pytest.mark.slow
 class TestSamplerAgreement:
     def test_matches_rect_posterior_hierarchical(self, fault3x3, gnss_signed):
         pytest.importorskip("blackjax")
@@ -533,6 +534,7 @@ class TestSamplerAgreement:
 # ======================================================================
 
 
+@pytest.mark.slow
 class TestPositivity:
     def test_positive_dip_matches_bounded_inversion(self, fault3x3, gnss_signed):
         pytest.importorskip("blackjax")
@@ -574,6 +576,7 @@ class TestPositivity:
 # ======================================================================
 
 
+@pytest.mark.slow
 class TestEmceeCrossCheck:
     def test_emcee_agrees_with_nuts(self, fault1x2, gnss_1x2_signed):
         pytest.importorskip("blackjax")
@@ -893,6 +896,7 @@ class TestRectPositiveDensity:
         assert np.all(post.slip_mode(x) >= 0.0)
 
 
+@pytest.mark.slow
 class TestRectPositiveSampling:
     def test_recovers_dip_and_positive_slip(self, gnss_positive):
         pytest.importorskip("blackjax")

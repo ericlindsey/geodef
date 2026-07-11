@@ -43,6 +43,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: expensive compilation, sampling, or end-to-end recovery tests",
+]
 
 [tool.ruff]
 line-length = 88

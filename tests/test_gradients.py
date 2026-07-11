@@ -155,6 +155,7 @@ class TestTriForward:
 
 
 class TestTriJacobian:
+    @pytest.mark.slow
     def test_vertex_jacobian_matches_finite_differences(self):
         d, d_dv, d_dslip = gradients.tri_displacement_jacobian(_VERTICES, _SLIP, _OBS)
         assert d.shape == (5, 3)
@@ -333,6 +334,7 @@ class TestTriGreens:
                     G[:, block * ntri + i], expected, rtol=1e-12, atol=1e-18
                 )
 
+    @pytest.mark.slow
     def test_vertex_jacobian_matches_finite_differences(self):
         G_func = lambda v: gradients.tri_greens(v, _OBS)  # noqa: E731
         jac = jax.jacfwd(G_func)(self._MESH)
@@ -363,6 +365,7 @@ class TestTriGreens:
         backend.set_backend("jax")
         np.testing.assert_allclose(jax_g, loop_g, rtol=1e-9, atol=1e-12)
 
+    @pytest.mark.slow
     def test_vertex_jacobian_finite_on_vertical_side(self):
         """A vertical TD side (AngSetupFSC's degenerate branch, common to
         strike-slip meshes) must not NaN-poison the vertex Jacobian.

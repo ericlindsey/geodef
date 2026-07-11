@@ -419,6 +419,7 @@ def single_patch_result(gnss_single_patch):
     return post, result
 
 
+@pytest.mark.slow
 class TestSample:
     def test_recovers_single_patch_dip(self, single_patch_result):
         _, result = single_patch_result

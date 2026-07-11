@@ -374,6 +374,7 @@ class TestDensityIdentity:
 
 
 class TestGradients:
+    @pytest.mark.slow
     def test_grad_matches_finite_differences(self, tri_post_hier):
         post = tri_post_hier
         nk = post.warp.n_knots
@@ -616,6 +617,7 @@ class TestConstruction:
 # ======================================================================
 
 
+@pytest.mark.slow
 class TestRecovery:
     def test_recovers_known_knot_offsets(self, mesh_fault):
         """Posterior over knot offsets covers the truth, starting near it.
