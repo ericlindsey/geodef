@@ -8,6 +8,25 @@ enables automatic differentiation of the forward model.
 NumPy stays the default everywhere — nothing changes for existing users unless
 a backend is explicitly selected.
 
+## Why use JAX?
+
+JAX is not a different elastic model. GeoDef evaluates the same Okada and
+triangular-dislocation equations with a different array engine. It adds two
+capabilities:
+
+1. **Just-in-time (JIT) compilation:** the first call for a new array shape is
+   compiled by XLA and may be slow; later calls with that shape reuse the
+   compiled program and are usually much faster.
+2. **Automatic differentiation (autodiff):** JAX applies the chain rule to the
+   implemented forward model and returns derivatives such as
+   `partial displacement / partial dip`. These are derivatives of the actual
+   numerical code, not finite-difference approximations.
+
+The [JAX documentation](https://docs.jax.dev/en/latest/) introduces JIT and
+autodiff in more depth. Use NumPy for ordinary forward models and linear
+inversions; select JAX when repeated Green's-matrix assembly or geometry
+derivatives justify the compilation cost.
+
 ---
 
 ## Installation
@@ -26,9 +45,11 @@ pip install geodef "jax[cuda12]"
 ```
 
 **What to expect on a laptop:** JAX's Metal backend for Apple GPUs is
-experimental and does not support float64, so on Apple-silicon laptops the
-practical speedup comes from XLA JIT compilation and vectorization on the CPU,
-not GPU offload. That is still a substantial win for large Green's matrices.
+experimental, does not support float64, and may lag current JAX/JAXlib releases.
+See [Apple's Metal plug-in page](https://developer.apple.com/metal/jax/) before
+trying it. The supported GeoDef laptop path is the normal JAX CPU build: XLA
+JIT compilation and vectorization can still substantially accelerate large
+Green's matrices on Apple silicon.
 
 ---
 
@@ -85,6 +106,11 @@ With the JAX backend, precision is synced to JAX's `jax_enable_x64` flag,
 which is process-global — enabling float32 here affects other JAX code in the
 same process.
 
+For teaching and research, distinguish **numerical precision** from
+**parameter uncertainty**. Float32/float64 control roundoff in a calculation;
+they do not describe uncertainty in fault geometry, data, or slip. A result can
+be numerically stable to many digits and still be geophysically uncertain.
+
 ---
 
 ## Engine coverage
@@ -100,8 +126,10 @@ On the JAX backend, rectangular Green's assembly — `displacement_greens`,
 `Fault.stress_kernel` / stress-shadows path) — evaluates all patches in
 one JIT-compiled batched kernel call instead of looping, typically
 10-50x faster than the NumPy loop even on a plain CPU after a one-time
-JIT compilation per problem shape. Triangular Green's assembly currently
-still loops per patch and sees no speedup yet. Benchmark with:
+JIT compilation per problem shape. Differentiable triangular Green's assembly
+uses `jax.vmap` over triangles, so it is also compatible with JIT compilation;
+its larger kernel can have a substantial first-call compilation cost. Benchmark
+with:
 
 ```bash
 uv run python benchmarks/bench_greens.py
@@ -117,5 +145,9 @@ Backend arrays are converted back to NumPy at public API boundaries:
 geodef.backend.to_numpy(arr)   # → np.ndarray, zero-copy where possible
 ```
 
-User-facing functions accept and return `np.ndarray` regardless of the active
-backend; JAX arrays only exist inside the compute kernels.
+Most high-level user-facing functions convert results to `np.ndarray`
+regardless of the active backend. The low-level traceable functions in
+`geodef.gradients` and `geodef.bayes.logpdf` intentionally preserve JAX arrays
+so they can be composed inside `jax.jit`, `jax.jacfwd`, and `jax.grad`. Use
+`backend.to_numpy` when bringing one of those results back to plotting, file
+I/O, or other ordinary NumPy code.

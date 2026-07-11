@@ -11,6 +11,15 @@ therefore explores only the ~3-10 dimensional space of geometry plus
 scales — minutes on a plain CPU — instead of hundreds of correlated slip
 dimensions.
 
+If Bayesian notation is new, the key idea is simple: the **prior** describes
+plausible models before seeing these data, the **likelihood** measures how well
+a model predicts the observations relative to their uncertainties, and the
+**posterior** combines both. See
+[Bayes' theorem](https://en.wikipedia.org/wiki/Bayes%27_theorem) for a general
+introduction. Here, “collapsed” means that the Gaussian slip parameters are
+integrated out exactly rather than explored by the sampler. They are recovered
+afterward, so their uncertainty is not discarded.
+
 Requires the JAX backend and blackjax:
 
 ```python
@@ -27,6 +36,14 @@ d = G(theta) m + e        e ~ N(0, sigma^2 W^-1)
 m ~ N(0, sigma^2 (lambda L^T L)^-1)
 ```
 
+Equivalently, the first line says that observed data equal the elastic
+prediction plus Gaussian measurement/model error. `W` is a data precision
+matrix (inverse covariance), so larger reported uncertainty gives an
+observation less weight. The second line is a Gaussian prior favoring slip
+models with small `L m`; for a Laplacian, that means neighboring patches tend
+to have similar slip. These assumptions are choices, not universal physical
+laws, and should be reported with the result.
+
 - `theta` — planar-fault geometry `[e0, n0, depth, strike, dip, length,
   width]`; any subset can be sampled (`free`), the rest stay fixed.
 - `sigma` — dimensionless noise scale factor multiplying the dataset
@@ -40,6 +57,13 @@ m ~ N(0, sigma^2 (lambda L^T L)^-1)
 The slip `m` never appears in the sampled space: given `(theta, sigma,
 lambda)` its conditional posterior is exactly Gaussian and is recovered
 after sampling (see "Slip posterior" below).
+
+Why marginalize slip? A mesh may contain hundreds of strongly correlated slip
+parameters but only a few geometry parameters. Integrating the linear Gaussian
+block makes sampling faster and usually better behaved while retaining its
+uncertainty. The log-determinant terms produced by the Gaussian integral are
+sometimes called **Occam factors**: they penalize parameter-space volume, not
+just the best-fitting slip model.
 
 ## Slip-prior modes
 
@@ -106,8 +130,20 @@ adapted posterior scale; pass `inits=(n_chains, n_params)` explicitly to
 probe multimodality from dispersed starts.
 
 Convergence checklist: `rhat < 1.01`-ish, `ess` in the hundreds,
-`n_divergent == 0`. The standalone diagnostics are exported as
+`n_divergent == 0`. R-hat compares within-chain and between-chain variation;
+values above one indicate that chains have not mixed to the same distribution.
+ESS estimates how many independent draws contain the same information as the
+correlated Markov chain. A divergence means the numerical Hamiltonian
+trajectory was unreliable and can signal difficult posterior geometry. These
+thresholds are checks, not guarantees: also inspect trace/pair plots and rerun
+from dispersed initial geometries. The
+[Stan diagnostics guide](https://mc-stan.org/learn-stan/diagnostics-warnings.html)
+provides an accessible explanation. The standalone diagnostics are exported as
 `bayes.split_rhat(chains)` and `bayes.effective_sample_size(chains)`.
+
+NUTS (the No-U-Turn Sampler) is a gradient-based form of Hamiltonian Monte
+Carlo that automatically chooses trajectory lengths. The original method is
+described by [Hoffman & Gelman (2014)](https://jmlr.org/papers/v15/hoffman14a.html).
 
 ## Slip posterior and predictions
 
@@ -126,6 +162,12 @@ posterior `p(m, theta, scales | d)`, so per-patch statistics include
 geometry and hyperparameter uncertainty — something no fixed-geometry
 linear inversion can provide. `slip_mode(x)` returns the conditional
 mode (the regularized least-squares slip) at a single sample.
+
+The interval `ci90` above is a 90% **credible interval**: conditional on the
+model, priors, and data, 90% of the sampled posterior mass lies between its
+bounds. It is not a frequentist confidence interval and does not include model
+errors omitted from the likelihood (for example, an incorrect elastic
+half-space assumption).
 
 Column layout matches the inversion convention: `[:N]` strike-slip,
 `[N:]` dip-slip when `components='both'`.

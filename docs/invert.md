@@ -154,6 +154,21 @@ linearly inside a nonlinear search over selected geometry parameters
 L-BFGS-B. Replaces tutorial 10's grid-then-`minimize_scalar` recipe and
 handles several simultaneous parameters. Requires the JAX backend.
 
+In symbols, the routine minimizes a reduced objective
+
+```text
+Phi(theta) = min_m [ ||W^(1/2) (d_obs - G(theta)m)||^2
+                     + lambda ||L m||^2 ].
+```
+
+The inner minimization solves slip `m` for each trial geometry `theta`; the
+outer optimization changes only the requested geometry parameters. This is
+called variable projection
+([Golub & Pereyra, 1973](https://doi.org/10.1137/0710036)), and it avoids
+making the nonlinear optimizer search over every slip patch.
+The weighting matrix `W` comes from the reported data covariance, while `L`
+and `lambda` describe the chosen slip regularization.
+
 ```python
 geodef.backend.set_backend('jax')
 
@@ -188,7 +203,9 @@ Notes:
   level, so repeated calls with the same problem shapes pay JIT
   compilation only once (~tens of seconds on the first call).
 - `theta_cov` is the Gauss-Newton (Laplace) covariance scaled by the
-  reduced chi-squared; it captures local curvature only.
+  reduced chi-squared; it captures local curvature only. Treat it as a local
+  linearized uncertainty estimate, not proof that the full geometry posterior
+  is Gaussian or unimodal. Use `geodef.bayes` when those assumptions matter.
 
 ---
 
