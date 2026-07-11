@@ -13,6 +13,16 @@ pip install geodef[maps]
 
 Every function raises a clear `ImportError` if Cartopy is missing.
 
+## Geographic context versus metric analysis
+
+Maps answer “where is the fault?” but longitude/latitude axes do not have equal
+metric scale. Use map projections for geographic context and GeoDef's local ENU
+coordinates for distances, patch dimensions, and vector calculations. A
+PlateCarree display treats longitude/latitude as plotting coordinates; it does
+not make them Cartesian meters. See Cartopy's
+[projection guide](https://cartopy.readthedocs.io/stable/reference/projections.html)
+when choosing a projection for a large region.
+
 ## Building a basemap
 
 ### `basemap(extent=None, *, coastlines=True, borders=False, land=False, ocean=False, stock_img=False, resolution='50m', gridlines=True, ax=None) → GeoAxes`
@@ -32,6 +42,9 @@ ax = geomap.basemap(
 
 Because the axes use PlateCarree, plot your own lon/lat data on it with
 `transform=cartopy.crs.PlateCarree()`.
+
+Natural Earth coastlines and borders may be downloaded and cached by Cartopy
+on first use. They provide geographic context, not survey-grade boundaries.
 
 ## Overlays
 

@@ -9,6 +9,17 @@ degrees per million years (deg/Myr), horizontal velocities (East, North) in
 mm/yr. Rotations are computed on a sphere (geodetic latitudes are converted
 internally with `transforms.geod2spher`).
 
+## Physical picture
+
+For a rigid plate, velocity at Earth-fixed position `r` is
+`v = omega x r`, where `omega` is the angular-velocity vector. The Euler pole
+gives the latitude/longitude of that vector and its rotation rate. A good fit
+supports rigid-block motion; coherent residuals after removing the pole can
+indicate elastic strain accumulation, internal block deformation, reference
+frame errors, or underestimated uncertainty. See
+[Euler's rotation theorem](https://en.wikipedia.org/wiki/Euler%27s_rotation_theorem)
+for background.
+
 ## Fitting a pole
 
 ### `best_fit_pole(lat, lon, ve, vn, sig_e, sig_n, rho=0.0) → (pole, cov_pole, chi2_reduced)`
@@ -25,6 +36,10 @@ lat_p, lon_p, rate = pole          # deg, deg, deg/Myr
 `cov_pole` is the 3x3 covariance of the geodetic pole parameters and `chi2` is
 the reduced chi-squared misfit (near 1 when the uncertainties are consistent
 with the scatter). Requires at least two stations.
+
+Pole latitude, longitude, and rate can be strongly correlated, especially for
+a small network far from the pole. Inspect `cov_pole` and spatial residuals;
+reduced chi-squared near one alone does not establish plate rigidity.
 
 ## Predicting and removing motion
 

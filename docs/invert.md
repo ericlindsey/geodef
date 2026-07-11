@@ -2,6 +2,28 @@
 
 One-call inversion solving `d = Gm` for fault slip.
 
+## What problem is being solved?
+
+For observations `d`, Green's matrix `G`, slip vector `m`, and data covariance
+`C_d`, weighted least squares minimizes
+
+```text
+Phi(m) = (d - Gm)^T C_d^-1 (d - Gm) + lambda ||L(m - m_ref)||^2.
+```
+
+The first term rewards agreement with data in units of their uncertainty. The
+second is optional regularization: `L` may damp slip amplitude, smooth spatial
+curvature, or penalize a stress measure. `lambda` controls the trade-off.
+Bounds and inequality constraints encode additional assumptions such as
+non-negative coupling.
+
+An inverse solution is therefore conditional on fault geometry, covariance,
+regularization, constraints, and elastic-model assumptions. A small residual
+does not by itself imply a unique or physically correct slip distribution. See
+[linear inverse problems](https://en.wikipedia.org/wiki/Inverse_problem) and
+[Tikhonov regularization](https://en.wikipedia.org/wiki/Tikhonov_regularization)
+for general background.
+
 ---
 
 ## `invert(fault, datasets, **kwargs) → InversionResult`
@@ -112,6 +134,13 @@ diagnostics = system.dataset_diagnostics(result)
 ---
 
 ## Hyperparameter tuning
+
+Regularization strength is part of the model and should not be chosen solely
+because one map “looks smooth.” The L-curve balances residual and model norms;
+ABIC balances fit and effective model complexity under Gaussian assumptions;
+cross-validation tests prediction of held-out observations. Agreement among
+methods is reassuring, while disagreement is useful evidence that covariance,
+mesh, or prior assumptions deserve examination.
 
 ### `lcurve(fault, datasets, smoothing, smoothing_range, n=50, **kwargs) → LCurveResult`
 

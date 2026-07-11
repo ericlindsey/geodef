@@ -4,6 +4,22 @@ Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z),
 and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids
 can be passed as `ellps=`.
 
+## Which coordinate system should I use?
+
+- **Geodetic** latitude, longitude, and ellipsoidal altitude are convenient for
+  observations and maps but are not Cartesian coordinates.
+- **ECEF** is a global Cartesian frame centered on Earth and is useful for
+  exact rotations and long baselines.
+- **ENU** is a Cartesian tangent frame at one reference point and is the natural
+  frame for local fault geometry and displacement vectors.
+
+Latitude and longitude are angles, not distances: never subtract longitude and
+latitude and treat the result as meters. GeoDef uses geodetic (ellipsoidal), not
+geocentric, latitude unless a function explicitly says otherwise. See
+[geodetic coordinates](https://en.wikipedia.org/wiki/Geodetic_coordinates) and
+[ECEF](https://en.wikipedia.org/wiki/Earth-centered%2C_Earth-fixed_coordinate_system)
+for diagrams.
+
 ---
 
 ## Geographic ↔ ECEF
@@ -69,6 +85,9 @@ Convert ENU covariance to ECEF. Returns block-diagonal `(3n, 3n)` covariance mat
 Offset coordinates by a small East/North/Up displacement. Uses a flat-earth
 approximation and ignores curvature-induced vertical change.
 
+Use this only when offsets are small relative to Earth's radius and the desired
+accuracy. For regional or global baselines, use the ECEF/ENU transformations.
+
 ```python
 from geodef.transforms import translate_flat
 
@@ -98,6 +117,10 @@ dist, az_fwd, az_bck = vincenty(37.0, -122.0, 34.0, -118.0)
 ### `haversine(lat0, lon0, lat1, lon1, radius=6371000.0) → dist`
 
 Great-circle distance on a sphere (meters). Fast but less accurate than Vincenty.
+
+Vincenty accounts for ellipsoidal flattening; haversine assumes a sphere. The
+difference is often negligible for plotting or neighborhood searches but can
+matter for precise long-baseline geodesy.
 
 ### `heading(lat0, lon0, lat1, lon1) → azimuth`
 

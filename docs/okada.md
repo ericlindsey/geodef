@@ -2,6 +2,20 @@
 
 Three modules provide displacement and strain Green's functions. For most workflows, use the `okada` dispatcher; access `okada85` or `okada92` directly only when you need specific features.
 
+## Model assumptions
+
+These solutions represent dislocations in a homogeneous, isotropic, linear
+elastic half-space with a flat traction-free surface. They do not include
+topography, elastic layering, viscoelasticity, poroelasticity, or material
+heterogeneity. Agreement to machine precision is therefore numerical accuracy
+within the assumed model, not proof that the Earth satisfies those assumptions.
+
+A rectangular or triangular dislocation imposes a displacement discontinuity
+(slip or opening) across an internal surface. Because linear elasticity obeys
+superposition, responses from many patches add to form a Green's matrix. For
+background, see the original [Okada (1985)](https://doi.org/10.1785/BSSA0750041135)
+and [Okada (1992)](https://doi.org/10.1785/BSSA0820021018) papers.
+
 ---
 
 ## `geodef.okada` — Unified dispatcher
@@ -50,6 +64,11 @@ Returns `(duz_de, duz_dn)` — surface tilt components.
 
 Returns `(enn, ene, een, eee)` — horizontal strain tensor components.
 
+Strain is dimensionless and is the symmetric part of the displacement
+gradient. The duplicated shear entries `ene` and `een` are retained explicitly
+in this interface; for a physically symmetric strain tensor they agree up to
+numerical precision.
+
 ---
 
 ## `geodef.okada92` — Internal deformation (Okada 1992 / DC3D)
@@ -79,6 +98,10 @@ disp, strain = okada92(
 ## `geodef.tri` — Triangular dislocations (Nikkhoo & Walter 2015)
 
 Half-space and full-space solutions for triangular dislocation elements.
+
+Triangle vertex ordering determines the element orientation and local slip
+basis. Preserve consistent mesh connectivity and validate a unit strike-slip
+and dip-slip response before modeling a new imported mesh.
 
 ### `tri.TDdispHS(obs, tri_verts, slip, nu=0.25)`
 

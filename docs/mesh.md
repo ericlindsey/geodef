@@ -3,6 +3,16 @@
 Provides the `Mesh` dataclass and four factory functions for creating
 triangular fault meshes.
 
+## Choosing a mesh
+
+A triangular mesh approximates a curved fault surface with planar elements.
+Refine where geometry bends rapidly or observations are sensitive, but avoid
+refining far beyond the data's resolving power: more triangles mean more slip
+parameters, memory, and regularization dependence. Check triangle aspect
+ratios, depth signs, surface continuity, and normal orientation visually before
+inversion. A mesh that looks smooth in longitude/latitude can still contain
+poorly shaped elements in meters.
+
 **Optional dependencies:** `meshpy` (meshing) and `netCDF4` (slab2.0 grids).
 Install them into the active environment when needed, for example:
 `uv pip install meshpy netCDF4`.
@@ -115,4 +125,6 @@ Or in one step (bypassing the explicit `Mesh` object):
 fault = geodef.Fault.load("cascadia", format="ned")
 ```
 
-See `tutorials/old_04_mesh_generation.ipynb` for a full demo.
+Tutorials 02, 04, and 09 explain discretization, regularization, and resolution;
+use those concepts to choose and evaluate the mesh rather than selecting a
+target edge length from geometry alone.

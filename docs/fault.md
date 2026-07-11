@@ -2,6 +2,19 @@
 
 The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Always create via factory classmethods, not `__init__` directly.
 
+## What a discretized fault represents
+
+Each patch carries a spatially uniform strike-slip and/or dip-slip value. The
+continuous fault is therefore approximated by a finite basis: smaller patches
+can represent finer structure but introduce more unknowns and generally demand
+stronger data coverage or regularization. Patch size is a modeling choice, not
+the resolution of the resulting inversion; use model-resolution and synthetic
+recovery tests to learn what the data actually resolve.
+
+Strike is clockwise from north, dip is downward from horizontal, and rake is
+measured within the fault plane. GeoDef follows the local frame East, North,
+Up and uses depth positive downward.
+
 ---
 
 ## Factory classmethods
@@ -117,6 +130,11 @@ down, for internal strain points; otherwise observations are at the surface.
 
 ## Moment and magnitude
 
+Scalar seismic moment is `M0 = mu * sum(area_i * slip_i)`. It measures source
+size, whereas moment magnitude is a logarithmic rescaling; neither says how
+well the spatial slip distribution is resolved. `slip` here is slip magnitude,
+not a signed strike- or dip-slip component.
+
 ```python
 M0 = fault.moment(slip, mu=30e9)      # slip magnitude shape (N,); returns N·m
 Mw = fault.magnitude(slip, mu=30e9)  # moment magnitude
@@ -138,6 +156,11 @@ K = fault.stress_kernel(mu=30e9)
 Strain Green's functions evaluated at the fault's own patch centers, scaled by
 shear modulus. Rectangular faults return shape `(4*N, 2*N)` and triangular
 faults return shape `(6*N, 2*N)`.
+
+This is a discretized elastic interaction kernel, not a complete earthquake
+failure model. Stress near patch edges and self-interaction depend on
+discretization; Coulomb stress additionally requires a receiver orientation,
+friction convention, and normal-stress sign convention.
 
 ---
 

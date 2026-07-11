@@ -1,10 +1,20 @@
 # `geodef.plot` — Visualization
 
 All plot functions follow a consistent pattern:
+
 - Accept optional `ax=None`; create a new figure if `None`
 - Return the `matplotlib.axes.Axes` used
 - Never call `plt.show()`
 - Pass `**kwargs` through to the underlying matplotlib artist
+
+## Plotting as a diagnostic
+
+A good inversion figure should show observations, predictions, residuals,
+fault geometry, units, and the color scale. Use identical limits when comparing
+models, and prefer a diverging colormap centered on zero for signed slip or
+residuals. Smooth-looking interpolation is not additional resolution: always
+inspect the underlying patch values and resolution/uncertainty alongside an
+interpolated map.
 
 ---
 
@@ -85,6 +95,11 @@ Model resolution diagonal on fault patches (same interface as `plot.slip`).
 geodef.plot.resolution(fault, np.diag(R), cmap='viridis', vmin=0, vmax=1)
 ```
 
+`diag(R)` measures how strongly each parameter is reproduced by the linearized
+inverse operator, but it ignores off-diagonal smearing. Values near one are not
+equivalent to small uncertainty; inspect rows of `R`, covariance, and synthetic
+recovery tests for a fuller resolution assessment.
+
 ---
 
 ## `plot.uncertainty(fault, values, **kwargs)`
@@ -94,6 +109,10 @@ Per-parameter 1-sigma uncertainty on fault patches.
 ```python
 geodef.plot.uncertainty(fault, sigma, cmap='magma_r')
 ```
+
+These are standard deviations under the assumed linear model, covariance, and
+regularization. They do not automatically include fault-geometry uncertainty
+or systematic model error.
 
 ---
 

@@ -2,6 +2,11 @@
 
 Hash-based caching of Green's matrices and stress kernels. Identical inputs always find the cache; changed inputs always recompute. Cache is enabled by default and stores `.npz` files keyed by SHA-256 hash.
 
+Caching changes runtime, not numerical results. It is especially helpful while
+trying different regularization strengths on fixed geometry and data, because
+the expensive elastic response is unchanged. Disable it for benchmarks so a
+disk hit is not mistaken for faster computation.
+
 ---
 
 ## Configuration
@@ -37,6 +42,10 @@ results. The cache key is computed from all input arrays and parameters (fault
 geometry, observation coordinates, data class, active GNSS components, look
 vectors, etc.) using SHA-256. If the key matches an existing `.npz` file, the
 result is loaded from disk; otherwise it is computed and saved.
+
+The hash identifies values and configuration, not scientific provenance. Keep
+raw-data processing, coordinate conventions, and software versions in your
+research metadata; the cache is disposable and can always be rebuilt.
 
 To bypass caching entirely for a session:
 

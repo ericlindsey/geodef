@@ -7,6 +7,23 @@ covariance.
 
 Constructor and file column order is consistently longitude, then latitude.
 
+## From measurements to an inverse problem
+
+A `DataSet` contains more than measured values. It defines three things needed
+by an inversion:
+
+- the observation vector `d` (GNSS components, InSAR line of sight, or
+  vertical displacement);
+- the covariance `C_d`, which describes uncertainty and correlation; and
+- a projection from modeled East/North/Up displacement into the measurement
+  space.
+
+GeoDef minimizes covariance-weighted residuals,
+`(d - Gm)^T C_d^-1 (d - Gm)`. Consequently, uncertainties must use the same
+physical units as the observations, and covariance entries use units squared.
+Do not use tiny formal uncertainties merely to force a dataset to dominate:
+include realistic measurement and model-error contributions when possible.
+
 ---
 
 ## GNSS
@@ -37,6 +54,13 @@ off-diagonal `rho * se * sn` (the Up component stays uncorrelated). `rho` may be
 a scalar or a `(n_stations,)` array and is mutually exclusive with an explicit
 `covariance=`.
 
+GNSS fields are often velocities in mm/yr or displacements in meters. GeoDef
+does not attach units, so either is valid provided observations and
+uncertainties are consistent. Because the elastic Green's coefficients are
+displacement per unit slip, displacement data produce slip and velocity data
+produce slip rate in the corresponding units (for example, mm/yr). In the
+standard coseismic examples, displacement and slip are both meters.
+
 **Properties:** `lat`, `lon`, `obs`, `sigma`, `covariance`, `n_stations`,
 `n_obs`, `components` (`'enu'` or `'en'`)
 
@@ -59,6 +83,11 @@ insar.to_gmt("out_gmt.dat")   # lon lat uLOS
 ```
 
 **Properties:** `lat`, `lon`, `obs` (= LOS), `sigma`, `covariance`, `n_stations`, `n_obs`
+
+The look vector is a unit vector in `[East, North, Up]`; GeoDef computes
+`u_LOS = look_e*u_e + look_n*u_n + look_u*u_u`. Sign conventions differ among
+InSAR products, so verify the supplied vector by projecting a known upward or
+eastward displacement before interpreting positive LOS motion.
 
 ---
 
@@ -147,6 +176,12 @@ insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
 (`'exponential'`) or `exp(-(d / L)^2)` (`'gaussian'`). The `nugget` adds
 uncorrelated white noise on the diagonal. Applies to one-value-per-station
 datasets (`InSAR`, `Vertical`).
+
+The covariance must be symmetric positive definite for whitening and inversion.
+Dense covariance scales as `O(n_obs^2)` in memory, so full-resolution InSAR
+scenes commonly need downsampling or a specialized covariance approximation.
+See [covariance matrices](https://en.wikipedia.org/wiki/Covariance_matrix) and
+[semivariograms](https://en.wikipedia.org/wiki/Variogram) for background.
 
 ---
 

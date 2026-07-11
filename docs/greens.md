@@ -2,6 +2,26 @@
 
 Assembles projected Green's matrices from `Fault` and `DataSet` objects, and provides Laplacian regularization operators.
 
+## Physical and algebraic picture
+
+Elastic dislocation models are linear in slip. After discretizing a fault into
+`N` patches, the predicted observations are
+
+```text
+d_pred = G m.
+```
+
+Column `j` of `G` is the observation pattern produced by one unit of slip on
+model parameter `m_j`; row `i` describes how every slip parameter contributes
+to observation `d_i`. This is why GeoDef calls `G` a Green's matrix. Geometry,
+elastic constants, observation locations, and projection determine `G`; slip
+does not. See [Green's functions](https://en.wikipedia.org/wiki/Green%27s_function)
+for the broader linear-systems concept.
+
+Matrix dimensions are worth checking before every custom inversion. If `G` is
+`(M, P)`, then `m` must have length `P` and `G @ m` has the same length and row
+ordering as the stacked observation vector.
+
 ---
 
 ## High-level assembly
@@ -59,6 +79,10 @@ W = geodef.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 
 `geodef.invert()` calls these internally; use them directly when assembling `G @ m` by hand.
 
+`W` is the inverse covariance, not a vector of standard deviations. In
+derivations it is often clearer to whiten the system with a matrix `R` such
+that `R.T @ R = W`, then solve with `R @ G` and `R @ d`.
+
 ---
 
 ## Laplacian operators
@@ -82,6 +106,13 @@ L = build_laplacian_knn(fault.centers_local, k=6)   # sparse (N, N)
 ```
 
 `fault.laplacian` automatically chooses `build_laplacian_2d` (structured grids) or `build_laplacian_knn` (unstructured) based on whether `grid_shape` is set.
+
+A Laplacian penalizes spatial curvature rather than slip amplitude:
+`||L m||^2` is small for locally smooth slip and zero for modes in the
+operator's null space (often constant slip). It therefore expresses a modeling
+assumption that neighboring patches should not change abruptly. Patch size and
+neighbor geometry affect its scale, so regularization strengths should not be
+transferred blindly between meshes.
 
 ---
 
