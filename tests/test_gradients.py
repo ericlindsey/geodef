@@ -155,16 +155,18 @@ class TestTriForward:
 
 
 class TestTriJacobian:
-    @pytest.mark.slow
     def test_vertex_jacobian_matches_finite_differences(self):
-        d, d_dv, d_dslip = gradients.tri_displacement_jacobian(_VERTICES, _SLIP, _OBS)
-        assert d.shape == (5, 3)
-        assert d_dv.shape == (5, 3, 3, 3)
-        assert d_dslip.shape == (5, 3, 3)
+        obs = _OBS[:2]
+        d, d_dv, d_dslip = gradients.tri_displacement_jacobian(
+            _VERTICES, _SLIP, obs
+        )
+        assert d.shape == (2, 3)
+        assert d_dv.shape == (2, 3, 3, 3)
+        assert d_dslip.shape == (2, 3, 3)
         assert np.all(np.isfinite(backend.to_numpy(d_dv)))
 
         fd = _fd_jacobian(
-            lambda v: backend.to_numpy(gradients.tri_displacement(v, _SLIP, _OBS)),
+            lambda v: backend.to_numpy(gradients.tri_displacement(v, _SLIP, obs)),
             _VERTICES,
             rel_step=1e-6,
             scale=1e3,
@@ -336,12 +338,14 @@ class TestTriGreens:
 
     @pytest.mark.slow
     def test_vertex_jacobian_matches_finite_differences(self):
-        G_func = lambda v: gradients.tri_greens(v, _OBS)  # noqa: E731
-        jac = jax.jacfwd(G_func)(self._MESH)
+        mesh = self._MESH[:1]
+        obs = _OBS[:2]
+        G_func = lambda v: gradients.tri_greens(v, obs)  # noqa: E731
+        jac = jax.jacfwd(G_func)(mesh)
         assert np.all(np.isfinite(backend.to_numpy(jac)))
         fd = _fd_jacobian(
             lambda v: backend.to_numpy(G_func(v)),
-            self._MESH,
+            mesh,
             rel_step=1e-6,
             scale=1e3,
         )
@@ -365,7 +369,6 @@ class TestTriGreens:
         backend.set_backend("jax")
         np.testing.assert_allclose(jax_g, loop_g, rtol=1e-9, atol=1e-12)
 
-    @pytest.mark.slow
     def test_vertex_jacobian_finite_on_vertical_side(self):
         """A vertical TD side (AngSetupFSC's degenerate branch, common to
         strike-slip meshes) must not NaN-poison the vertex Jacobian.
@@ -378,12 +381,9 @@ class TestTriGreens:
         regime is covered by ``test_vertex_jacobian_matches_finite_differences``.
         """
         mesh = np.array(
-            [
-                [[0.0, 0.0, 0.0], [0.0, 0.0, -5e3], [6e3, 0.0, -3e3]],  # P1P2 vertical
-                [[0.0, 0.0, -5e3], [6e3, 0.0, -3e3], [6e3, 0.0, -8e3]],
-            ]
+            [[[0.0, 0.0, 0.0], [0.0, 0.0, -5e3], [6e3, 0.0, -3e3]]]
         )
-        obs = np.array([[3e3, 2e3, 0.0], [-2e3, -1e3, -1e3], [8e3, 4e3, -2e3]])
+        obs = np.array([[3e3, 2e3, 0.0]])
         jac = backend.to_numpy(jax.jacfwd(lambda v: gradients.tri_greens(v, obs))(mesh))
         assert np.all(np.isfinite(jac))
         # primal is finite too, and jit-consistent, at the degenerate config

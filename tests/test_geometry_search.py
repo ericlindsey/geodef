@@ -108,7 +108,6 @@ def _theta_start(**overrides):
 
 
 class TestGeometrySearch:
-    @pytest.mark.slow
     def test_recovers_dip(self, gnss_data):
         result = geometry_search(
             _theta_start(dip=30.0),
@@ -122,7 +121,6 @@ class TestGeometrySearch:
         assert abs(result.theta[4] - _TRUE["dip"]) < 0.5
         assert result.success
 
-    @pytest.mark.slow
     def test_recovers_dip_and_depth(self, gnss_data):
         result = geometry_search(
             _theta_start(dip=25.0, depth=35e3),
