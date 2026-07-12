@@ -179,7 +179,7 @@ class TestInversionResultStructure:
         slip_ds = np.zeros(12)
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, gnss)
-        assert isinstance(result.chi2, float)
+        assert isinstance(result.reduced_chi2, float)
         assert isinstance(result.rms, float)
         assert isinstance(result.moment, float)
         assert isinstance(result.Mw, float)
@@ -578,8 +578,8 @@ class TestFitStatistics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
         # 25 stations x 3 comp = 75 obs > 24 params → overdetermined
-        assert result.chi2 >= 0
-        assert not np.isnan(result.chi2)
+        assert result.reduced_chi2 >= 0
+        assert not np.isnan(result.reduced_chi2)
 
     def test_chi2_nan_when_underdetermined(self, single_patch):
         """With more params than obs, chi2 should be nan."""
@@ -588,7 +588,7 @@ class TestFitStatistics:
         gnss = _make_gnss(single_patch, (lat, lon), np.array([1.0]), np.array([0.0]))
         result = invert(single_patch, gnss)
         # 1 station x 3 comp = 3 obs, 2 params → dof=1, should work
-        assert not np.isnan(result.chi2)
+        assert not np.isnan(result.reduced_chi2)
 
     def test_rms_nonnegative(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -1538,12 +1538,30 @@ class TestInversionResultIO:
         loaded = InversionResult.load(fpath)
         np.testing.assert_allclose(loaded.predicted, result.predicted)
 
+    def test_chi2_attribute_raises_with_guidance(self, fault_4x3, obs_points):
+        result = self._make_result(fault_4x3, obs_points)
+        with pytest.raises(AttributeError, match="reduced_chi2"):
+            _ = result.chi2
+
+    def test_load_legacy_chi2_key(self, fault_4x3, obs_points, tmp_path):
+        """Files written before the rename stored the reduced statistic
+        under 'chi2'; load() must map it to reduced_chi2."""
+        result = self._make_result(fault_4x3, obs_points)
+        fpath = tmp_path / "new.npz"
+        result.save(fpath)
+        data = dict(np.load(fpath, allow_pickle=False))
+        data["chi2"] = data.pop("reduced_chi2")
+        legacy = tmp_path / "legacy.npz"
+        np.savez_compressed(legacy, **data)
+        loaded = InversionResult.load(legacy)
+        np.testing.assert_allclose(loaded.reduced_chi2, result.reduced_chi2)
+
     def test_save_load_roundtrip_scalars(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
         result.save(fpath)
         loaded = InversionResult.load(fpath)
-        np.testing.assert_allclose(loaded.chi2, result.chi2)
+        np.testing.assert_allclose(loaded.reduced_chi2, result.reduced_chi2)
         np.testing.assert_allclose(loaded.rms, result.rms)
         np.testing.assert_allclose(loaded.moment, result.moment)
         np.testing.assert_allclose(loaded.Mw, result.Mw)

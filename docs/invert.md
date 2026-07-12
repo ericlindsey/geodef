@@ -96,7 +96,7 @@ chosen slip basis automatically.
 | `slip_vector` | `(2N,)` or `(N,)` | Blocked `[ss_0..ss_N, ds_0..ds_N]`, or one amplitude per patch |
 | `predicted` | `(M,)` | Forward-modeled observations |
 | `residuals` | `(M,)` | `obs - predicted` |
-| `chi2` | scalar | Reduced chi-squared |
+| `reduced_chi2` | scalar | Reduced chi-squared, `r^T W r / (M - P)` |
 | `rms` | scalar | RMS misfit |
 | `moment` | scalar | Seismic moment in N·m |
 | `Mw` | scalar | Moment magnitude |

@@ -89,7 +89,7 @@ result = geodef.invert(fault, [gnss, insar],
                        smoothing_strength=1e3,
                        bounds=(0, None))
 
-print(f"Mw = {result.Mw:.2f}, reduced chi2 = {result.chi2:.2f}")
+print(f"Mw = {result.Mw:.2f}, reduced chi2 = {result.reduced_chi2:.2f}")
 geodef.plot.slip(fault, result.slip_vector)
 
 # Optional fixed slip directions

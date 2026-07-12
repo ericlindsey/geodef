@@ -49,7 +49,9 @@ class InversionResult:
         slip_vector: Blocked solution vector, shape (n_components * N,).
         residuals: Observation minus prediction, shape (M,).
         predicted: Forward-modeled observations, shape (M,).
-        chi2: Reduced chi-squared misfit.
+        reduced_chi2: Reduced chi-squared misfit, r^T W r / (M - P).
+            (Accessing the removed ambiguous name ``chi2`` raises with
+            migration guidance; see docs/conventions.md.)
         rms: Root-mean-square of residuals.
         moment: Scalar seismic moment in N-m.
         Mw: Moment magnitude.
@@ -72,7 +74,7 @@ class InversionResult:
     slip_vector: np.ndarray
     residuals: np.ndarray
     predicted: np.ndarray
-    chi2: float
+    reduced_chi2: float
     rms: float
     moment: float
     Mw: float
@@ -81,6 +83,16 @@ class InversionResult:
     components: str
     rake: float | None = None
     slip_azimuth: float | None = None
+
+    @property
+    def chi2(self) -> float:
+        """Removed: this name ambiguously held the *reduced* statistic."""
+        raise AttributeError(
+            "InversionResult.chi2 has been renamed: it held the reduced "
+            "chi-squared, now available as `reduced_chi2`. The unreduced "
+            "statistic r^T W r is available per dataset via "
+            "dataset_diagnostics(). See docs/conventions.md."
+        )
 
     # ------------------------------------------------------------------
     # I/O
@@ -128,7 +140,7 @@ class InversionResult:
             "slip_vector": self.slip_vector,
             "residuals": self.residuals,
             "predicted": self.predicted,
-            "chi2": np.array([self.chi2]),
+            "reduced_chi2": np.array([self.reduced_chi2]),
             "rms": np.array([self.rms]),
             "moment": np.array([self.moment]),
             "Mw": np.array([self.Mw]),
@@ -179,7 +191,9 @@ class InversionResult:
             slip_vector=data["slip_vector"],
             residuals=data["residuals"],
             predicted=data["predicted"],
-            chi2=float(data["chi2"][0]),
+            reduced_chi2=float(
+                data["reduced_chi2" if "reduced_chi2" in data else "chi2"][0]
+            ),
             rms=float(data["rms"][0]),
             moment=float(data["moment"][0]),
             Mw=float(data["Mw"][0]),
@@ -220,7 +234,7 @@ class InversionResult:
             "geodef InversionResult",
             f"components: {self.components}",
             f"smoothing: {smoothing_desc}, strength: {strength_desc}",
-            f"chi2_reduced: {self.chi2:.6g}",
+            f"reduced_chi2: {self.reduced_chi2:.6g}",
             f"rms: {self.rms:.6g} m",
             f"moment: {self.moment:.6g} N-m",
             f"Mw: {self.Mw:.4f}",
@@ -877,7 +891,7 @@ class LinearSystem:
 
         predicted = self.G @ m
         residuals = self.d - predicted
-        chi2 = _compute_chi2(residuals, self.W, self._n_params)
+        reduced_chi2 = _compute_reduced_chi2(residuals, self.W, self._n_params)
         rms = float(np.sqrt(np.mean(residuals**2)))
 
         if self.components == "both":
@@ -894,7 +908,7 @@ class LinearSystem:
             slip_vector=m,
             residuals=residuals,
             predicted=predicted,
-            chi2=chi2,
+            reduced_chi2=reduced_chi2,
             rms=rms,
             moment=moment,
             Mw=mw,
@@ -2067,7 +2081,7 @@ def _rank_positive_eigs(eigs: np.ndarray) -> np.ndarray:
     return eigs[eigs > tol]
 
 
-def _compute_chi2(
+def _compute_reduced_chi2(
     residuals: np.ndarray,
     W: np.ndarray,
     n_params: int,

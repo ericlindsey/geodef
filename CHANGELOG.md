@@ -46,6 +46,12 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed
 
+- **breaking** — `InversionResult.chi2` is renamed `reduced_chi2` (it held
+  the reduced statistic while `DatasetDiagnostics.chi2` held the unreduced
+  one). Accessing `.chi2` now raises an `AttributeError` with migration
+  guidance instead of silently changing meaning; `.npz` files written
+  before the rename still load. Vocabulary: `chi2` = unreduced `r^T W r`,
+  `reduced_chi2` = `chi2 / dof` (docs/conventions.md).
 - **numerical** — `model_covariance` / `model_uncertainty` now return the
   linear-Gaussian posterior covariance `H^-1` by default (`H = GtWG +
   lambda LtL`), matching what Tutorial 09 teaches and what `geodef.bayes`
