@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "GeoDef: forward and inverse modeling of fault slip in elastic half-spaces"
+authors:
+  - family-names: Lindsey
+    given-names: Eric O.
+    orcid: "https://orcid.org/0000-0003-2274-8215"
+    email: eric.o.lindsey@gmail.com
+repository-code: "https://github.com/ericlindsey/geodef"
+license: MIT
+version: 1.1.0
+date-released: 2026-07-12
+keywords:
+  - geodesy
+  - earthquake
+  - fault slip
+  - elastic dislocation
+  - inverse problems
+references:
+  - type: article
+    title: "Surface deformation due to shear and tensile faults in a half-space"
+    authors:
+      - family-names: Okada
+        given-names: Yoshimitsu
+    journal: "Bulletin of the Seismological Society of America"
+    volume: 75
+    issue: 4
+    year: 1985
+    start: 1135
+    end: 1154
+  - type: article
+    title: "Internal deformation due to shear and tensile faults in a half-space"
+    authors:
+      - family-names: Okada
+        given-names: Yoshimitsu
+    journal: "Bulletin of the Seismological Society of America"
+    volume: 82
+    issue: 2
+    year: 1992
+    start: 1018
+    end: 1040
+  - type: article
+    title: "Triangular dislocation: an analytical, artefact-free solution"
+    authors:
+      - family-names: Nikkhoo
+        given-names: Mehdi
+      - family-names: Walter
+        given-names: Thomas R.
+    journal: "Geophysical Journal International"
+    volume: 201
+    issue: 2
+    year: 2015
+    start: 1119
+    end: 1141
+    doi: 10.1093/gji/ggv035

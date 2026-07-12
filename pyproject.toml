@@ -1,13 +1,43 @@
 [project]
 name = "geodef"
-version = "1.1.0"
+dynamic = ["version"]
 description = "A flexible, student-friendly Python library for forward and inverse modeling of fault slip in elastic half-spaces"
-requires-python = ">=3.10"
-dependencies = [
-    "numpy",
-    "scipy",
-    "matplotlib",
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Eric Lindsey", email = "eric.o.lindsey@gmail.com" },
 ]
+requires-python = ">=3.10"
+keywords = [
+    "geodesy",
+    "earthquake",
+    "fault slip",
+    "elastic dislocation",
+    "inverse problems",
+    "okada",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+]
+
+[project.urls]
+Repository = "https://github.com/ericlindsey/geodef"
+Issues = "https://github.com/ericlindsey/geodef/issues"
 
 [project.optional-dependencies]
 # Geographic transforms and slab2.0 sampling.
@@ -24,8 +54,11 @@ bayes = ["jax", "blackjax"]
 all = ["pyproj", "meshpy", "cartopy", "jax", "blackjax"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/geodef/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geodef"]
@@ -46,6 +79,11 @@ testpaths = ["tests"]
 addopts = "-m 'not slow'"
 markers = [
     "slow: expensive compilation, sampling, or end-to-end recovery tests",
+]
+filterwarnings = [
+    # Emitted by compiled extensions (e.g. netCDF4) built against a different
+    # NumPy ABI than the one installed; harmless and outside geodef's control.
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
 ]
 
 [tool.ruff]

@@ -59,7 +59,35 @@ class TestTopLevelAPI:
         import geodef
 
         assert isinstance(geodef.__version__, str)
-        assert geodef.__version__ == "1.1.0"
+        parts = geodef.__version__.split(".")
+        assert len(parts) >= 2 and all(p.isdigit() for p in parts[:2])
+
+    def test_version_single_sourced(self):
+        """__init__.py is the only version source; metadata must agree."""
+        from importlib.metadata import version
+
+        import geodef
+
+        assert version("geodef") == geodef.__version__
+
+    def test_citation_file_version_matches(self):
+        import re
+        from pathlib import Path
+
+        import geodef
+
+        cff = Path(__file__).parent.parent / "CITATION.cff"
+        match = re.search(r"^version: (.+)$", cff.read_text(), re.MULTILINE)
+        assert match is not None
+        assert match.group(1).strip() == geodef.__version__
+
+    def test_py_typed_marker_ships(self):
+        from pathlib import Path
+
+        import geodef
+
+        pkg_dir = Path(geodef.__file__).parent
+        assert (pkg_dir / "py.typed").exists()
 
     def test_dataset_classes_importable(self):
         import geodef
