@@ -12,6 +12,14 @@ import numpy as np
 from geodef import greens as _greens
 from geodef import transforms
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.validation import (
+    ValidationReport,
+    _ReportBuilder,
+    as_1d_floats,
+    check_finite_scalar,
+    check_positive,
+    check_range,
+)
 
 if TYPE_CHECKING:
     from geodef.mesh import Mesh
@@ -57,28 +65,38 @@ class Fault:
         engine: str = "okada",
         medium: ElasticMedium | None = None,
     ) -> None:
-        lat = np.asarray(lat, dtype=float)
-        lon = np.asarray(lon, dtype=float)
-        depth = np.asarray(depth, dtype=float)
-        strike = np.asarray(strike, dtype=float)
-        dip = np.asarray(dip, dtype=float)
-
+        lat = as_1d_floats("lat", np.atleast_1d(lat), unit="degrees")
         n = lat.shape[0]
-        if not all(arr.shape == (n,) for arr in (lon, depth, strike, dip)):
-            raise ValueError(
-                "lat, lon, depth, strike, dip must all be 1-D arrays of the same length"
-            )
+        lon = as_1d_floats("lon", np.atleast_1d(lon), n=n, unit="degrees")
+        depth = as_1d_floats("depth", np.atleast_1d(depth), n=n, unit="meters")
+        strike = as_1d_floats("strike", np.atleast_1d(strike), n=n, unit="degrees")
+        dip = as_1d_floats("dip", np.atleast_1d(dip), n=n, unit="degrees")
+
+        check_range("lat", lat, -90.0, 90.0, unit="degrees")
+        check_range("lon", lon, -360.0, 360.0, unit="degrees")
+        check_range("dip", dip, 0.0, 90.0, unit="degrees")
 
         if engine not in ("okada", "tri"):
             raise ValueError(f"engine must be 'okada' or 'tri', got {engine!r}")
 
+        # Rectangular centroid depths feed the Okada kernel directly and must
+        # be below the surface. Triangular centroid depths are derived
+        # metadata (the kernel uses the ENU vertices) and legitimately carry
+        # meter-scale ellipsoidal-curvature offsets near the surface, so
+        # above-surface *vertices* are reported by validate() instead.
+        if engine == "okada" and n and np.min(depth) < 0.0:
+            raise ValueError(
+                "depth is positive down (meters); centroid depths must be "
+                f">= 0, got minimum {np.min(depth):g}"
+            )
+
         if engine == "okada":
             if length is None or width is None:
                 raise ValueError("Rectangular faults require length and width arrays")
-            length = np.asarray(length, dtype=float)
-            width = np.asarray(width, dtype=float)
-            if length.shape != (n,) or width.shape != (n,):
-                raise ValueError("length and width must have shape (N,)")
+            length = as_1d_floats("length", np.atleast_1d(length), n=n, unit="meters")
+            width = as_1d_floats("width", np.atleast_1d(width), n=n, unit="meters")
+            check_positive("length", length, unit="meters")
+            check_positive("width", width, unit="meters")
         else:
             if vertices is None:
                 raise ValueError("Triangular faults require a vertices array")
@@ -157,6 +175,16 @@ class Fault:
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
+        for pname, val, unit in (
+            ("lat", lat, "degrees"),
+            ("lon", lon, "degrees"),
+            ("depth", depth, "meters"),
+            ("strike", strike, "degrees"),
+            ("dip", dip, "degrees"),
+            ("length", length, "meters"),
+            ("width", width, "meters"),
+        ):
+            check_finite_scalar(pname, val, unit=unit)
         patch_L = length / n_length
         patch_W = width / n_width
 
@@ -252,6 +280,16 @@ class Fault:
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
+        for pname, val, unit in (
+            ("lat", lat, "degrees"),
+            ("lon", lon, "degrees"),
+            ("depth", depth, "meters"),
+            ("strike", strike, "degrees"),
+            ("dip", dip, "degrees"),
+            ("length", length, "meters"),
+            ("width", width, "meters"),
+        ):
+            check_finite_scalar(pname, val, unit=unit)
         sin_str = np.sin(np.radians(strike))
         cos_str = np.cos(np.radians(strike))
         sin_dip = np.sin(np.radians(dip))
@@ -727,6 +765,63 @@ class Fault:
     def engine(self) -> str:
         """Green's function engine: ``"okada"`` or ``"tri"``."""
         return self._engine
+
+    def validate(self) -> ValidationReport:
+        """Check the geometry for physically invalid or suspicious setups.
+
+        Errors: patch material above the free surface, degenerate
+        (zero-area) triangles. Warnings: extreme patch aspect ratios,
+        strike angles outside [0, 360).
+
+        Returns:
+            A :class:`geodef.validation.ValidationReport`.
+        """
+        b = _ReportBuilder()
+        if self._engine == "okada":
+            assert self._length is not None and self._width is not None
+            top_edge = self._depth - 0.5 * self._width * np.sin(np.radians(self.dip))
+            n_above = int(np.sum(top_edge < -1.0))
+            if n_above:
+                b.error(
+                    "depth/width/dip",
+                    f"{n_above} patch(es) extend above the free surface "
+                    f"(shallowest top edge {np.min(top_edge):.1f} m): the "
+                    "half-space solution is invalid there. Deepen the fault "
+                    "or reduce its width.",
+                )
+            ratio = self._length / self._width
+            if np.max(ratio) > 50.0 or np.min(ratio) < 1.0 / 50.0:
+                b.warning(
+                    "length/width",
+                    f"extreme patch aspect ratio (max {np.max(ratio):.3g}, "
+                    f"min {np.min(ratio):.3g}); very elongated patches "
+                    "resolve slip poorly across their short dimension",
+                )
+        else:
+            assert self._vertices is not None
+            up = self._vertices[:, :, 2]
+            n_above = int(np.sum(np.any(up > 1.0, axis=1)))
+            if n_above:
+                b.error(
+                    "vertices",
+                    f"{n_above} triangle(s) have vertices above the free "
+                    f"surface (highest {np.max(up):.1f} m up): the "
+                    "half-space solution is invalid there",
+                )
+            tiny = np.flatnonzero(self.areas < 1.0)
+            if tiny.size:
+                b.error(
+                    "vertices",
+                    f"{tiny.size} degenerate triangle(s) with area < 1 m^2 "
+                    f"(first indices {tiny[:5].tolist()})",
+                )
+        if np.any(self.strike < 0.0) or np.any(self.strike >= 360.0):
+            b.warning(
+                "strike",
+                "strike angles outside [0, 360) are accepted but usually "
+                "indicate a sign or convention slip",
+            )
+        return b.report()
 
     @property
     def medium(self) -> ElasticMedium:

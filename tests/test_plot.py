@@ -121,7 +121,7 @@ def insar_data():
     # Near-vertical look vector (typical ascending geometry)
     look_e = np.full(n, -0.1)
     look_n = np.full(n, 0.08)
-    look_u = np.full(n, 0.99)
+    look_u = np.full(n, np.sqrt(1.0 - 0.1**2 - 0.08**2))
     return InSAR(
         lon=lon,
         lat=lat,

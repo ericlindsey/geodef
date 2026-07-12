@@ -55,6 +55,7 @@ geodef/
 | `geomap` | Optional Cartopy geographic map plotting (basemap, fault/vector overlays) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
+| `validation` | Fail-early input checks and `.validate()` reports (`ValidationReport`) |
 | `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 (optional deps) |
 | `euler` | Euler pole fitting and rigid-block velocity prediction |
 

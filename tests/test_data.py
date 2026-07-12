@@ -622,7 +622,7 @@ class TestSpatialCovariance:
             sigma=np.full(n, 0.02),
             look_e=np.full(n, 0.4),
             look_n=np.full(n, -0.1),
-            look_u=np.full(n, 0.9),
+            look_u=np.full(n, np.sqrt(1.0 - 0.4**2 - 0.1**2)),
             covariance=cov,
         )
         np.testing.assert_array_equal(insar.covariance, cov)

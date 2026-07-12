@@ -205,19 +205,19 @@ semantics that later objects will wrap.
 
 ### 0.2 Make invalid physical inputs fail early
 
-- [ ] Centralize validation helpers for one-dimensional numeric arrays, finite
+- [x] Centralize validation helpers for one-dimensional numeric arrays, finite
   values, broadcast rules, angle ranges, positive dimensions/uncertainties, and
   matching lengths. Error messages must identify the argument, received shape
   or range, and required unit.
-- [ ] Validate covariance symmetry and positive definiteness with a useful
+- [x] Validate covariance symmetry and positive definiteness with a useful
   remediation message; provide an explicit escape hatch only for advanced
   semidefinite/operator cases.
-- [ ] Validate or explicitly normalize InSAR look vectors; provide a diagnostic
+- [x] Validate or explicitly normalize InSAR look vectors; provide a diagnostic
   for likely satellite-to-ground versus ground-to-satellite sign reversal.
-- [ ] Add `Fault.validate()`, `DataSet.validate()`, and `Mesh.validate()` reports
+- [x] Add `Fault.validate()`, `DataSet.validate()`, and `Mesh.validate()` reports
   for interactive workflows, including patch/triangle degeneracy, above-surface
   sources, extreme aspect ratios, duplicate stations, and coordinate bounds.
-- [ ] Replace user-triggerable `assert` statements in public paths with typed,
+- [x] Replace user-triggerable `assert` statements in public paths with typed,
   informative exceptions; keep trace-only kernel assertions private.
 
 ### 0.3 Repair packaging, licensing, and documentation drift

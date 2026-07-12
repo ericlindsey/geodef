@@ -15,8 +15,12 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from geodef.validation import ValidationReport
 from scipy import interpolate
 
 from geodef import transforms
@@ -69,6 +73,71 @@ class Mesh:
         clat = np.mean(self.lat[tri], axis=1)
         cdep = np.mean(self.depth[tri], axis=1)
         return np.column_stack([clon, clat, cdep])
+
+    def validate(self) -> "ValidationReport":
+        """Check the mesh for invalid or suspicious geometry.
+
+        Errors: nodes above the free surface, degenerate (near-zero-area)
+        triangles, out-of-range connectivity. Warnings: duplicate nodes,
+        unreferenced nodes, extreme edge-length ratios.
+
+        Returns:
+            A :class:`geodef.validation.ValidationReport`.
+        """
+        from geodef.validation import _ReportBuilder
+
+        b = _ReportBuilder()
+        if np.any(self.depth < -1.0):
+            b.error(
+                "depth",
+                f"{int(np.sum(self.depth < -1.0))} node(s) above the free "
+                f"surface (minimum depth {np.min(self.depth):.1f} m; depth "
+                "is positive down)",
+            )
+        if self.triangles.size and (
+            self.triangles.min() < 0 or self.triangles.max() >= self.n_nodes
+        ):
+            b.error("triangles", "connectivity indices out of node-array range")
+        else:
+            areas = self.areas
+            tiny = np.flatnonzero(areas < 1.0)
+            if tiny.size:
+                b.error(
+                    "triangles",
+                    f"{tiny.size} degenerate triangle(s) with area < 1 m^2 "
+                    f"(first indices {tiny[:5].tolist()})",
+                )
+            ref_lat = float(np.mean(self.lat))
+            ref_lon = float(np.mean(self.lon))
+            verts = self.vertices_enu(ref_lat, ref_lon)
+            edges = np.stack(
+                [
+                    np.linalg.norm(verts[:, 1] - verts[:, 0], axis=1),
+                    np.linalg.norm(verts[:, 2] - verts[:, 1], axis=1),
+                    np.linalg.norm(verts[:, 0] - verts[:, 2], axis=1),
+                ]
+            )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratio = edges.max(axis=0) / np.maximum(edges.min(axis=0), 1e-12)
+            if np.any(ratio > 20.0):
+                b.warning(
+                    "triangles",
+                    f"{int(np.sum(ratio > 20.0))} sliver triangle(s) with "
+                    "edge-length ratio > 20; they condition the Laplacian "
+                    "and Green's functions poorly",
+                )
+        nodes = np.column_stack([self.lon, self.lat, self.depth])
+        n_unique = np.unique(nodes, axis=0).shape[0]
+        if n_unique < self.n_nodes:
+            b.warning("nodes", f"{self.n_nodes - n_unique} duplicated node position(s)")
+        referenced = np.unique(self.triangles)
+        if referenced.size < self.n_nodes:
+            b.warning(
+                "nodes",
+                f"{self.n_nodes - referenced.size} node(s) not referenced by "
+                "any triangle",
+            )
+        return b.report()
 
     @property
     def areas(self) -> np.ndarray:

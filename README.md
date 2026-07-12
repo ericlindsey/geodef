@@ -51,6 +51,7 @@ notes).
 | Green's assembly, Laplacians, caching | `greens`, `cache` | base install |
 | Linear slip inversion + model assessment | `invert` | base install |
 | Euler poles and rigid-block velocities | `euler` | base install |
+| Input validation and geometry checks | `validation` | base install |
 | Slip, data, fit, and 3-D plotting | `plot` | base install |
 | High-precision geodetic transforms | `transforms` | `[geo]` |
 | Triangular mesh generation, slab2.0 | `mesh` | `[mesh]` |
@@ -174,6 +175,7 @@ Full API docs with examples are in `docs/`:
 | [`docs/okada.md`](docs/okada.md) | `okada` dispatcher + `okada85` / `okada92` direct access |
 | [`docs/cache.md`](docs/cache.md) | Disk caching configuration |
 | [`docs/transforms.md`](docs/transforms.md) | Geodetic coordinate transforms |
+| [`docs/validation.md`](docs/validation.md) | Input validation helpers and `.validate()` reports |
 | [`docs/backend.md`](docs/backend.md) | JAX backend selection, precision, and GPU notes |
 | [`docs/gradients.md`](docs/gradients.md) | Differentiable forward models and Jacobians (JAX) |
 | [`docs/bayes.md`](docs/bayes.md) | Collapsed Bayesian geometry inference (NUTS / blackjax) |

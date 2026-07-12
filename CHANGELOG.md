@@ -9,6 +9,14 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Added
 
+- `geodef.validation`: fail-early physical input validation on every public
+  constructor (non-finite values, bad latitudes/dips/depths, non-positive
+  uncertainties, non-unit InSAR look vectors with a `normalize_look`
+  option, asymmetric/non-PD covariances with a documented escape hatch),
+  plus interactive `Fault.validate()`, `DataSet.validate()`, and
+  `Mesh.validate()` reports for suspicious-but-legal setups (above-surface
+  patches, degenerate/sliver triangles, duplicated stations,
+  satellite-to-ground look-vector sign).
 - `geodef.medium.ElasticMedium`: one declared home for half-space elastic
   parameters. `Fault` accepts `medium=` in every factory (and
   `fault.with_medium(...)` copies a fault with new parameters); Poisson's
@@ -28,6 +36,10 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Fixed
 
+- The geodetic fixed-point iteration in `transforms.ecef2geod` looped
+  forever when fed NaN coordinates (pegging a core at 100%); it is now
+  iteration-bounded so non-finite inputs propagate as NaN, and constructor
+  validation rejects them before they reach any transform.
 - **numerical** — ABIC (all three implementations: `compute_abic`,
   `LinearSystem` sweeps, and the batched JAX sweep) filtered prior
   eigenvalues with a plain `> 0` test, so a Laplacian's numerically-zero

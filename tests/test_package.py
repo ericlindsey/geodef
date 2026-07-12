@@ -105,8 +105,8 @@ class TestTopLevelAPI:
         lat = np.array([0.0])
         lon = np.array([100.0])
         g = geodef.GNSS(
-            lon=lat,
-            lat=lon,
+            lon=lon,
+            lat=lat,
             ve=np.array([1.0]),
             vn=np.array([0.5]),
             vu=np.array([-0.1]),

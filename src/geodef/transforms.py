@@ -115,7 +115,11 @@ def ecef2geod(
     sqr = np.sqrt(x * x + y * y)
     alat0 = np.arctan2(z / sqr, 1.0 - ellps.e2)
     alat = alat0
-    while True:
+    # The fixed-point iteration converges in a handful of steps for valid
+    # coordinates; the bound guarantees termination for non-finite inputs
+    # (NaN never satisfies the convergence test), which then propagate as
+    # NaN instead of spinning forever.
+    for _ in range(100):
         alat0 = alat
         sinlat = np.sin(alat)
         curvn = ellps.a / (np.sqrt(1.0 - ellps.e2 * sinlat * sinlat))

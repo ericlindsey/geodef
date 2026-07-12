@@ -347,7 +347,7 @@ def insar_data() -> InSAR:
         sigma=np.ones(n),
         look_e=np.full(n, 0.1),
         look_n=np.full(n, 0.1),
-        look_u=np.full(n, 0.98),
+        look_u=np.full(n, np.sqrt(1.0 - 2 * 0.1**2)),
     )
 
 
