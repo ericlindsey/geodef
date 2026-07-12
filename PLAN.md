@@ -1,458 +1,574 @@
-# PLAN.md — Forward-Looking Roadmap for GeoDef
+# PLAN.md — GeoDef Roadmap
 
-**GeoDef v1.1 has shipped.** The runtime library, the eleven-part tutorial
-course, the per-module documentation, and clean `ruff`/`mypy`/warning-free
-tooling are all complete, and the headline JAX accelerator (roadmap item 1) has
-substantially landed: the differentiable forward models, gradient-based
-`geometry_search`, and the collapsed Bayesian sampler `geodef.bayes` (Phase 4)
-are all in. This document is **forward-looking**: the checklists below record the
-completed JAX phases for context, but the open work is the unchecked items
-(batched L-curve/CV sweeps, differentiable strain/stress and triangular-mesh
-jit/vmap) plus roadmap items 2–4.
+GeoDef's next phase is not a choice between a small teaching library and a
+powerful research package. It should be both: a novice should be able to express
+a geophysical problem in a few named objects, while an expert can still reach
+the Green's matrices, covariance operators, autodiff kernels, constrained
+solvers, and Bayesian posteriors underneath.
 
-**Read `PYTHON.md` before editing any code.**
+This roadmap replaces the implementation diary that previously occupied this
+file. Git history, tests, and the module documentation preserve the details of
+completed work; this document describes what remains and why it matters.
 
----
-
-## Guiding principles
-
-GeoDef is meant to stay *simple, readable, and good for learners* while remaining
-capable for research. Every item below should be weighed against that: prefer a
-small, well-tested, well-documented addition over a large framework. Optional and
-heavy dependencies (GPU stacks, cycle solvers, extra Green's engines) must stay
-**optional** and never burden the base install or the teaching path.
-
-Each roadmap item, when started, becomes its own `PLAN.md` step with concrete
-sub-tasks, tests, and docs, following the same red/green TDD workflow and small-
-commit discipline used to reach v1.0.
+**Read `PYTHON.md` before editing any code.** Use red/green TDD, update relevant
+documentation with every public change, and commit each independently useful
+unit with the full routine test suite passing.
 
 ---
 
-## 1. GPU / autodiff accelerator (headline effort — IN PROGRESS)
+## Shipped baseline (v1.1)
 
-**Goal.** A drop-in accelerated backend for the two hot loops — Green's-function
-assembly and the inverse solve — using a **JAX** array backend with automatic
-differentiation. This is the single highest-leverage extension: it turns the
-dense, embarrassingly-parallel Okada/triangular kernels and the linear algebra
-of inversion into XLA-compiled (and, where available, GPU) work, and it makes
-the *nonlinear* geometry search (tutorial 10) gradient-based and fast.
+The following capabilities are complete and are foundations, not open roadmap
+items:
 
-Why it fits GeoDef: the physics kernels are pure, vectorized array math with no
-Python-loop dependence, and the inverse problem is a differentiable pipeline from
-geometry → `G` → slip → predicted data → misfit. That is exactly the shape
-autodiff rewards.
+- Rectangular Okada 1985/1992 and triangular Nikkhoo & Walter dislocation
+  engines, with surface and internal displacement/strain paths.
+- `Fault`, `GNSS`, `InSAR`, and `Vertical` domain objects; rectangular and
+  triangular mesh construction; Green's assembly and disk caching.
+- Weighted, bounded, constrained, fixed-direction, and regularized linear slip
+  inversion; L-curve, ABIC, cross-validation, uncertainty, resolution, and
+  per-dataset diagnostics.
+- NumPy as the portable default and optional JAX acceleration, float32/float64
+  controls, differentiable rectangular and triangular forward models, and
+  gradient-based planar geometry search.
+- Collapsed and positivity-aware Bayesian inference, including
+  `RectPosterior`, `SlipPosterior`, `TriWarp`, `TriPosterior`, NUTS sampling,
+  convergence diagnostics, conditional slip draws, and prediction.
+- Eleven executed teaching notebooks, real/worked examples, per-module Markdown
+  documentation, and a large reference and integration test suite.
 
-### Decisions (settled 2026-07)
-- **JAX, not CuPy.** Phases 2–3 require autodiff, which CuPy lacks; JAX also
-  runs on plain CPUs (XLA JIT), NVIDIA, and AMD. Expectation to document
-  honestly: on Apple-silicon laptops `jax-metal` is experimental and lacks
-  float64, so the realistic laptop win is JIT-compiled CPU + `vmap`, not GPU
-  offload — benchmarks should present it that way.
-- **Backend selection:** a global switch, `geodef.set_backend("jax")` /
-  `("numpy")`, defaulting to NumPy, plus a `GEODEF_BACKEND` environment
-  variable. No per-call `backend=` arguments.
-- **Precision:** float64 default (set `jax_enable_x64` before any JAX op);
-  a documented **opt-in** float32 mode validated with looser tolerances.
-- **Phase 3 scope:** accelerate the unconstrained (`wls`) solve and batched
-  hyperparameter sweeps first; `nnls`/`bounded_ls`/`constrained` stay on the
-  SciPy CPU path (no `jaxopt`/`optax` dependency for now).
-- **Phase 2 scope:** differentiate **both** the rectangular Okada and the
-  triangular (Nikkhoo & Walter) engines from the start, so the `tri` kernel
-  refactor is designed for tracing/gradients from day one.
-
-### Phase 1 — Backend abstraction (CPU-only, no behavior change)
-- [x] `geodef.backend`: `set_backend()`/`get_backend()`, `GEODEF_BACKEND` env
-  var, array-namespace resolution (NumPy default, JAX when installed and
-  selected), float64 default with opt-in float32.
-- [x] Trace-safe kernel refactor (pure NumPy, behavior-preserving): rewrite
-  `tri.trimodefinder`'s `flatnonzero` + fancy-index assignment into
-  `where`/mask form via `backend.masked_eval` (NumPy gathers/scatters as
-  before; JAX evaluates full-size and selects with `where`). Validated
-  against the Matlab reference `.npz` files at existing tolerances.
-- [x] Route the `okada85` and `tri` math through the backend namespace
-  (`backend.xp` proxy); NumPy stays the default everywhere — invisible to
-  existing users and the tutorials.
-- [x] Cross-validate JAX output against the existing Matlab reference `.npz`
-  files to the same tolerances the CPU engines meet
-  (`tests/test_backend_kernels.py`, skipped when JAX is absent).
-- [x] Batched Green's assembly for the JAX path: `displacement_greens`,
-  `strain_greens` (surface okada85 path), and `strain_greens` at depth
-  (DC3D path, used by `Fault.stress_kernel`) broadcast their kernels over
-  a leading patch axis and JIT-compile the batched call; the NumPy loop
-  paths are untouched. Measured: a 100x100 self-stress kernel assembles
-  in ~12 ms steady-state on JAX/CPU vs ~550 ms on NumPy (~46x), after a
-  one-time ~6 s DC3D compile per problem shape. Triangular assembly
-  still loops; batching it needs the `tri` geometry setup made
-  trace-safe first (Phase 2 work).
-- [x] Deliverable: a `geodef[jax]` extra and `benchmarks/bench_greens.py`
-  (caching disabled, sequential runs) comparing NumPy vs JAX assembly for a
-  range of patch/observation counts. Measured on a plain multi-core CPU:
-  10-50x steady-state speedup for rectangular displacement assembly, with
-  JIT compilation (~1.5-3 s) paid once per problem shape.
-
-- [x] Vectorized DC3D rewrite (`okada92`): the scalar Fortran-style port
-  (per-point control flow, module-level common blocks) was rewritten as
-  pure, vectorized, `where`-based array math routed through the backend
-  namespace, keeping line-by-line formula correspondence with the
-  published DC3D.f. Anchored to golden data generated from the scalar
-  port (shear), validated by finite-difference displacement gradients
-  (all components), and equivalence-tested on JAX. The rewrite also
-  restored the tensile-fault DU entries that the scalar port had
-  truncated (opening-mode strains previously omitted the z-derivative
-  and part of the y-derivative terms). `greens.strain_greens` and the
-  `okada` dispatcher now evaluate all observation points per patch in
-  one call — the 100-patch fault self-stress kernel assembles ~11x
-  faster on NumPy, and the kernel is now available to the JAX backend
-  for the stress-shadows / earthquake-cycle path.
-
-### Phase 2 — Differentiable forward model (IN PROGRESS)
-- [x] `geodef.gradients`: `rect_displacement(theta, slip, ...)` traceable in
-  the native rectangle parameters and `tri_displacement(vertices, slip, ...)`
-  traceable in the vertex coordinates, plus `*_jacobian` helpers built on
-  `jax.jacfwd` returning `(d, ∂d/∂θ, ∂d/∂m)`. All Jacobians validated
-  against central finite differences (`tests/test_gradients.py`); the `tri`
-  path needed setupTDCS's construction asserts skipped under tracing and
-  the image-triangle mirror rewritten without `np.copy`/in-place writes.
-- [x] Full `G(θ)` assembly: `gradients.rect_greens(theta, ...)` builds the
-  (3*nobs, 2*N) displacement Green's matrix for a discretized planar
-  fault via a traced mirror of `Fault.planar` (same patch ordering and
-  layout as `greens.displacement_greens`, validated against that
-  pipeline); `gradients.tri_greens(vertices, ...)` does the same for a
-  triangular mesh (differentiable eagerly; jit/vmap over the mesh axis
-  still open). `gradients.los_project` maps displacement G onto InSAR
-  look vectors, matching `InSAR.project`. G(θ) Jacobians validated
-  against finite differences.
-- Remaining Phase 2, split into two independent tracks:
-  - **Tri jit/vmap over the mesh axis** (unblocks 6c). `gradients.tri_greens`
-    still loops over triangles because a few per-triangle,
-    vertex-dependent Python branches in `tri.py` break tracing. The
-    remaining blockers, with `TDdispHS` as the target entry point:
-    - [x] `build_tri_coordinate_system`: the horizontal-element strike
-      degeneracy (`if norm(Vstrike)==0` plus the image-dislocation
-      `if tri[0][2]>0` flip) rewritten as `where`, selecting the
-      Northward/Southward replacement *before* `normalize` so the 0/0
-      never reaches the divide. Validated numpy-identical and
-      jit-traceable on generic, horizontal-subsurface, and
-      horizontal-above-surface triangles.
-    - [x] `AngSetupFSC`: the vertical-TD-side degeneracy expressed as
-      `where` — computed with a *safe* angle (`beta_s`) and dummy
-      horizontal direction so no NaN is produced, then the degenerate
-      lanes zeroed. The cosine argument is clipped off `+/-1` before
-      `arccos` (whose derivative is infinite there), which was the actual
-      gradient-poisoning culprit: `0 * inf` on a vertical side. Reproduces
-      the published branch exactly for non-degenerate sides; the vertical
-      side now yields a finite Jacobian that matches finite differences.
-    - [x] `TDdispHS`: the two `assert all(...<=0)` skipped under tracing
-      (guarded by the NumPy backend, as `setupTDCS`'s asserts are), and
-      the two surface-triangle branches expressed as `where` on the
-      scalar `xp.all(tri[:,2]==0)`.
-    - [x] `gradients.tri_greens`: the Python triangle loop replaced by a
-      `jax.vmap` over the mesh axis on the JAX backend (NumPy keeps the
-      loop). The vmapped `G(vertices)` matches the loop to machine
-      precision, is `jit`- and `jacfwd`-compatible, and its vertex
-      Jacobian matches finite differences — including a vertical-side
-      mesh. Full 57-test tri reference suite still passes. **This
-      completes the 6c prerequisite.**
-  - [ ] **Differentiable strain/stress kernels** (earthquake-cycle path,
-    roadmap item 2 — *not* required for 6c): make `TDstrainHS` / the DC3D
-    strain kernel traceable and gradient-safe the same way.
-- **Differentiation variables (settled 2026-07).** The `tri` engine
-  differentiates with respect to the **vertex coordinates** — its native
-  parameterization, well-defined for any mesh including non-planar ones.
-  Gradients in terms of derived parameters (trace position, dip, depth of
-  a planar mesh) come free via the chain rule through a small
-  `θ → vertices` builder traced by JAX. The rectangular engine
-  differentiates its own native parameters (position, strike, dip,
-  length, width) directly.
-- Validate gradients against finite differences on small problems in tests;
-  take care near the `tri` angular-dislocation branch boundaries where the
-  `where`-selected configuration switches.
-- Deliverable: `geodef.gradients` (or similar) giving `∂d/∂θ` and `∂d/∂m` for a
-  fault + dataset.
-
-### Phase 3 — Accelerated and gradient-based inversion (IN PROGRESS)
-- [x] Batched ABIC sweep: `abic_curve` evaluates all lambdas in one batched
-  JAX computation (broadcast solves + batched slogdet), transparently when
-  the JAX backend is active. ABIC first per user priority; L-curve and CV
-  sweeps can follow the same pattern.
-- [x] `invert.geometry_search`: gradient-based nonlinear planar-fault
-  geometry inversion (variable projection, wls inner solve, L-BFGS-B on
-  exact forward-mode gradients, per-parameter bounds, Gauss-Newton
-  covariance). One module-level jitted kernel returns residual + Jacobian,
-  so multi-start calls share the compilation. Raises unless the JAX
-  backend is active.
-- [x] Tutorial 11 (`11_gradient_geometry.ipynb`): end-to-end gradient-based
-  geometry inversion on the notebook-10 scenario — single-parameter parity,
-  joint dip+depth recovery with error bars, practical notes on
-  non-convexity, lambda selection, and float32 exploration. Executed by
-  pytest, skipped without JAX; tutorials 01-10 stay on the NumPy path.
-- [x] Opt-in float32 mode validated end-to-end (kernels, assembly, sweep)
-  with the explore-in-float32 / finalize-in-float64 workflow documented.
-- [ ] Batched L-curve and cross-validation sweeps on JAX (same pattern as
-  the ABIC sweep).
-- [ ] Bayesian path: now planned concretely as Phase 4 below (supersedes the
-  earlier "later Bayesian path" note; ties to roadmap item 4).
-
-### Phase 4 — Bayesian solver (`geodef.bayes`) — PLANNED 2026-07
-
-**Goal.** Full posterior inference for fault geometry and hyperparameters on
-CPU, using the differentiable pipeline built in Phases 1–3. The design is a
-**collapsed (Rao–Blackwellized) sampler**: because slip is linear given
-geometry, the (up to hundreds of) slip parameters are marginalized
-analytically — the same Cholesky/log-determinant math the batched ABIC sweep
-already uses (ABIC is −2·log marginal likelihood up to priors, Fukuda &
-Johnson 2008) — and NUTS samples only the ~5–10 dimensional space of geometry
-plus noise/regularization scales. Per-sample cost is a few ms after one JIT
-compile, so full 4-chain runs finish in minutes on a plain CPU. Slip
-uncertainty (now including geometry uncertainty) comes afterward from the
-exact Gaussian conditional p(slip | theta, lambda, sigma, d), vmapped over
-posterior draws.
-
-Decisions:
-- **Sampler library: blackjax** (JAX-native, lightweight, functional) behind
-  a new optional extra `geodef[bayes]` (= jax + blackjax). No pyro/numpyro.
-  `emcee` stays out of the package — used only in the validation example.
-- **Sampled parameters:** free geometry components of theta (as in
-  `geometry_search`), plus `log_sigma` (noise scale) and `log_lambda`
-  (regularization scale). Priors: uniform/normal per geometry parameter,
-  wide log-uniform defaults on the scales.
-- **Rectangular engine first.** Triangular-mesh geometry sampling waits for
-  the Phase 2 tri jit/vmap work.
-
-Steps (red/green TDD, one commit per step):
-- [x] Reverse-mode safety of the rect path. Investigation overturned the
-  expected failure mode: the `cos(dip)` `where` branches were already
-  reverse-mode safe, and the real hazard was Okada's
-  `arctan(xi*eta/(q*R))` term, whose autodiff produced `0*inf = nan` in
-  **both** modes when an observation lies exactly on the fault-plane ray
-  (`q == 0`, routinely hit by symmetric synthetic grids). Fixed via the
-  reciprocal identity `arctan(u) = sign(u)*pi/2 - arctan(1/u)` with
-  well-conditioned branch selection; primal values preserved (Matlab
-  reference tests) and `jax.grad` validated against `jacfwd` and finite
-  differences. Remaining documented caveat: dip gradients lose accuracy
-  within ~0.01 deg of exactly vertical (cancellation inherent in the
-  published `1/cos(dip)` formulas, both AD modes equally).
-- [x] `geodef.bayes.RectPosterior`: collapsed log-posterior over free
-  geometry + `log10_sigma` (+ `log10_lambda`), slip marginalized via
-  Cholesky. Three prior modes: `hierarchical` (sampled lambda),
-  `weak` (identity prior, fixed slip scale — the collapsed analog of
-  "unsmoothed" MCMC), and `profiled` (fixed lambda, no Occam terms).
-  Uniform-prior parameters are bound-clipped before the kernels so
-  gradients stay finite at rejected points. Validated exactly against a
-  dense multivariate-normal reference (matrix determinant lemma),
-  against `_abic_value` on an injected identical linear system, and
-  against finite-difference gradients.
-- [x] Sampler driver: `bayes.sample(post, ...)` wrapping blackjax NUTS with
-  window adaptation behind a new `geodef[bayes]` extra; all chains drawn
-  in one jitted `vmap` computation; `PosteriorResult` dataclass with
-  split R-hat and Geyer/Stan effective sample size (in-house, no arviz),
-  `summary()`, and a corner-style `plot_pairs()`. Chains start from the
-  warmup end position overdispersed by the adapted posterior scale
-  (restarting at `x0` forced every chain to re-walk the approach to the
-  mode at the small adapted step size); explicit `inits` supported for
-  multimodality probes.
-- [x] Conditional slip posterior: `slip_mode(x)`, `slip_draws(samples)`
-  (one exact Gaussian conditional draw per posterior sample — the
-  Rao-Blackwell completion, so per-patch statistics include geometry and
-  hyperparameter uncertainty), and `predict(samples)` for data-space
-  posterior predictive fields. Draw moments validated against the
-  analytic conditional Gaussian.
-- [x] Validation + docs: `emcee` cross-check on the same jitted logpdf in
-  the test suite (`tests/test_bayes.py`) and in the worked example
-  `examples/bayesian_geometry.ipynb` (roadmap item 4's example), which
-  also compares Gauss-Newton error bars from `geometry_search` against
-  the full posterior and the weak-prior mode; `docs/bayes.md` added and
-  module tables updated. Implementation note discovered en route: XLA
-  compilation of the reverse-mode gradient through the nested okada85
-  subfunctions took minutes, so `logpdf` carries a forward-mode
-  `custom_jvp` rule (`jax.jacfwd`; linear in tangents, so `jax.grad`
-  transposes through it exactly) — right-sized for the few sampled
-  parameters and compiling in seconds.
-- [ ] Step 6 — beyond the collapsed sampler (planned 2026-07; sub-steps
-  below, one commit each, in order).
-
-#### Phase 4, step 6 — positivity, triangular geometry, tempering
-
-**Key finding on positivity vs. marginalization.** The analytic collapse
-exists only because the Gaussian slip prior is conjugate; truncating it to
-the positive orthant turns the marginal likelihood into a ratio of orthant
-probabilities with no closed form at hundreds of dimensions. So positivity
-puts slip back into the sampled state — but the speed is recovered another
-way: whitened joint sampling has a per-leapfrog gradient cost of one
-`(3*nobs, 2N)` matvec, jit/vmapped over chains, and that same compiled code
-is the GPU path. The dimension cost lands in NUTS trajectory length, which
-whitening keeps in check. Where a component's prior stays Gaussian, it can
-still be marginalized exactly (half-collapse). Precedent for joint
-slip + hyperparameter sampling under positivity: Fukuda & Johnson (2008);
-we add gradients.
-
-- [x] **6a. `bayes.SlipPosterior` — joint slip sampling with positivity,
-  fixed geometry.** Sampled state = slip (as whitened `z`, one per
-  component) + `log10_sigma` (+ `log10_lambda` in hierarchical mode);
-  per-component positivity masks (e.g. dip-slip only) applied by softplus
-  after a whitened affine map — `z` pushed through the Cholesky factor of a
-  fixed reference system `H0 = Gᵀ_w G_w + lambda_ref LᵀL`, centered at the
-  reference ridge solution `mu0`, with the map's log-Jacobian carried in
-  the density so the posterior is the exact truncated-Gaussian-prior
-  posterior. Geometry is fixed, so G assembles once and `fault` may be any
-  `Fault` (rectangular or triangular mesh); each gradient is one matvec, so
-  plain reverse-mode `jax.grad` suffices (no `custom_jvp`). Modes:
-  `hierarchical` / `fixed` / `weak` (no `profiled` — nothing is profiled
-  when slip is sampled). **Correction to the earlier plan note:**
-  hierarchical lambda is *not* biased under positivity. The truncated prior
-  is zero-mean with covariance ∝ `(sigma²/lambda)(LᵀL)⁺`, and an orthant is
-  a cone, so rescaling the covariance moves no mass across its boundary —
-  the normalizer Z is the *same constant* for every `(sigma, lambda)` and
-  cancels. Sampled lambda is therefore exact as built (would only bias for a
-  nonzero prior mean, e.g. a `smoothing_target`). Validated: `logpdf` vs an
-  independent NumPy reference; the exact "joint = collapsed × Gaussian
-  conditional" identity against `RectPosterior`; end-to-end sampler
-  agreement with the collapsed posterior; positivity posterior mean vs
-  `LinearSystem.invert(bounds=(0, None))`; `emcee` cross-check; gradients vs
-  finite differences. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
-- **6b. Joint geometry + slip with positivity, then half-collapse.**
-  Staged in two commits (decided 2026-07).
-  - [x] **6b-1. Joint geometry + full slip sampling.** `RectPosterior`
-    gains a `positive=` argument; `positive=None` stays exactly the
-    collapsed sampler (unchanged code path), while setting it makes the
-    slip prior truncated so the whole slip vector rejoins the sampled
-    state as a whitened block appended after the hyperparameters and is
-    sampled jointly with geometry. Reuses 6a's whitened-softplus transform
-    (extracted to the shared `_slip_transform` helper) with free `theta`
-    through `rect_greens`. Key implementation point: the differentiation
-    `custom_jvp` is placed around `G(theta)` **alone** (its tangent is
-    `jacfwd` over the 7 geometry params), so plain reverse-mode `jax.grad`
-    over the whole `logpdf` traces the Okada kernel only 7 times per
-    gradient regardless of the (large) slip block — unlike the collapsed
-    path's whole-`logpdf` forward-mode wrapper, which would scale with the
-    slip dimension. Validated: exact "joint = collapsed × Gaussian
-    conditional" identity (all-False mask, ~1e-11), gradient vs finite
-    differences through the kernel, geometry+positive-slip recovery, and
-    an `emcee` cross-check. (`tests/test_bayes_slip.py`, `docs/bayes.md`.)
-  - [x] **6b-2. Half-collapse (efficiency).** Marginalizes the
-    *unconstrained* slip block analytically (Gaussian conditional given
-    the constrained block) so only geometry + hyperparameters + the
-    sign-constrained components are sampled — halves the slip dimension in
-    the common one-constrained-component (`positive='dip'`,
-    `components='both'`) case. Made **automatic**: `positive` alone
-    decides which components stay in the state; the rest are always
-    marginalized. Closed form: with `H_f = Gᵀ_f G_f + λ K_ff`,
-    `b = Gᵀ_f r_c − λ K_cfᵀ m_c`,
-    `S_c = ‖r_c‖² + λ m_cᵀ K_cc m_c − bᵀ H_f⁻¹ b`, the log-marginal is
-    `−(n+p_c)/2·log(2πσ²) + ½(r logλ + logdet_sum) − ½logdet H_f
-    − S_c/(2σ²)` [+ orthant], reducing to the collapsed formula at
-    `p_c=0` and to 6b-1 at `p_f=0`. The constrained block is whitened by
-    the **Schur complement** of the reference `H0` (its exact marginal
-    precision, = `H0` when nothing is marginalized), so `_slip_transform`
-    is reused unchanged. `slip_draws` completes the marginalized block
-    from its exact Gaussian conditional per draw (seed-dependent), while
-    the constrained block stays deterministic and non-negative.
-    Validated: the marginal vs an independent NumPy reference of the
-    `H_f`/`S_c` formula (~1e-11), exact reduction to the collapsed
-    posterior at `p_c=0`, gradients vs finite differences through the
-    marginalization, a partial bool mask, and the split determinism of
-    `slip_draws`.
-- [x] **6c. Triangular-mesh geometry sampling (`bayes.TriWarp` +
-  `bayes.TriPosterior`).** As planned: **no remeshing inside the
-  sampler**. `TriWarp` freezes one reference mesh (public
-  `Fault.vertices` property added) and parameterizes it with normal-
-  direction offsets (meters) at a coarse knot grid on the mesh's
-  best-fit plane (SVD), interpolated to every vertex by a Gaussian RBF
-  whose weights are precomputed — so `vertices(theta) = V0 + n_hat (B
-  theta)` is an exact **linear**, watertight, one-jit map. Setup tools
-  per user request: `plot()` (3D preview of reference/warped mesh +
-  labeled knots), `check()` (half-space validation for choosing
-  priors), and `fault(theta)` (a real `Fault` usable with every
-  existing forward/plot tool). `TriPosterior` subclasses the
-  `_CollapsedPosterior` base (extracted first as its own
-  behavior-preserving commit; 82-test regression green), plugging
-  `tri_greens(warp.vertices(theta))` into the shared collapsed
-  machinery: same modes, diagnostics, `slip_draws`, `predict`; obs
-  frame mirrors `greens.tri_displacement_greens` exactly (weighted G at
-  theta=0 matches `LinearSystem.G_w` to ~3e-15, tested); vertices are
-  z-clamped before the kernel with the true half-space violation
-  carried as `-inf` in `log_prior`. A `knots0` starting point was added
-  after a sampling post-mortem: with tight data and a start far from
-  the mode, the initial misfit makes the posterior so stiff in
-  `log10_sigma` (gradient ~1e6) that blackjax warmup collapses
-  (~100% divergences) — the surface itself is smooth and peaks at the
-  truth (probed directly), so the fix is starting from a best estimate,
-  as `RectPosterior` does via `theta0`. Validated: TriWarp closed-form
-  invariants (interpolation, linearity, watertightness, jit); density
-  vs an independent NumPy reimplementation; gradients vs finite
-  differences; end-to-end knot recovery under NUTS.
-  (`tests/test_bayes_tri.py`, `docs/bayes.md`.)
-- [ ] **6d. Tempered SMC (`bayes.sample_smc`).** Glue around blackjax
-  `adaptive_tempered_smc`: prior-draw sampler from the parsed prior
-  specs, the existing NUTS kernel as the mutation step, adaptive
-  schedule; returns a `PosteriorResult` plus a log-evidence estimate
-  (free model comparison). De-risks 6a/6b multimodality. Independently
-  deferrable if blackjax API churn makes it costly.
-
-### Risks and non-goals
-- Do **not** make JAX a hard dependency or complicate the base API.
-- Watch float32/float64 accuracy on GPU; the kernels are sensitive near the
-  fault. Default to float64 and document any precision trade-offs.
-- Keep the teaching notebooks on the NumPy path so they stay portable.
+The old roadmap's still-open research items are retained below: batched JAX
+L-curve/CV sweeps, differentiable stress kernels, tempered SMC,
+earthquake-cycle modeling, and additional Green's engines.
 
 ---
 
-## 2. Quasi-dynamic earthquake-cycle modeling
+## Product principles
 
-Extend from static dislocations to time-dependent slip. Port the quasi-dynamic
-rate-and-state machinery from `related/stress-shadows/unicycle/` into an optional
-`geodef.cycle` module: stress-kernel-driven slip evolution on the existing
-triangular/rectangular meshes, an ODE integrator, and rate-and-state friction.
-This is a large phase; stage it as its own multi-step plan. The v1.0 stress
-kernels and mesh I/O are the natural foundation.
+These are acceptance criteria for every roadmap item.
 
----
-
-## 3. Additional Green's-function engines
-
-Broaden the physics behind `G` while keeping the unified dispatcher interface:
-
-- **Meade (2007)** triangular dislocations (an alternative to Nikkhoo & Walter
-  for cross-checking).
-- **Compound dislocation model (CDM)** for volcanic/point sources.
-- **Layered half-space** Green's functions (e.g. via a propagator-matrix or
-  wavenumber-integration backend) for depth-varying elastic structure.
-
-Each new engine should cross-validate against a published reference and slot in
-behind the existing `okada`-style dispatcher so `Fault`/`greens`/`invert` gain it
-for free.
-
----
-
-## 4. Bayesian nonlinear inversion (example-level)
-
-A worked MCMC study (`emcee`, already used in a `shakeout_v2` notebook) for
-posterior uncertainty on fault geometry — the natural sequel to tutorial 10's
-outlook. Home it in `examples/` rather than the teaching path. With item 1's
-Phase 4 (`geodef.bayes`) now planned, this example doubles as its validation:
-run `emcee` on the same posterior the NUTS sampler targets and confirm the
-two agree on a small problem.
+1. **One obvious beginner path.** The first successful forward model and
+   inversion should use a small, stable vocabulary. Alternative solvers and raw
+   matrices remain available, but should not be prerequisites.
+2. **Geophysical names before array conventions.** Public results should expose
+   `strike_slip`, `dip_slip`, station predictions, and coordinate frames by
+   name. Blocked vectors and stacked rows remain available as explicit linear-
+   algebra views.
+3. **Units and frames are never implicit.** SI units remain the default. Every
+   non-SI parameter carries a suffix, and every local coordinate array is tied
+   to a declared origin and axis convention.
+4. **Reveal complexity progressively.** A novice can use sensible defaults; a
+   researcher can inspect or replace the Green's matrix, noise model,
+   regularizer, parameterization, backend, and solver.
+5. **Teach the model, including its limits.** Documentation explains the
+   assumptions behind a result and makes covariance, resolution, geometry
+   uncertainty, and prior sensitivity visible.
+6. **Optional power stays optional.** JAX, BlackJAX, Cartopy, mesh generation,
+   and future cycle/layered-earth dependencies must not burden the base install.
+7. **Stable public surface, replaceable internals.** Refactors preserve public
+   imports and numerical behavior. Deprecations include warnings, migration
+   examples, and at least one minor-release transition period.
+8. **Array transparency without array traps.** NumPy arrays remain accepted and
+   returned where natural, but common shape/order mistakes should be prevented
+   by named accessors and precise validation.
 
 ---
 
-## Design notes (unchanged, carried forward)
+## Structural audit (2026-07)
 
-- Public coordinates use local Cartesian `x=East`, `y=North`, `z=Up` plus
-  geographic lat/lon where appropriate. Internal Green's-function conventions are
-  converted at module boundaries.
-- Slip columns are blocked as `[:N]` strike-slip and `[N:]` dip-slip.
-- Hash-based caching handles reuse of expensive Green's and regularization
-  matrices.
-- Optional dependencies stay optional: `geo` (pyproj), `mesh` (meshpy),
-  `maps` (cartopy), and any future `gpu`/`cycle` extras must not burden the base
-  install or the tutorials.
+### What already serves learners well
 
-## Maintenance policies
+- The core relation `d = G m` is visible rather than hidden behind a framework.
+- `Fault.planar(...)`, `fault.displacement(...)`, and `geodef.invert(...)` form
+  a compact path from geometry to a solution.
+- NumPy is the default; advanced compilation and sampling are opt-in.
+- Domain objects are immutable, synthetic tutorials are reproducible, and the
+  teaching sequence follows the concepts of an inverse problem rather than the
+  package's module layout.
+- Low-level engines are independently accessible and extensively cross-checked,
+  which is valuable for both learning and research verification.
 
-- When executing a step listed in this plan, update `PLAN.md` in the same logical
-  unit so the roadmap remains current.
-- Keep docs `.md` files up to date alongside minor code changes. Large docs or
-  typing rewrites should be their own plan step.
-- Do not add `Co-Authored-By` trailers to commit messages. AI co-authorship is
-  tracked once in `README.md`; update that model list plus `CLAUDE.md` and
-  `AGENTS.md` when a new AI model materially contributes.
+### Friction and design debt
+
+1. **Internal storage conventions leak into ordinary use.** Slip is often a
+   blocked `2N` vector, observations from multiple datasets are one stacked
+   vector, and users manually slice predictions before plotting. The same
+   result also exposes an `(N, 2)` slip array, creating two equally prominent
+   representations.
+2. **There are multiple workflow levels but no explicit map between them.** A
+   user can call `geodef.invert`, construct `LinearSystem`, call
+   `greens.greens`, or use `Fault.greens_matrix`; the distinctions are sound,
+   but discovery currently depends on reading several module references.
+3. **Coordinates are correct but cognitively expensive.** Public calls mix
+   geographic `lat/lon/depth`, local ENU vertices, a seven-element local
+   geometry vector, depth-positive-down arrays, and kernel-native coordinates.
+   Ordering is inconsistent: `Fault.planar` starts with `lat, lon`, dataset
+   constructors start with `lon, lat`, `Fault.centers` stores `[lat, lon,
+   depth]`, and `Mesh.centers_geo` stores `[lon, lat, depth]`. The reference
+   origin is sometimes carried separately from the values.
+4. **Units are not fully uniform.** Most geometry is in meters, but some mesh
+   APIs use kilometers, while all values are plain floats. This is easy to miss
+   in a notebook and hard to detect after the fact.
+5. **Data construction is array-heavy.** A 3-component `GNSS` constructor has
+   eight positional arrays, InSAR look vectors must already be components, and
+   there is no named table/column ingestion layer. These interfaces are precise
+   but unfriendly at the point where many novices first meet the package.
+6. **Results do not retain enough problem context.** `InversionResult` cannot
+   split predictions by dataset, plot itself, reproduce the solve, or report
+   the assumptions that produced it without the caller re-supplying the fault
+   and datasets. `chi2` is a reduced chi-squared value, while diagnostics also
+   use `chi2` for the unreduced statistic.
+7. **Regularization terminology has drifted.** Runtime code consistently uses
+   `lambda * ||Lm||^2` (and `sqrt(lambda) * L` in the augmented system), while
+   parts of the tutorial outline still write `lambda^2 * ||Lm||^2`. The public
+   name `smoothing_strength` also covers damping, stress, and custom priors.
+8. **Noise handling is mathematically general but operationally dense.** Full
+   covariance matrices are materialized, inverted, and block-stacked. This is
+   simple for teaching-sized problems but becomes a memory and numerical
+   bottleneck for realistic InSAR, and it offers no natural home for diagonal,
+   sparse, low-rank, or parametric noise models.
+9. **Large modules obscure responsibilities.** `bayes.py`, `invert.py`,
+   `plot.py`, and `fault.py` each contain several separable subsystems. Their
+   public APIs can remain stable while implementation is divided into smaller
+   units with explicit dependency direction.
+10. **Packaging and documentation metadata can drift.** The mesh documentation
+    requires `netCDF4`, but the `mesh` extra currently installs only `meshpy`;
+    tutorial status text still refers to ten notebooks in places; recorded test
+    counts become obsolete quickly; and examples are not all held to the same
+    execution contract.
+11. **Validation focuses more on shapes than physical plausibility.** Public
+    constructors should consistently detect non-finite values, invalid dip or
+    depth, non-unit look vectors, non-symmetric/non-positive covariance, empty
+    datasets, degenerate triangles, and incompatible coordinate frames, with
+    messages that name the bad field and expected units.
+12. **The research API has grown faster than the beginner vocabulary.** The JAX
+    and Bayesian work is powerful, but geometry priors, parameter-vector layout,
+    backend state, initialization, and posterior diagnostics demand substantial
+    package knowledge. A guided setup layer can reduce this without weakening
+    the expert API.
+
+---
+
+## Priority 0 — Consistency and trust (small, high-impact work)
+
+Complete these before adding a new high-level abstraction. They establish the
+semantics that later objects will wrap.
+
+### 0.1 Audit and freeze mathematical conventions
+
+- [ ] Declare one regularization convention everywhere:
+  `Phi = r.T @ W @ r + lambda * ||L(m - m_ref)||^2`, with augmented rows
+  `sqrt(lambda) * L`. Correct the tutorial equations and define how published
+  sources using `alpha` or `lambda^2` map to GeoDef.
+- [ ] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
+  geometry search, and Bayesian fixed-lambda modes.
+- [ ] Introduce unambiguous result names `reduced_chi2` and `chi2`; retain the
+  old `result.chi2` behavior through a documented deprecation rather than a
+  silent semantic change.
+- [ ] Write a single reference page for coordinate axes, depth sign, strike,
+  dip, rake, slip azimuth, row order, column order, and units; link every public
+  geometry/data API to it.
+- [ ] Settle one geographic ordering policy. Make ambiguous multi-array calls
+  keyword-only over a deprecation cycle, add explicitly named coordinate
+  accessors, and never silently reinterpret existing positional arguments.
+
+### 0.2 Make invalid physical inputs fail early
+
+- [ ] Centralize validation helpers for one-dimensional numeric arrays, finite
+  values, broadcast rules, angle ranges, positive dimensions/uncertainties, and
+  matching lengths. Error messages must identify the argument, received shape
+  or range, and required unit.
+- [ ] Validate covariance symmetry and positive definiteness with a useful
+  remediation message; provide an explicit escape hatch only for advanced
+  semidefinite/operator cases.
+- [ ] Validate or explicitly normalize InSAR look vectors; provide a diagnostic
+  for likely satellite-to-ground versus ground-to-satellite sign reversal.
+- [ ] Add `Fault.validate()`, `DataSet.validate()`, and `Mesh.validate()` reports
+  for interactive workflows, including patch/triangle degeneracy, above-surface
+  sources, extreme aspect ratios, duplicate stations, and coordinate bounds.
+- [ ] Replace user-triggerable `assert` statements in public paths with typed,
+  informative exceptions; keep trace-only kernel assertions private.
+
+### 0.3 Repair packaging and documentation drift
+
+- [ ] Make optional extras match actual imports (`meshpy`, `netCDF4`, `pyproj`,
+  Cartopy, JAX, and BlackJAX), and test each documented install tier in CI.
+- [ ] Test the declared Python/NumPy/SciPy version range, including the oldest
+  supported and newest released combinations; calibrate reference tolerances
+  from physical/numerical requirements rather than one platform's roundoff.
+- [ ] Remove hard-coded test counts and stale ten-versus-eleven tutorial status
+  text. Add one authoritative capability/version table.
+- [ ] Add an API documentation check for broken examples, missing public
+  members, and signature drift. Prefer executable short examples over copied
+  signatures.
+- [ ] Add a changelog and a written compatibility/deprecation policy before the
+  next public release.
+
+---
+
+## Priority 1 — A coherent everyday workflow
+
+The functional API remains supported. This phase adds domain names and context;
+it does not hide the linear algebra or create a mandatory framework.
+
+### 1.1 Named geometry and coordinate frames
+
+- [ ] Add immutable `LocalFrame(origin_lat, origin_lon, origin_alt=0)` and
+  `PlanarGeometry(center, depth, strike, dip, length, width)` value objects.
+  They validate units/conventions and convert explicitly to geographic arrays,
+  ENU arrays, and the autodiff parameter vector.
+- [ ] Let `Fault.planar` and geometry-search/Bayesian constructors accept these
+  objects while preserving keyword-based scalar calls.
+- [ ] Replace unexplained seven-element `theta` arrays in beginner-facing docs
+  and results with named geometry views; keep `.theta` as the expert/JAX view.
+- [ ] Give every local-coordinate-bearing object a `.frame` and reject combining
+  objects with incompatible frames unless the user explicitly transforms them.
+
+### 1.2 One canonical slip representation
+
+- [ ] Add an immutable `SlipModel` with named per-patch fields/accessors:
+  `strike`, `dip`, `magnitude`, `rake`, and `.vector` for the blocked linear-
+  algebra view. Support one-component rake/azimuth amplitudes without pretending
+  they are already two components.
+- [ ] Accept `SlipModel` anywhere a slip vector is accepted; keep NumPy arrays
+  fully supported for low-level and backwards-compatible code.
+- [ ] Make forward results a small named `Displacement(east, north, up)` object
+  with tuple unpacking and `.vector` so existing idioms remain concise.
+- [ ] Standardize patch ordering utilities and provide `fault.reshape_patches`
+  / `fault.flatten_patches` rather than requiring learners to know which grid
+  axis varies fastest.
+
+### 1.3 Turn `LinearSystem` into the reusable problem object
+
+- [ ] Prototype a beginner-named `SlipProblem` facade over `LinearSystem`, with
+  `fault`, named datasets, slip basis, regularizer, and noise models bound once.
+  Validate the name and call sequence with novice users before freezing it.
+- [ ] Provide the discoverable sequence
+  `problem.solve()`, `problem.select_regularization()`,
+  `problem.greens_matrix`, and `problem.assess(result)`. Keep
+  `geodef.invert(...)` as the shortest one-shot path and `LinearSystem` as a
+  compatible expert alias or implementation detail.
+- [ ] Replace overloaded strings and loosely related keyword groups with small
+  optional specifications (`SlipBasis`, `Regularization`, `Bounds`) while still
+  accepting today's strings/tuples.
+- [ ] Add `.describe()` / rich `repr` output summarizing data counts, parameter
+  counts, units, solver, covariance type, regularization, constraints, backend,
+  and estimated dense-memory cost before a solve.
+
+### 1.4 Results that know what they describe
+
+- [ ] Return a context-rich result that records fault identity, dataset names
+  and slices, slip basis, solver status, regularization selection, backend,
+  warnings, and version/provenance needed to reproduce the solve.
+- [ ] Add `result.prediction(dataset_or_name)`, `result.residual(dataset_or_name)`,
+  and `result.diagnostics(dataset_or_name)`; eliminate manual stacked-vector
+  slicing from all beginner documentation.
+- [ ] Add focused conveniences such as `result.plot_slip()`,
+  `result.plot_fit(dataset=...)`, and `result.summary()` by delegating to the
+  existing plotting/assessment functions, not duplicating their logic.
+- [ ] Define a versioned, safe result file schema with metadata and migration;
+  retain `.npz` portability and add a human-readable manifest.
+
+### 1.5 Friendlier data ingestion
+
+- [ ] Add named constructors such as `GNSS.from_components(...)`,
+  `GNSS.horizontal(...)`, `InSAR.from_look_vector(...)`, and
+  `InSAR.from_incidence_heading(...)`; make optional vertical components truly
+  optional in the friendly path.
+- [ ] Add table ingestion with explicit column mappings, units, missing-value
+  handling, and station names. Keep dataframe libraries optional and accept the
+  Python dataframe interchange protocol rather than coupling the core to one
+  implementation.
+- [ ] Separate displacement from velocity semantics in metadata (units and
+  epoch/time span) without duplicating all dataset classes.
+- [ ] Introduce dataset names as first-class identifiers so joint results and
+  plots are stable and readable.
+
+---
+
+## Priority 2 — Learning experience and documentation architecture
+
+### 2.1 Build a true “start here” path
+
+- [ ] Create a five-minute, copy-paste quickstart that performs forward
+  modeling, adds synthetic noise, solves slip, and plots observations versus
+  predictions without manual vector packing or slicing.
+- [ ] Add a visual workflow page linking the four levels of API:
+  domain workflow → reusable problem → matrices/operators → physics kernels.
+- [ ] Add a glossary of geophysical and inverse-theory terms, with package names
+  beside the mathematical symbols.
+- [ ] Provide “which function do I use?” and “which assumption am I making?”
+  decision guides for geometry, slip basis, regularization, covariance,
+  constraints, geometry uncertainty, and Bayesian inference.
+
+### 2.2 Revise the course around the improved API
+
+- [ ] Preserve the equation-first pedagogy and manual `G @ m` demonstrations,
+  but use named results for routine operations so students only manipulate
+  ordering when ordering is the lesson.
+- [ ] Add explicit learning objectives, prerequisites, estimated time, recap,
+  and tested exercises to every tutorial; publish solution notebooks separately.
+- [ ] Add a preflight notebook covering arrays, shapes, broadcasting, plotting,
+  units, and coordinate conventions for geophysicists new to scientific Python.
+- [ ] Add short conceptual notebooks or examples for triangular faults,
+  interseismic coupling, model misspecification, prior sensitivity, and
+  posterior diagnostics. Keep advanced JAX/Bayesian material outside the core
+  novice sequence unless it teaches a general concept.
+- [ ] Replace repeated synthetic setup cells with a documented scenario builder
+  only after students have seen the explicit construction once.
+
+### 2.3 Make real workflows reproducible
+
+- [ ] Convert examples to a uniform structure: question, data provenance,
+  assumptions, preprocessing, model setup, validation, interpretation, and a
+  machine-executed reduced-size path.
+- [ ] Add one end-to-end interseismic coupling example and one earthquake
+  example with nuisance parameters and correlated noise.
+- [ ] Add reproducible environment metadata and deterministic seeds to every
+  executable example; distinguish downloaded data from bundled test fixtures.
+- [ ] Build a searchable documentation site from the existing Markdown and
+  docstrings only after navigation and content hierarchy are settled.
+
+### 2.4 Test usability, not only correctness
+
+- [ ] Define three golden workflows (first forward model, first inversion,
+  joint GNSS+InSAR study) and test their complete public call sequences.
+- [ ] Track beginner-facing metrics: number of required concepts/imports,
+  manual reshapes/slices, ambiguous unit-bearing arguments, warning quality,
+  and time to a labeled diagnostic plot.
+- [ ] Run periodic observation sessions with novice geophysicists; convert each
+  repeated confusion into an API, error-message, or documentation test.
+
+---
+
+## Priority 3 — Legible and extensible internals
+
+This work must be behavior-preserving and land in small extraction commits. Do
+not reorganize numerical reference ports merely to make their style conventional.
+
+### 3.1 Establish package layers and public boundaries
+
+- [ ] Publish an API stability map: beginner-public, expert-public, and private.
+  Reduce top-level exports to a deliberately documented set over a deprecation
+  cycle; advanced modules remain importable.
+- [ ] Define dependency direction: domain types → operators/problem assembly →
+  solvers/results, with plotting and I/O at the edges and kernels below all of
+  them. Remove imports through `geodef.__init__` from internal modules.
+- [ ] Add import-cycle, base-install, optional-import, and public-API snapshot
+  tests. Importing `geodef` must not initialize JAX or require optional stacks.
+
+### 3.2 Split large modules behind stable re-exports
+
+- [ ] Split `invert.py` into result types, system assembly, regularization,
+  solvers, hyperparameter selection, diagnostics, and nonlinear geometry.
+- [ ] Split `bayes.py` into posterior models, slip transforms, geometry
+  parameterizations, samplers, diagnostics, and result types.
+- [ ] Split `fault.py` into core geometry, factories, I/O adapters, and forward
+  conveniences; split `plot.py` by geometry, data, fit, and assessment plots.
+- [ ] Deduplicate data save/load logic and validation without introducing a deep
+  inheritance hierarchy.
+- [ ] Keep `okada85.py`, `okada92.py`, and `tri.py` visibly traceable to their
+  published sources; wrap them with clearer adapters rather than cosmetically
+  rewriting formulas.
+
+### 3.3 Replace string dispatch with small protocols
+
+- [ ] Define minimal protocols for Green's engines, data projection, noise
+  whitening, regularization operators, and solvers. Built-ins use the same
+  protocol third parties can implement.
+- [ ] Register engines explicitly instead of expanding `if engine == ...`
+  branches across `Fault`, `greens`, gradients, Bayesian code, and plotting.
+- [ ] Require engine capability declarations (surface/internal displacement,
+  strain, autodiff, supported source geometry) and produce actionable errors
+  when a workflow requests an unsupported capability.
+- [ ] Avoid a plugin framework until at least two external engines demonstrate
+  the protocol; start with ordinary Python objects and registration.
+
+### 3.4 Strengthen numerical contracts
+
+- [ ] Add array shape/dtype/backend contracts at module boundaries and property-
+  based tests for packing, projection, coordinate round trips, and linearity.
+- [ ] Add conditioning diagnostics and stable solve fallbacks. Do not use normal
+  equations solely for speed when their squared condition number can change the
+  answer; benchmark QR/SVD/Cholesky choices on representative problems.
+- [ ] Separate exact numerical equivalence tests from tolerance-based physical
+  validation and from performance benchmarks.
+- [ ] Record benchmark problem definitions, compilation cost, steady-state cost,
+  memory, backend, precision, and hardware; never report a single speedup number
+  without those qualifiers.
+
+---
+
+## Priority 4 — Scale to real geodetic datasets
+
+### 4.1 Noise and whitening operators
+
+- [ ] Introduce a `NoiseModel`/whitener interface with diagonal, dense,
+  block-diagonal, sparse, low-rank-plus-diagonal, and user-supplied linear-
+  operator implementations.
+- [ ] Solve via whitening or factorizations rather than explicitly forming
+  `W = C^-1`. Preserve `stack_weights()` as an educational/small-problem helper.
+- [ ] Add parametric spatial covariance fitting, variograms, and honest
+  diagnostics; keep covariance estimation distinct from slip inversion so the
+  assumptions are visible.
+- [ ] Support dataset-specific variance scale factors and hierarchical noise
+  scales in deterministic and Bayesian workflows.
+
+### 4.2 Linear operators and large inversions
+
+- [ ] Allow Green's matrices and regularizers to be dense arrays, sparse arrays,
+  or `LinearOperator`-like objects; add chunked/memory-mapped assembly for large
+  InSAR scenes.
+- [ ] Add iterative least-squares and constrained solver paths with convergence
+  reports and preconditioning. Dense direct solves remain the transparent
+  default for teaching-sized systems.
+- [ ] Add reusable factorizations and batched solves for hyperparameter sweeps;
+  report estimated memory before allocating dense covariance or Green's arrays.
+- [ ] Benchmark and document the scale boundary where users should downsample,
+  use operators, or move to JAX/GPU.
+
+### 4.3 Observation preprocessing and nuisance parameters
+
+- [ ] Add explicit linear nuisance bases for InSAR offsets/ramps, GNSS frame
+  translations/rotations, and dataset biases; solve or marginalize them without
+  mixing them into fault slip.
+- [ ] Provide transparent quadtree/spatial downsampling and train/validation
+  partition helpers that preserve coordinates, uncertainties, and provenance.
+- [ ] Add masking/subsetting/concatenation methods returning immutable datasets
+  with provenance rather than encouraging parallel manual array slicing.
+- [ ] Support multiple epochs and temporal basis functions as a bridge from
+  static inversion to time-dependent slip.
+
+---
+
+## Priority 5 — Finish and deepen the accelerated inference stack
+
+### 5.1 Close the remaining JAX gaps
+
+- [ ] Batch L-curve and cross-validation sweeps on JAX using the established
+  ABIC pattern; verify exact API/numerical parity with NumPy.
+- [ ] Make rectangular and triangular strain/stress kernels traceable,
+  gradient-safe, jitted, and vmapped; validate derivatives against finite
+  differences away from documented singular boundaries.
+- [ ] Remove hidden dependence on global backend state from compiled problem
+  objects while retaining `set_backend(...)` as the simple entry point.
+- [ ] Add compilation-cache guidance and shape-change diagnostics so users can
+  distinguish compilation time from solve time.
+
+### 5.2 Make advanced geometry inference easier to set up safely
+
+- [ ] Accept named geometry/frame objects and prior specifications with units;
+  generate prior-predictive geometry plots and half-space checks before sampling.
+- [ ] Add multi-start geometry search and an initialization helper that can seed
+  NUTS from deterministic fits while clearly separating optimization from
+  posterior inference.
+- [ ] Add posterior predictive checks, rank/trace plots, divergence summaries,
+  prior-versus-posterior comparisons, and warnings with concrete remedies.
+- [ ] Support multiple smoothing scales (by component, region, or operator) and
+  dataset noise scales without forcing users to construct parameter vectors.
+
+### 5.3 Robust sampling and model comparison
+
+- [ ] Implement `bayes.sample_smc` around BlackJAX adaptive tempered SMC with
+  prior draws, NUTS mutation, an adaptive temperature schedule, weighted
+  posterior output, and log-evidence estimates.
+- [ ] Validate SMC against analytic low-dimensional targets and NUTS on unimodal
+  cases, then use it for deliberately multimodal geometry examples.
+- [ ] Define sampler-independent posterior/result protocols so BlackJAX API
+  changes or future samplers do not leak through the GeoDef user interface.
+
+---
+
+## Priority 6 — New physics and research capabilities
+
+These efforts should use the engine/operator interfaces above so new physics
+does not multiply special cases in beginner-facing code.
+
+### 6.1 Quasi-dynamic earthquake-cycle modeling
+
+- [ ] Write a separate design note defining scope, state variables, sign/unit
+  conventions, validation targets, and the boundary between static GeoDef
+  objects and a new optional `geodef.cycle` module.
+- [ ] Port and independently validate stress-kernel-driven quasi-dynamic
+  rate-and-state evolution from `related/stress-shadows/unicycle/`.
+- [ ] Add friction-law objects, adaptive ODE integration, event detection,
+  restart/checkpoint files, and energy/moment diagnostics.
+- [ ] Support rectangular and triangular faults, CPU first and differentiable
+  JAX integration only after the reference CPU implementation is trusted.
+- [ ] Deliver a small pedagogical spring-slider example before a large fault-
+  system example.
+
+### 6.2 Additional Green's engines
+
+- [ ] Add Meade (2007) triangular dislocations as an independent cross-check.
+- [ ] Add compound dislocation / point-source models for volcanic deformation.
+- [ ] Add layered half-space displacement Green's functions behind an optional
+  dependency, beginning with a well-bounded elastic layering use case.
+- [ ] Evaluate viscoelastic and poroelastic engines only after source/engine
+  protocols can represent time and material parameters cleanly.
+- [ ] For every engine: cite equations, preserve a reference implementation,
+  cross-validate published cases, declare capabilities/coordinate conventions,
+  and show one end-to-end example through the same high-level workflow.
+
+### 6.3 Richer fault and slip models
+
+- [ ] Add tensile/opening components without disturbing the two-component
+  default; make basis and moment semantics explicit.
+- [ ] Add multiple faults/segments with continuity or boundary constraints and
+  named result partitions.
+- [ ] Add mesh quality metrics, adaptive refinement driven by geometry and data
+  sensitivity, and transfer operators between meshes.
+- [ ] Add elastic-parameter sensitivity and uncertainty before exposing joint
+  inversion for elastic structure.
+- [ ] Explore kinematic time-dependent slip histories after multi-epoch data and
+  nuisance bases are established.
+
+---
+
+## Delivery sequence
+
+The priorities are ordered deliberately, but each phase should deliver useful
+increments rather than becoming a long-lived rewrite.
+
+1. **v1.1.x consistency releases:** Priority 0, documentation corrections,
+   packaging fixes, validation, and deprecation scaffolding.
+2. **v1.2 beginner workflow:** `LocalFrame`, named geometry/slip/displacement,
+   dataset result views, friendly constructors, and the revised quickstart.
+3. **v1.3 problem and scale layer:** validated `SlipProblem`, noise operators,
+   nuisance parameters, module extractions, and large-problem diagnostics.
+4. **Parallel research releases:** remaining JAX work and SMC can proceed in
+   small units once their touched public semantics are settled.
+5. **v2 candidates:** only genuinely breaking cleanup that survived a full
+   deprecation cycle; new engines and cycle modeling do not by themselves
+   justify a major-version break.
+
+For each user-facing phase, require:
+
+- a before/after golden workflow showing fewer manual transformations;
+- unit, integration, documentation, and backwards-compatibility tests;
+- an executed tutorial or example using the public path;
+- numerical equivalence against the current implementation where semantics are
+  unchanged;
+- release notes with migration examples and explicit non-goals.
+
+---
+
+## Enduring design conventions
+
+- Public Cartesian coordinates are East, North, Up; public depth is positive
+  down. Kernel-native conventions are converted at adapters.
+- Base geometry lengths, displacements, and slip use meters; stress uses Pa;
+  angles use degrees unless an API name explicitly says otherwise.
+- The expert linear-algebra slip view remains blocked as
+  `[:N]` strike-slip and `[N:]` dip-slip. Named domain views are preferred in
+  everyday code.
+- NumPy remains the default runtime and JAX remains optional.
+- Hash-based caching may accelerate pure computations but must never change
+  results or hide problem provenance.
+- `PLAN.md` is forward-looking. When work ships, replace detailed checklists
+  with a concise baseline entry or release note rather than accumulating an
+  implementation diary here.
+- Update this plan in the same logical commit when scope or a settled design
+  decision changes.
+- Do not add `Co-Authored-By` trailers. AI model attribution is maintained in
+  `README.md`, `AGENTS.md`, and `CLAUDE.md` according to repository policy.
