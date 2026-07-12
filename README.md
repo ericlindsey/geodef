@@ -27,8 +27,8 @@ forward models, gradient-based and Bayesian geometry inference) are complete.
 uv pip install -e .
 
 # optional extras
-uv pip install -e ".[geo]"    # pyproj geodetic transforms / slab2.0 sampling
-uv pip install -e ".[mesh]"   # meshpy triangular mesh generation
+uv pip install -e ".[geo]"    # pyproj geodetic transforms
+uv pip install -e ".[mesh]"   # meshpy + netCDF4 mesh generation / slab2.0
 uv pip install -e ".[maps]"   # cartopy geographic map plotting
 uv pip install -e ".[jax]"    # JAX backend: JIT/GPU kernels + autodiff
 uv pip install -e ".[bayes]"  # Bayesian geometry sampling (jax + blackjax)
@@ -38,6 +38,24 @@ uv pip install -e ".[all]"    # everything optional
 On a machine with an NVIDIA GPU, install JAX's CUDA build instead of the plain
 `[jax]` extra (see [`docs/backend.md`](docs/backend.md) for precision and GPU
 notes).
+
+### Capabilities at a glance
+
+| Capability | Modules | Requires |
+|---|---|---|
+| Rectangular dislocations (surface + depth) | `okada85`, `okada92`, `okada` | base install |
+| Triangular dislocations | `tri` | base install |
+| Fault geometry, forward models, moment | `fault` | base install |
+| GNSS / InSAR / vertical datasets | `data` | base install |
+| Green's assembly, Laplacians, caching | `greens`, `cache` | base install |
+| Linear slip inversion + model assessment | `invert` | base install |
+| Euler poles and rigid-block velocities | `euler` | base install |
+| Slip, data, fit, and 3-D plotting | `plot` | base install |
+| High-precision geodetic transforms | `transforms` | `[geo]` |
+| Triangular mesh generation, slab2.0 | `mesh` | `[mesh]` |
+| Geographic basemap plotting | `geomap` | `[maps]` |
+| JIT/GPU kernels, differentiable models | `backend`, `gradients` | `[jax]` |
+| Bayesian geometry + slip posteriors | `bayes` | `[bayes]` |
 
 ## Quick start
 
@@ -161,7 +179,7 @@ Full API docs with examples are in `docs/`:
 ## Testing
 
 ```bash
-uv run pytest -q   # 926 tests collected across 24 test files
+uv run pytest -q
 ```
 
 The tutorial notebooks and a Gorkha example smoke test run as part of the suite.
@@ -181,8 +199,14 @@ Contributor and roadmap docs live at the repository root:
 ## AI co-authorship
 
 All code in this repository has been co-authored with Claude Opus 4.6, Claude
-Opus 4.8, and Codex 5.5. Keep this model list current when future AI models make
-material contributions.
+Opus 4.8, Claude Fable 5, and Codex 5.5. Keep this model list current when
+future AI models make material contributions.
+
+## License and citation
+
+GeoDef is released under the [MIT License](LICENSE). If you use it in
+published work, please cite it using the metadata in
+[`CITATION.cff`](CITATION.cff) along with the original method papers below.
 
 ## References
 

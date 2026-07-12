@@ -42,8 +42,9 @@ Issues = "https://github.com/ericlindsey/geodef/issues"
 [project.optional-dependencies]
 # Geographic transforms and slab2.0 sampling.
 geo = ["pyproj"]
-# Triangular mesh generation from traces, polygons, and point clouds.
-mesh = ["meshpy"]
+# Triangular mesh generation from traces, polygons, point clouds, and
+# slab2.0 grids (netCDF4 reads the .grd files).
+mesh = ["meshpy", "netCDF4"]
 # Cartopy-backed geographic map plotting (coastlines, borders, topography).
 maps = ["cartopy"]
 # JAX backend: XLA-compiled (and GPU-capable) kernels with autodiff.
@@ -51,7 +52,7 @@ jax = ["jax"]
 # Bayesian sampling: NUTS via blackjax on the JAX backend.
 bayes = ["jax", "blackjax"]
 # Everything optional at once, for a full research install.
-all = ["pyproj", "meshpy", "cartopy", "jax", "blackjax"]
+all = ["pyproj", "meshpy", "netCDF4", "cartopy", "jax", "blackjax"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
