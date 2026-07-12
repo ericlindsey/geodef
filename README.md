@@ -194,6 +194,8 @@ Contributor and roadmap docs live at the repository root:
 
 - [`PYTHON.md`](PYTHON.md) — mandatory coding standards and tooling (read before editing any code).
 - [`PLAN.md`](PLAN.md) — the forward-looking roadmap (GPU/autodiff, earthquake-cycle modeling, more Green's engines).
+- [`CHANGELOG.md`](CHANGELOG.md) — notable changes per release.
+- [`COMPATIBILITY.md`](COMPATIBILITY.md) — public-API, versioning, and deprecation policy.
 - [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) — agent onboarding guides for automated contributors.
 
 ## AI co-authorship

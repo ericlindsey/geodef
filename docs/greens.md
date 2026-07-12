@@ -96,6 +96,13 @@ from geodef.greens import build_laplacian_2d
 L = build_laplacian_2d(10, 5)   # shape (50, 50)
 ```
 
+### `build_laplacian_2d_simple(nL, nW) → np.ndarray`
+
+Simpler 2-D Laplacian variant with free boundary conditions: each diagonal
+weight equals the number of available neighbors, so every row sums to zero
+without the one-sided second-difference stencils `build_laplacian_2d` uses at
+edges. Useful for teaching and for cross-checking regularization behavior.
+
 ### `build_laplacian_knn(coords, k=4) → scipy.sparse.csc_matrix`
 
 Distance-weighted graph Laplacian for unstructured meshes (triangular or non-uniform rectangular). Finds *k* nearest neighbors, weights by inverse distance, symmetrizes.
@@ -115,6 +122,15 @@ neighbor geometry affect its scale, so regularization strengths should not be
 transferred blindly between meshes.
 
 ---
+
+## Resolution
+
+### `resolution(G) → np.ndarray`
+
+Model resolution matrix `R = pinv(G) @ G` for an unregularized system — how
+each true model parameter maps into the recovered one (`R = I` means perfect
+recovery). For the resolution of a *regularized* inversion, use
+`geodef.model_resolution(...)`, which accounts for the smoothing operator.
 
 ## Low-level Green's matrix functions
 

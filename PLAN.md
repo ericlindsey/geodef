@@ -222,26 +222,26 @@ semantics that later objects will wrap.
 
 ### 0.3 Repair packaging, licensing, and documentation drift
 
-- [ ] Choose and add a LICENSE, confirm attribution for the ported engines
+- [x] Choose and add a LICENSE, confirm attribution for the ported engines
   (the `geometry/` sources are the author's own MIT/BSD code), add a
   `CITATION.cff`, and complete `pyproject.toml` metadata (license, authors,
   URLs, classifiers, readme) before any public release.
-- [ ] Stand up CI from scratch (none exists): ruff, mypy, the routine test
+- [x] Stand up CI from scratch (none exists): ruff, mypy, the routine test
   suite, and executed tutorials, on every push.
-- [ ] Ship a `py.typed` marker so downstream type checkers see the existing
+- [x] Ship a `py.typed` marker so downstream type checkers see the existing
   annotations, and single-source the package version instead of duplicating
   it between `pyproject.toml` and `__init__.py`.
-- [ ] Make optional extras match actual imports (`meshpy`, `netCDF4`, `pyproj`,
+- [x] Make optional extras match actual imports (`meshpy`, `netCDF4`, `pyproj`,
   Cartopy, JAX, and BlackJAX), and test each documented install tier in CI.
-- [ ] Test the declared Python/NumPy/SciPy version range, including the oldest
+- [x] Test the declared Python/NumPy/SciPy version range, including the oldest
   supported and newest released combinations; calibrate reference tolerances
   from physical/numerical requirements rather than one platform's roundoff.
-- [ ] Remove hard-coded test counts and stale ten-versus-eleven tutorial status
+- [x] Remove hard-coded test counts and stale ten-versus-eleven tutorial status
   text. Add one authoritative capability/version table.
-- [ ] Add an API documentation check for broken examples, missing public
+- [x] Add an API documentation check for broken examples, missing public
   members, and signature drift. Prefer executable short examples over copied
   signatures.
-- [ ] Add a changelog and a written compatibility/deprecation policy before the
+- [x] Add a changelog and a written compatibility/deprecation policy before the
   next public release.
 
 ### 0.4 Make caching and material parameters provably safe

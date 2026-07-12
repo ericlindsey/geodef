@@ -111,7 +111,7 @@ result — since warmup adapts around it.
 ## Sampling
 
 ```python
-result = geodef.bayes.sample(
+result = geodef.bayes.sample(          # → bayes.PosteriorResult
     post, n_samples=2000, n_warmup=1000, n_chains=4, seed=0
 )
 
@@ -123,7 +123,8 @@ result.summary()        # dict: mean, sd, q05, q50, q95, rhat, ess
 result.plot_pairs(truths=[15.0, 25e3, 0.0, 1.0])   # corner plot
 ```
 
-`sample` runs blackjax window adaptation once (step size + diagonal mass
+`sample` returns a `PosteriorResult` holding the raw chains plus the
+diagnostics above. `sample` runs blackjax window adaptation once (step size + diagonal mass
 matrix), then draws all chains in a single jitted `vmap` computation.
 Chains start from the warmup's end position, overdispersed by twice the
 adapted posterior scale; pass `inits=(n_chains, n_params)` explicitly to

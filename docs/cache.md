@@ -66,3 +66,9 @@ result = cached_compute(key_dict, compute_fn)
 ```
 
 `key_dict` is any dict of arrays and scalars; `compute_fn` is a zero-argument callable. If `key_dict` hashes to a known cache file, the saved result is returned; otherwise `compute_fn()` is called and the result is saved. Use this to cache custom expensive computations.
+
+The hashing primitive is exposed as `compute_hash(key_dict) → str`: a
+deterministic SHA-256 hex digest over the dict's sorted keys and values
+(arrays contribute dtype, shape, and bytes). Two processes with identical
+inputs produce identical digests, which is what makes the on-disk cache
+shareable between runs.
