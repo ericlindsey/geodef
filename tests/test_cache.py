@@ -206,6 +206,73 @@ class TestCachedCompute:
 
 
 # ====================================================================
+# Group 3b: compute-context keying (kernel version, backend, precision)
+# ====================================================================
+
+
+class TestComputeContextKeying:
+    """The cache key must include every input that affects the result,
+    including implicit compute context: the kernel version stamp and the
+    active backend/precision. Otherwise a kernel fix or a float32 session
+    could silently serve stale float64 (or vice versa) matrices."""
+
+    @staticmethod
+    def _counting_compute(calls: list) -> "np.ndarray":
+        calls.append(1)
+        return np.arange(3.0)
+
+    def test_kernel_version_bump_invalidates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list = []
+        key = {"id": "ctx_kernel"}
+        cache.cached_compute(key, lambda: self._counting_compute(calls))
+        cache.cached_compute(key, lambda: self._counting_compute(calls))
+        assert len(calls) == 1
+        monkeypatch.setattr(cache, "KERNEL_VERSION", cache.KERNEL_VERSION + 1)
+        cache.cached_compute(key, lambda: self._counting_compute(calls))
+        assert len(calls) == 2
+
+    def test_precision_change_invalidates(self, tmp_path: Path) -> None:
+        from geodef import backend
+
+        calls: list = []
+        key = {"id": "ctx_precision"}
+        assert backend.get_precision() == "float64"
+        try:
+            cache.cached_compute(key, lambda: self._counting_compute(calls))
+            backend.set_precision("float32")
+            cache.cached_compute(key, lambda: self._counting_compute(calls))
+            assert len(calls) == 2
+        finally:
+            backend.set_precision("float64")
+
+    def test_backend_change_invalidates(self, tmp_path: Path) -> None:
+        from geodef import backend
+
+        pytest.importorskip("jax")
+        calls: list = []
+        key = {"id": "ctx_backend"}
+        assert backend.get_backend() == "numpy"
+        try:
+            cache.cached_compute(key, lambda: self._counting_compute(calls))
+            backend.set_backend("jax")
+            cache.cached_compute(key, lambda: self._counting_compute(calls))
+            assert len(calls) == 2
+        finally:
+            backend.set_backend("numpy")
+            backend.set_precision("float64")
+
+    def test_same_context_still_hits(self, tmp_path: Path) -> None:
+        calls: list = []
+        key = {"id": "ctx_stable", "arr": np.ones(4)}
+        first = cache.cached_compute(key, lambda: self._counting_compute(calls))
+        second = cache.cached_compute(key, lambda: self._counting_compute(calls))
+        assert len(calls) == 1
+        np.testing.assert_array_equal(first, second)
+
+
+# ====================================================================
 # Group 4: info()
 # ====================================================================
 

@@ -21,6 +21,11 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed
 
+- Disk-cache keys now include the implicit compute context: a
+  `cache.KERNEL_VERSION` stamp plus the active backend and precision, so
+  kernel fixes and float32/float64 or NumPy/JAX switches can never serve a
+  stale cached matrix. Existing cache entries are orphaned (recomputed on
+  first use); run `geodef.cache.clear()` to reclaim the disk space.
 - The `mesh` extra now installs `netCDF4` (required by `Mesh.from_slab2`).
 - The package version is single-sourced from `geodef.__version__`.
 - Mesh-generation tests skip (rather than fail) when `meshpy`/`netCDF4` are

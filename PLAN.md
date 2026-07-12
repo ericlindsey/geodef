@@ -250,7 +250,7 @@ semantics that later objects will wrap.
   parameters, backend precision, and a kernel/format version stamp that is
   bumped whenever an engine's numerics change. Add tests asserting that each
   varied input produces a cache miss.
-- [ ] Define the cache invalidation story: what a version bump invalidates,
+- [x] Define the cache invalidation story: what a version bump invalidates,
   how users clear stale entries, and what `cache.info()` reports about them.
 - [ ] Thread Poisson's ratio through `Fault.greens_matrix` and the assembly
   layer instead of freezing the kernel default, and give `mu` one declared

@@ -47,6 +47,20 @@ The hash identifies values and configuration, not scientific provenance. Keep
 raw-data processing, coordinate conventions, and software versions in your
 research metadata; the cache is disposable and can always be rebuilt.
 
+### Compute context and invalidation
+
+Beyond the explicit inputs, every key also includes the implicit compute
+context: `cache.KERNEL_VERSION` (a stamp bumped whenever an engine's
+numerics change — see `CHANGELOG.md`), the active backend name, and the
+floating-point precision. A GeoDef upgrade that fixes a kernel, or a switch
+between NumPy/JAX or float64/float32, therefore recomputes rather than
+serving a stale entry.
+
+Invalidation is by unreachability: entries written under an old context are
+simply never matched again. They still count in `info()` and occupy disk
+until you delete them, so run `geodef.cache.clear()` after an upgrade that
+bumps `KERNEL_VERSION` (or whenever you want to reclaim space).
+
 To bypass caching entirely for a session:
 
 ```python
