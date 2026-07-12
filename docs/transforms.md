@@ -1,5 +1,7 @@
 # `geodef.transforms` — Coordinate transforms
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z),
 and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids
 can be passed as `ellps=`.

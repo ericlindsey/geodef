@@ -1,5 +1,7 @@
 # `geodef.bayes` — Collapsed Bayesian geometry inference
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Full posterior inference for planar-fault geometry and noise /
 regularization hyperparameters, with the linear slip parameters
 **marginalized analytically** (a collapsed, Rao-Blackwellized sampler).

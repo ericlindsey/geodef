@@ -1,5 +1,7 @@
 # `geodef.greens` — Green's matrix assembly
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Assembles projected Green's matrices from `Fault` and `DataSet` objects, and provides Laplacian regularization operators.
 
 ## Physical and algebraic picture

@@ -61,6 +61,13 @@ def test_docs_page_exists(mod_name: str) -> None:
 
 
 @pytest.mark.parametrize("mod_name", DOCUMENTED_MODULES)
+def test_docs_link_conventions(mod_name: str) -> None:
+    """Every module reference page links the conventions page."""
+    text = (DOCS_DIR / f"{mod_name}.md").read_text()
+    assert "conventions.md" in text
+
+
+@pytest.mark.parametrize("mod_name", DOCUMENTED_MODULES)
 def test_public_members_documented(mod_name: str) -> None:
     """Every public function/class must be mentioned in its reference page."""
     module = getattr(geodef, mod_name)

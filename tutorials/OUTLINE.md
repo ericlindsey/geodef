@@ -276,7 +276,7 @@ common regularization operators.
 **Concepts & Math.**
 - Ill-posedness ⇒ need for prior constraints (Tikhonov regularization).
 - The regularized objective:
-  `min_m ‖G m − d‖²_{C_d} + λ² ‖L (m − m_ref)‖²`.
+  `min_m ‖G m − d‖²_{C_d} + λ ‖L (m − m_ref)‖²`.
 - Choices of `L`:
   - **Smoothing** — discrete Laplacian; penalizes slip *roughness*.
   - **Damping** — `L = I`; penalizes slip *magnitude* (minimum norm / moment).
@@ -284,7 +284,7 @@ common regularization operators.
     interactions.
   - Role of `m_ref` (regularize toward a reference model, default zero).
 - The augmented/stacked linear system view: regularization = adding synthetic
-  "equations" with weight `λ`.
+  "equations" with weight `√λ`.
 - Qualitative effect of `λ`: under- vs. over-smoothing (sets up Tutorial 05).
 
 **Key calls.** `geodef.invert(..., smoothing='laplacian'|'damping'|'stresskernel',
@@ -422,7 +422,7 @@ derived quantities.
 
 **Concepts & Math.**
 - **Posterior model covariance:**
-  `C_m = (Gᵀ W G + λ² LᵀL)^{-1}` (linear-Gaussian result); diagonal ⇒
+  `C_m = (Gᵀ W G + λ LᵀL)^{-1}` (linear-Gaussian result); diagonal ⇒
   per-patch slip uncertainty.
 - **Model resolution matrix** `R = G^{-g} G` (generalized inverse times `G`):
   each recovered patch is a *weighted average* of the truth; rows of `R` are

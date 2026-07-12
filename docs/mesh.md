@@ -1,5 +1,7 @@
 # `geodef.mesh` — Triangular mesh generation
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Provides the `Mesh` dataclass and four factory functions for creating
 triangular fault meshes.
 

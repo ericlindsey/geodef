@@ -1,5 +1,7 @@
 # `geodef.medium` — Elastic half-space parameters
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Every dislocation engine in GeoDef assumes a homogeneous isotropic elastic
 half-space. `ElasticMedium` is the single declared home for that medium's
 parameters. Attach one to a `Fault` and the same values flow through all of

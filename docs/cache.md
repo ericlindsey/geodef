@@ -1,5 +1,7 @@
 # `geodef.cache` — Disk caching
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Hash-based caching of Green's matrices and stress kernels. Identical inputs always find the cache; changed inputs always recompute. Cache is enabled by default and stores `.npz` files keyed by SHA-256 hash.
 
 Caching changes runtime, not numerical results. It is especially helpful while

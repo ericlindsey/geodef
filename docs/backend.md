@@ -1,5 +1,7 @@
 # `geodef.backend` — Array backend selection
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Selects the array library used by the compute kernels: **NumPy** (the default)
 or **JAX**. The JAX backend JIT-compiles the Green's-function kernels through
 XLA on ordinary CPUs and offloads to a GPU when one is available, and it

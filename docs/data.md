@@ -1,5 +1,7 @@
 # `geodef.data` — Geodetic data types
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Three concrete data classes (`GNSS`, `InSAR`, `Vertical`) all inherit from
 `DataSet`. They define how displacements are projected into observation space
 and provide common infrastructure for coordinates, uncertainties, and

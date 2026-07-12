@@ -1,5 +1,7 @@
 # `geodef.gradients` — Differentiable forward models
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Exposes the rectangular (okada85) and triangular (Nikkhoo & Walter)
 half-space forward models as JAX-differentiable functions, plus Jacobian
 helpers. This is the foundation for gradient-based nonlinear geometry

@@ -1,5 +1,7 @@
 # `geodef.euler`
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Euler pole estimation and rigid-block velocity prediction. Rigid-plate motion
 on a sphere is a rotation about an Euler pole; this module fits that pole to
 horizontal GNSS velocities and predicts the velocity field a pole produces.

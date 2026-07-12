@@ -1,5 +1,7 @@
 # `geodef.okada` — Green's function engines
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Three modules provide displacement and strain Green's functions. For most workflows, use the `okada` dispatcher; access `okada85` or `okada92` directly only when you need specific features.
 
 ## Model assumptions
