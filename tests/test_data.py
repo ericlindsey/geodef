@@ -25,7 +25,7 @@ def gnss_3station():
     se = np.array([0.1, 0.2, 0.3])
     sn = np.array([0.1, 0.2, 0.3])
     su = np.array([0.5, 0.5, 0.5])
-    return GNSS(lon, lat, ve, vn, vu, se, sn, su)
+    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su)
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def gnss_horizontal():
     vn = np.array([0.5, 1.5])
     se = np.array([0.1, 0.2])
     sn = np.array([0.1, 0.2])
-    return GNSS(lon, lat, ve, vn, None, se, sn, None)
+    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=None, se=se, sn=sn, su=None)
 
 
 @pytest.fixture
@@ -50,7 +50,15 @@ def insar_5pixel():
     look_e = np.full(5, 0.38)
     look_n = np.full(5, -0.09)
     look_u = np.full(5, 0.92)
-    return InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
+    return InSAR(
+        lon=lon,
+        lat=lat,
+        los=los,
+        sigma=sigma,
+        look_e=look_e,
+        look_n=look_n,
+        look_u=look_u,
+    )
 
 
 @pytest.fixture
@@ -60,7 +68,7 @@ def vertical_4pt():
     lon = np.full(4, 100.0)
     disp = np.array([0.01, 0.02, 0.015, 0.005])
     sigma = np.full(4, 0.003)
-    return Vertical(lon, lat, disp, sigma)
+    return Vertical(lon=lon, lat=lat, displacement=disp, sigma=sigma)
 
 
 # ======================================================================
@@ -136,67 +144,67 @@ class TestGNSSConstruction:
     def test_mismatched_lengths_raises(self):
         with pytest.raises(ValueError, match="same length"):
             GNSS(
-                np.array([100.0, 101.0]),
-                np.array([0.0]),  # wrong length
-                np.array([1.0, 2.0]),
-                np.array([0.5, 1.5]),
-                np.array([-0.1, -0.2]),
-                np.array([0.1, 0.2]),
-                np.array([0.1, 0.2]),
-                np.array([0.5, 0.5]),
+                lon=np.array([100.0, 101.0]),
+                lat=np.array([0.0]),  # wrong length
+                ve=np.array([1.0, 2.0]),
+                vn=np.array([0.5, 1.5]),
+                vu=np.array([-0.1, -0.2]),
+                se=np.array([0.1, 0.2]),
+                sn=np.array([0.1, 0.2]),
+                su=np.array([0.5, 0.5]),
             )
 
     def test_ve_vn_mismatch_raises(self):
         with pytest.raises(ValueError, match="same length"):
             GNSS(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([1.0, 2.0]),  # wrong length
-                np.array([0.5]),
-                np.array([-0.1]),
-                np.array([0.1]),
-                np.array([0.1]),
-                np.array([0.5]),
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                ve=np.array([1.0, 2.0]),  # wrong length
+                vn=np.array([0.5]),
+                vu=np.array([-0.1]),
+                se=np.array([0.1]),
+                sn=np.array([0.1]),
+                su=np.array([0.5]),
             )
 
     def test_negative_sigma_raises(self):
         with pytest.raises(ValueError, match="positive"):
             GNSS(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([1.0]),
-                np.array([0.5]),
-                np.array([-0.1]),
-                np.array([-0.1]),  # negative sigma
-                np.array([0.1]),
-                np.array([0.5]),
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                ve=np.array([1.0]),
+                vn=np.array([0.5]),
+                vu=np.array([-0.1]),
+                se=np.array([-0.1]),  # negative sigma
+                sn=np.array([0.1]),
+                su=np.array([0.5]),
             )
 
     def test_vu_none_su_none_required(self):
         """If vu is None, su must also be None."""
         with pytest.raises(ValueError, match="both.*None"):
             GNSS(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([1.0]),
-                np.array([0.5]),
-                None,  # vu=None
-                np.array([0.1]),
-                np.array([0.1]),
-                np.array([0.5]),  # su provided
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                ve=np.array([1.0]),
+                vn=np.array([0.5]),
+                vu=None,  # vu=None
+                se=np.array([0.1]),
+                sn=np.array([0.1]),
+                su=np.array([0.5]),  # su provided
             )
 
     def test_scalar_inputs_broadcast(self):
         """Single-station GNSS from scalar values."""
         g = GNSS(
-            np.array([100.0]),
-            np.array([0.0]),
-            np.array([1.0]),
-            np.array([0.5]),
-            np.array([-0.1]),
-            np.array([0.1]),
-            np.array([0.2]),
-            np.array([0.5]),
+            lon=np.array([100.0]),
+            lat=np.array([0.0]),
+            ve=np.array([1.0]),
+            vn=np.array([0.5]),
+            vu=np.array([-0.1]),
+            se=np.array([0.1]),
+            sn=np.array([0.2]),
+            su=np.array([0.5]),
         )
         assert g.n_stations == 1
         assert g.n_obs == 3
@@ -260,25 +268,25 @@ class TestInSARConstruction:
     def test_mismatched_look_vector_raises(self):
         with pytest.raises(ValueError, match="same length"):
             InSAR(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([0.01]),
-                np.array([0.005]),
-                np.array([0.38, 0.38]),  # wrong length
-                np.array([-0.09]),
-                np.array([0.92]),
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                los=np.array([0.01]),
+                sigma=np.array([0.005]),
+                look_e=np.array([0.38, 0.38]),  # wrong length
+                look_n=np.array([-0.09]),
+                look_u=np.array([0.92]),
             )
 
     def test_negative_sigma_raises(self):
         with pytest.raises(ValueError, match="positive"):
             InSAR(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([0.01]),
-                np.array([-0.005]),  # negative
-                np.array([0.38]),
-                np.array([-0.09]),
-                np.array([0.92]),
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                los=np.array([0.01]),
+                sigma=np.array([-0.005]),  # negative
+                look_e=np.array([0.38]),
+                look_n=np.array([-0.09]),
+                look_u=np.array([0.92]),
             )
 
 
@@ -302,13 +310,13 @@ class TestInSARProject:
     def test_project_pure_vertical(self):
         """Pure vertical look vector should return uz."""
         insar = InSAR(
-            np.array([100.0]),
-            np.array([0.0]),
-            np.array([0.01]),
-            np.array([0.005]),
-            np.array([0.0]),
-            np.array([0.0]),
-            np.array([1.0]),
+            lon=np.array([100.0]),
+            lat=np.array([0.0]),
+            los=np.array([0.01]),
+            sigma=np.array([0.005]),
+            look_e=np.array([0.0]),
+            look_n=np.array([0.0]),
+            look_u=np.array([1.0]),
         )
         result = insar.project(np.array([5.0]), np.array([3.0]), np.array([7.0]))
         np.testing.assert_allclose(result, [7.0])
@@ -345,10 +353,10 @@ class TestVerticalConstruction:
     def test_mismatched_raises(self):
         with pytest.raises(ValueError, match="same length"):
             Vertical(
-                np.array([100.0, 101.0]),
-                np.array([0.0]),  # wrong length
-                np.array([0.01, 0.02]),
-                np.array([0.003, 0.003]),
+                lon=np.array([100.0, 101.0]),
+                lat=np.array([0.0]),  # wrong length
+                displacement=np.array([0.01, 0.02]),
+                sigma=np.array([0.003, 0.003]),
             )
 
 
@@ -401,16 +409,16 @@ class TestCovariance:
         disp = np.array([0.01, 0.02])
         sigma = np.array([0.003, 0.003])
         cov = np.array([[9e-6, 1e-6], [1e-6, 9e-6]])
-        v = Vertical(lon, lat, disp, sigma, covariance=cov)
+        v = Vertical(lon=lon, lat=lat, displacement=disp, sigma=sigma, covariance=cov)
         np.testing.assert_array_equal(v.covariance, cov)
 
     def test_covariance_wrong_shape_raises(self):
         with pytest.raises(ValueError, match="shape"):
             Vertical(
-                np.array([100.0]),
-                np.array([0.0]),
-                np.array([0.01]),
-                np.array([0.003]),
+                lon=np.array([100.0]),
+                lat=np.array([0.0]),
+                displacement=np.array([0.01]),
+                sigma=np.array([0.003]),
                 covariance=np.eye(5),  # wrong shape for 1 obs
             )
 
@@ -432,8 +440,8 @@ class TestSiteNames:
         lon = np.array([1.0, 2.0, 3.0])
         lat = np.zeros(n)
         return GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=np.ones(n),
             vn=np.ones(n),
             vu=np.ones(n),
@@ -477,10 +485,10 @@ class TestSiteNames:
     def test_vertical_name_roundtrip(self, tmp_path):
         n = 3
         v = Vertical(
-            np.array([1.0, 2.0, 3.0]),
-            np.zeros(n),
-            np.zeros(n),
-            np.ones(n),
+            lon=np.array([1.0, 2.0, 3.0]),
+            lat=np.zeros(n),
+            displacement=np.zeros(n),
+            sigma=np.ones(n),
             name=self._names(),
         )
         p = tmp_path / "v.dat"
@@ -496,8 +504,8 @@ class TestGNSSCorrelation:
         lon = np.zeros(n)
         lat = np.zeros(n)
         return GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=np.ones(n),
             vn=np.ones(n),
             vu=np.ones(n) if vu else None,
@@ -548,8 +556,8 @@ class TestGNSSCorrelation:
         n = 3
         with pytest.raises(ValueError, match="rho or covariance"):
             GNSS(
-                np.zeros(n),
-                np.zeros(n),
+                lon=np.zeros(n),
+                lat=np.zeros(n),
                 ve=np.ones(n),
                 vn=np.ones(n),
                 vu=None,
@@ -608,8 +616,8 @@ class TestSpatialCovariance:
         n = len(lon)
         cov = spatial_covariance(lon, lat, sill=4e-4, correlation_length=10_000.0)
         insar = InSAR(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             los=np.zeros(n),
             sigma=np.full(n, 0.02),
             look_e=np.full(n, 0.4),

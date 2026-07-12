@@ -187,19 +187,19 @@ semantics that later objects will wrap.
 
 ### 0.1 Audit and freeze mathematical conventions
 
-- [ ] Declare one regularization convention everywhere:
+- [x] Declare one regularization convention everywhere:
   `Phi = r.T @ W @ r + lambda * ||L(m - m_ref)||^2`, with augmented rows
   `sqrt(lambda) * L`. Correct the tutorial equations and define how published
   sources using `alpha` or `lambda^2` map to GeoDef.
-- [ ] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
+- [x] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
   geometry search, and Bayesian fixed-lambda modes.
-- [ ] Introduce unambiguous result names `reduced_chi2` and `chi2`; retain the
+- [x] Introduce unambiguous result names `reduced_chi2` and `chi2`; retain the
   old `result.chi2` behavior through a documented deprecation rather than a
   silent semantic change.
-- [ ] Write a single reference page for coordinate axes, depth sign, strike,
+- [x] Write a single reference page for coordinate axes, depth sign, strike,
   dip, rake, slip azimuth, row order, column order, and units; link every public
   geometry/data API to it.
-- [ ] Settle one geographic ordering policy. Make ambiguous multi-array calls
+- [x] Settle one geographic ordering policy. Make ambiguous multi-array calls
   keyword-only over a deprecation cycle, add explicitly named coordinate
   accessors, and never silently reinterpret existing positional arguments.
 

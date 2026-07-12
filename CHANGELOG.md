@@ -46,6 +46,13 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed
 
+- **breaking** — `GNSS`, `InSAR`, `Vertical`, `Fault.planar`, and
+  `Fault.planar_from_corner` are now keyword-only (and `from_triangles`
+  after `vertices`): the geographic ordering policy is lon-first for new
+  named APIs, and positional lat/lon pairs could be silently swapped.
+  `Fault.centers_geo` provides `[lon, lat, depth]` centroids matching
+  `Mesh.centers_geo`; `Fault.centers` keeps its legacy latitude-first
+  order and is documented as such.
 - **breaking** — `InversionResult.chi2` is renamed `reduced_chi2` (it held
   the reduced statistic while `DatasetDiagnostics.chi2` held the unreduced
   one). Accessing `.chi2` now raises an `AttributeError` with migration

@@ -76,8 +76,8 @@ def gnss_data():
     sigma = 0.002
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),
@@ -393,8 +393,8 @@ def gnss_single_patch():
     sigma = 0.003
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),

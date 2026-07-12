@@ -323,8 +323,8 @@ def gnss_data() -> GNSS:
     lon = np.array([100.0, 100.0])
     n = len(lat)
     return GNSS(
-        lon,
-        lat,
+        lon=lon,
+        lat=lat,
         ve=np.zeros(n),
         vn=np.zeros(n),
         vu=np.zeros(n),
@@ -341,8 +341,8 @@ def insar_data() -> InSAR:
     lon = np.array([100.0, 100.0])
     n = len(lat)
     return InSAR(
-        lon,
-        lat,
+        lon=lon,
+        lat=lat,
         los=np.zeros(n),
         sigma=np.ones(n),
         look_e=np.full(n, 0.1),
@@ -397,24 +397,24 @@ class TestGreensIntegration:
         lat_b = np.array([0.3, -0.3])
         lon = np.array([100.0, 100.0])
         data_a = GNSS(
-            lon,
-            lat_a,
-            np.zeros(2),
-            np.zeros(2),
-            np.zeros(2),
-            np.ones(2),
-            np.ones(2),
-            np.ones(2),
+            lon=lon,
+            lat=lat_a,
+            ve=np.zeros(2),
+            vn=np.zeros(2),
+            vu=np.zeros(2),
+            se=np.ones(2),
+            sn=np.ones(2),
+            su=np.ones(2),
         )
         data_b = GNSS(
-            lon,
-            lat_b,
-            np.zeros(2),
-            np.zeros(2),
-            np.zeros(2),
-            np.ones(2),
-            np.ones(2),
-            np.ones(2),
+            lon=lon,
+            lat=lat_b,
+            ve=np.zeros(2),
+            vn=np.zeros(2),
+            vu=np.zeros(2),
+            se=np.ones(2),
+            sn=np.ones(2),
+            su=np.ones(2),
         )
         greens(fault_small, data_a)
         greens(fault_small, data_b)

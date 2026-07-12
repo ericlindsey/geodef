@@ -12,8 +12,8 @@ mapping is given here.
   coordinates, the documented order for named/new APIs is **`lon, lat`**
   (x, y order, as in GMT and GIS). Calls with several positional coordinate
   arrays are keyword-only precisely so the order cannot be confused.
-  (`Fault.centers` predates this policy and stores `[lat, lon, depth]`; it
-  is documented as such and will migrate via a named accessor.)
+  (`Fault.centers` predates this policy and stores `[lat, lon, depth]`;
+  use `Fault.centers_geo` for the documented `[lon, lat, depth]` order.)
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
   to an explicit reference origin (`ref_lat`, `ref_lon`). Anything named
   `*_enu` or `*_local` uses this frame; `z`/`up` is negative below the

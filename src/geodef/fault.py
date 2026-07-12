@@ -127,6 +127,7 @@ class Fault:
     @classmethod
     def planar(
         cls,
+        *,
         lat: float,
         lon: float,
         depth: float,
@@ -220,6 +221,7 @@ class Fault:
     @classmethod
     def planar_from_corner(
         cls,
+        *,
         lat: float,
         lon: float,
         depth: float,
@@ -273,15 +275,15 @@ class Fault:
         # Delegate to planar() which handles the grid generation
         # Note: we negate center_u because depth convention is positive-down
         return cls.planar(
-            float(center_lat),
-            float(center_lon),
-            float(center_depth),
-            strike,
-            dip,
-            length,
-            width,
-            n_length,
-            n_width,
+            lat=float(center_lat),
+            lon=float(center_lon),
+            depth=float(center_depth),
+            strike=strike,
+            dip=dip,
+            length=length,
+            width=width,
+            n_length=n_length,
+            n_width=n_width,
             medium=medium,
         )
 
@@ -289,9 +291,9 @@ class Fault:
     def from_triangles(
         cls,
         vertices: np.ndarray,
+        *,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
-        *,
         triangles: np.ndarray | None = None,
         medium: ElasticMedium | None = None,
     ) -> "Fault":
@@ -393,7 +395,9 @@ class Fault:
         ref_lat = float(np.mean(mesh.lat))
         ref_lon = float(np.mean(mesh.lon))
         vertices = mesh.vertices_enu(ref_lat, ref_lon)
-        return cls.from_triangles(vertices, ref_lat, ref_lon, medium=medium)
+        return cls.from_triangles(
+            vertices, ref_lat=ref_lat, ref_lon=ref_lon, medium=medium
+        )
 
     @classmethod
     def load(
@@ -671,8 +675,21 @@ class Fault:
 
     @property
     def centers(self) -> np.ndarray:
-        """Patch centroids as (N, 3) array of [lat, lon, depth]."""
+        """Patch centroids as (N, 3) array of [lat, lon, depth].
+
+        Note the legacy latitude-first order; prefer :attr:`centers_geo`
+        for the documented [lon, lat, depth] convention.
+        """
         return np.column_stack([self._lat, self._lon, self._depth])
+
+    @property
+    def centers_geo(self) -> np.ndarray:
+        """Patch centroids as (N, 3) array of [lon, lat, depth].
+
+        Follows the documented geographic ordering (x, y order; matches
+        ``Mesh.centers_geo``). Depth is in meters, positive down.
+        """
+        return np.column_stack([self._lon, self._lat, self._depth])
 
     @property
     def centers_local(self) -> np.ndarray:

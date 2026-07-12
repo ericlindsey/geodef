@@ -62,7 +62,9 @@ def _tri_fault(
     triangles = np.concatenate(
         [np.column_stack([i00, i10, i11]), np.column_stack([i00, i11, i01])]
     )
-    return Fault.from_triangles(nodes, ref_lat, ref_lon, triangles=triangles)
+    return Fault.from_triangles(
+        nodes, ref_lat=ref_lat, ref_lon=ref_lon, triangles=triangles
+    )
 
 
 def _gnss_from_fault(fault, slip_ds, sigma, seed, n_lon=6, n_lat=5, span=(0.15, 0.1)):
@@ -76,8 +78,8 @@ def _gnss_from_fault(fault, slip_ds, sigma, seed, n_lon=6, n_lat=5, span=(0.15, 
     rng = np.random.default_rng(seed)
     n = len(glat)
     return GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),

@@ -1278,7 +1278,9 @@ class TriWarp:
             A triangular ``Fault`` with the warped geometry.
         """
         verts = backend.to_numpy(self.vertices(np.asarray(theta, dtype=float)))
-        return Fault.from_triangles(verts.astype(float), self._ref_lat, self._ref_lon)
+        return Fault.from_triangles(
+            verts.astype(float), ref_lat=self._ref_lat, ref_lon=self._ref_lon
+        )
 
     def plot(self, theta: npt.ArrayLike | None = None, ax: Any = None) -> tuple:
         """3D preview of the reference mesh, an optional warp, and knots.

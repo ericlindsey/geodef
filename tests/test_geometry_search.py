@@ -67,8 +67,8 @@ def gnss_data():
     n = len(glat)
     sigma = 0.001
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue,
         vn=un,
         vu=uz,

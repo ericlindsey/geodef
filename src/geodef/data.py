@@ -63,9 +63,9 @@ class DataSet(ABC):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
-        *,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
@@ -197,22 +197,22 @@ class GNSS(DataSet):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         ve: np.ndarray,
         vn: np.ndarray,
-        vu: np.ndarray | None,
+        vu: np.ndarray | None = None,
         se: np.ndarray,
         sn: np.ndarray,
-        su: np.ndarray | None,
-        *,
+        su: np.ndarray | None = None,
         rho: np.ndarray | float | None = None,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
         if rho is not None and covariance is not None:
             raise ValueError("Provide either rho or covariance, not both")
-        super().__init__(lon, lat, name=name, covariance=covariance)
+        super().__init__(lon=lon, lat=lat, name=name, covariance=covariance)
 
         ve = np.asarray(ve, dtype=float)
         vn = np.asarray(vn, dtype=float)
@@ -428,7 +428,17 @@ class GNSS(DataSet):
         if components == "en":
             vu, su = None, None
 
-        return cls(lon, lat, ve, vn, vu, se, sn, su, name=_read_names(path))
+        return cls(
+            lon=lon,
+            lat=lat,
+            ve=ve,
+            vn=vn,
+            vu=vu,
+            se=se,
+            sn=sn,
+            su=su,
+            name=_read_names(path),
+        )
 
 
 class InSAR(DataSet):
@@ -452,6 +462,7 @@ class InSAR(DataSet):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         los: np.ndarray,
@@ -459,10 +470,9 @@ class InSAR(DataSet):
         look_e: np.ndarray,
         look_n: np.ndarray,
         look_u: np.ndarray,
-        *,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lon, lat, covariance=covariance)
+        super().__init__(lon=lon, lat=lat, covariance=covariance)
 
         los = np.asarray(los, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -585,7 +595,15 @@ class InSAR(DataSet):
         los, sigma = raw[:, 2], raw[:, 3]
         look_e, look_n, look_u = raw[:, 4], raw[:, 5], raw[:, 6]
 
-        return cls(lon, lat, los, sigma, look_e, look_n, look_u)
+        return cls(
+            lon=lon,
+            lat=lat,
+            los=los,
+            sigma=sigma,
+            look_e=look_e,
+            look_n=look_n,
+            look_u=look_u,
+        )
 
 
 class Vertical(DataSet):
@@ -607,15 +625,15 @@ class Vertical(DataSet):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         displacement: np.ndarray,
         sigma: np.ndarray,
-        *,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
     ) -> None:
-        super().__init__(lon, lat, name=name, covariance=covariance)
+        super().__init__(lon=lon, lat=lat, name=name, covariance=covariance)
 
         displacement = np.asarray(displacement, dtype=float)
         sigma = np.asarray(sigma, dtype=float)
@@ -726,7 +744,13 @@ class Vertical(DataSet):
         lon, lat = raw[:, 0], raw[:, 1]
         displacement, sigma = raw[:, 2], raw[:, 3]
 
-        return cls(lon, lat, displacement, sigma, name=_read_names(path))
+        return cls(
+            lon=lon,
+            lat=lat,
+            displacement=displacement,
+            sigma=sigma,
+            name=_read_names(path),
+        )
 
 
 def spatial_covariance(

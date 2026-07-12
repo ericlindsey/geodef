@@ -223,8 +223,8 @@ class TestAbicSweepJax:
         ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
         n = len(lat)
         gnss = GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=ue,
             vn=un,
             vu=uz,

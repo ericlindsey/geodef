@@ -74,8 +74,8 @@ def _make_gnss(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return GNSS(
-        lon,
-        lat,
+        lon=lon,
+        lat=lat,
         ve=ue,
         vn=un,
         vu=uz,
@@ -95,8 +95,8 @@ def _make_insar(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     look_u = np.full(n, 0.92)
     los = look_e * ue + look_n * un + look_u * uz
     return InSAR(
-        lon,
-        lat,
+        lon=lon,
+        lat=lat,
         los=los,
         sigma=np.full(n, sigma),
         look_e=look_e,
@@ -111,8 +111,8 @@ def _make_vertical(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     n = len(lat)
     _, _, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
     return Vertical(
-        lon,
-        lat,
+        lon=lon,
+        lat=lat,
         displacement=uz,
         sigma=np.full(n, sigma),
     )
@@ -399,8 +399,8 @@ class TestRegularization:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=noisy_obs[0::3],
             vn=noisy_obs[1::3],
             vu=noisy_obs[2::3],
@@ -804,8 +804,8 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=noisy_obs[0::3],
             vn=noisy_obs[1::3],
             vu=noisy_obs[2::3],
@@ -876,8 +876,8 @@ class TestABIC:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=noisy_obs[0::3],
             vn=noisy_obs[1::3],
             vu=noisy_obs[2::3],
@@ -1060,8 +1060,8 @@ class TestABICCurve:
         noise = rng.normal(0, 0.005, gnss_clean.n_obs)
         noisy_obs = gnss_clean.obs + noise
         gnss_noisy = GNSS(
-            lon,
-            lat,
+            lon=lon,
+            lat=lat,
             ve=noisy_obs[0::3],
             vn=noisy_obs[1::3],
             vu=noisy_obs[2::3],
