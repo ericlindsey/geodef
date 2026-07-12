@@ -11,6 +11,7 @@ import numpy as np
 
 from geodef import greens as _greens
 from geodef import transforms
+from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 
 if TYPE_CHECKING:
     from geodef.mesh import Mesh
@@ -36,6 +37,9 @@ class Fault:
         vertices: Triangle vertices in local ENU, shape (N, 3, 3). None for rectangular.
         grid_shape: ``(n_length, n_width)`` for structured rectangular grids.
         engine: Green's function engine, ``"okada"`` or ``"tri"``.
+        medium: Elastic half-space parameters used by Green's functions,
+            stress kernels, and moment. Defaults to
+            ``geodef.medium.DEFAULT_MEDIUM`` (30 GPa Poisson solid).
     """
 
     def __init__(
@@ -51,6 +55,7 @@ class Fault:
         vertices: np.ndarray | None = None,
         grid_shape: tuple[int, int] | None = None,
         engine: str = "okada",
+        medium: ElasticMedium | None = None,
     ) -> None:
         lat = np.asarray(lat, dtype=float)
         lon = np.asarray(lon, dtype=float)
@@ -98,6 +103,7 @@ class Fault:
         self._vertices = vertices
         self._grid_shape = grid_shape
         self._engine = engine
+        self._medium = DEFAULT_MEDIUM if medium is None else medium
 
         # Make arrays read-only
         for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
@@ -130,6 +136,7 @@ class Fault:
         width: float,
         n_length: int = 1,
         n_width: int = 1,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its center.
 
@@ -143,6 +150,8 @@ class Fault:
             width: Total down-dip width in meters.
             n_length: Number of patches along strike.
             n_width: Number of patches down dip.
+            medium: Elastic half-space parameters. Defaults to the 30 GPa
+                Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
@@ -205,6 +214,7 @@ class Fault:
             width_arr,
             grid_shape=(n_length, n_width),
             engine="okada",
+            medium=medium,
         )
 
     @classmethod
@@ -219,6 +229,7 @@ class Fault:
         width: float,
         n_length: int = 1,
         n_width: int = 1,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its top-left corner.
 
@@ -271,6 +282,7 @@ class Fault:
             width,
             n_length,
             n_width,
+            medium=medium,
         )
 
     @classmethod
@@ -281,6 +293,7 @@ class Fault:
         ref_lon: float = 0.0,
         *,
         triangles: np.ndarray | None = None,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a triangular fault from ENU vertex coordinates.
 
@@ -303,6 +316,8 @@ class Fault:
             ref_lon: Reference longitude for the ENU origin.
             triangles: Optional connectivity indices into ``vertices``, shape
                 (N, 3). When given, ``vertices`` is treated as a node array.
+            medium: Elastic half-space parameters. Defaults to the 30 GPa
+                Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A triangular Fault with ``engine="tri"``.
@@ -354,12 +369,15 @@ class Fault:
             None,
             vertices=vertices,
             engine="tri",
+            medium=medium,
         )
 
     @classmethod
     def from_mesh(
         cls,
         mesh: "Mesh",
+        *,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a triangular fault from a ``Mesh`` object.
 
@@ -375,7 +393,7 @@ class Fault:
         ref_lat = float(np.mean(mesh.lat))
         ref_lon = float(np.mean(mesh.lon))
         vertices = mesh.vertices_enu(ref_lat, ref_lon)
-        return cls.from_triangles(vertices, ref_lat, ref_lon)
+        return cls.from_triangles(vertices, ref_lat, ref_lon, medium=medium)
 
     @classmethod
     def load(
@@ -385,6 +403,7 @@ class Fault:
         format: str | None = None,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Load a fault model from a text file.
 
@@ -397,6 +416,9 @@ class Fault:
             ref_lat: Reference latitude for formats that use local Cartesian
                 coordinates (e.g. ``"seg"``). Ignored for geographic formats.
             ref_lon: Reference longitude for local Cartesian formats.
+            medium: Elastic half-space parameters. Fault files store geometry
+                only, so the medium is always supplied at load time; defaults
+                to ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A Fault object.
@@ -418,17 +440,19 @@ class Fault:
             from geodef.mesh import Mesh
 
             mesh = Mesh.load(fname, format="ned")
-            return cls.from_mesh(mesh)
+            return cls.from_mesh(mesh, medium=medium)
 
         if format == "seg":
-            return cls._load_seg(fname, ref_lat, ref_lon)
-
-        filedata = np.loadtxt(fname, ndmin=2)
-        if format == "center":
-            return cls._load_center(filedata)
-        elif format == "topleft":
-            return cls._load_topleft(filedata)
-        raise ValueError(f"Unknown format: {format!r}")
+            fault = cls._load_seg(fname, ref_lat, ref_lon)
+        else:
+            filedata = np.loadtxt(fname, ndmin=2)
+            if format == "center":
+                fault = cls._load_center(filedata)
+            elif format == "topleft":
+                fault = cls._load_topleft(filedata)
+            else:
+                raise ValueError(f"Unknown format: {format!r}")
+        return fault if medium is None else fault.with_medium(medium)
 
     @classmethod
     def _load_center(cls, filedata: np.ndarray) -> "Fault":
@@ -688,6 +712,37 @@ class Fault:
         return self._engine
 
     @property
+    def medium(self) -> ElasticMedium:
+        """Elastic half-space parameters used by this fault's computations."""
+        return self._medium
+
+    def with_medium(self, medium: ElasticMedium) -> "Fault":
+        """Return a copy of this fault with different elastic parameters.
+
+        The geometry arrays are shared (they are immutable); only the medium
+        differs.
+
+        Args:
+            medium: Elastic half-space parameters for the new fault.
+
+        Returns:
+            A new ``Fault`` with the same geometry and the given medium.
+        """
+        return Fault(
+            self._lat,
+            self._lon,
+            self._depth,
+            self.strike,
+            self.dip,
+            self._length,
+            self._width,
+            vertices=self._vertices,
+            grid_shape=self._grid_shape,
+            engine=self._engine,
+            medium=medium,
+        )
+
+    @property
     def vertices(self) -> np.ndarray | None:
         """Triangle vertices in local ENU, shape (N, 3, 3).
 
@@ -751,6 +806,7 @@ class Fault:
         Raises:
             ValueError: If kind is unknown or engine doesn't support it.
         """
+        nu = self._medium.poisson_ratio
         if self._engine == "okada":
             assert self._length is not None and self._width is not None
             if kind == "displacement":
@@ -764,6 +820,7 @@ class Fault:
                     self.dip,
                     self._length,
                     self._width,
+                    nu=nu,
                 )
             elif kind == "strain":
                 return _greens.strain_greens(
@@ -776,6 +833,7 @@ class Fault:
                     self.dip,
                     self._length,
                     self._width,
+                    nu=nu,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -790,6 +848,7 @@ class Fault:
                     self._lon,
                     self._depth,
                     self._vertices,
+                    nu=nu,
                 )
             elif kind == "strain":
                 return _greens.tri_strain_greens(
@@ -799,6 +858,7 @@ class Fault:
                     self._lon,
                     self._depth,
                     self._vertices,
+                    nu=nu,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -850,20 +910,23 @@ class Fault:
     # Stress kernel
     # ==================================================================
 
-    def stress_kernel(self, mu: float = 30e9) -> np.ndarray:
+    def stress_kernel(self, mu: float | None = None) -> np.ndarray:
         """Compute the stress interaction kernel for the fault.
 
         Evaluates strain Green's functions at patch centroid depths using
         okada92 (DC3D) for internal deformation.
 
         Args:
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Stress kernel matrix K, shape (4*N, 2*N).
         """
         from geodef import cache as _cache
 
+        if mu is None:
+            mu = self._medium.shear_modulus
         key = _build_stress_key(self, mu)
         return _cache.cached_compute(
             key,
@@ -882,25 +945,29 @@ class Fault:
     # Moment and magnitude
     # ==================================================================
 
-    def moment(self, slip: np.ndarray, mu: float = 30e9) -> float:
+    def moment(self, slip: np.ndarray, mu: float | None = None) -> float:
         """Compute scalar seismic moment.
 
         Args:
             slip: Slip magnitude per patch, shape (N,), in meters.
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Seismic moment in N-m.
         """
+        if mu is None:
+            mu = self._medium.shear_modulus
         slip = np.asarray(slip, dtype=float)
         return float(mu * np.sum(slip * self.areas))
 
-    def magnitude(self, slip: np.ndarray, mu: float = 30e9) -> float:
+    def magnitude(self, slip: np.ndarray, mu: float | None = None) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:
             slip: Slip magnitude per patch, shape (N,), in meters.
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Moment magnitude Mw.
@@ -1319,6 +1386,7 @@ def _build_stress_key(fault: Fault, mu: float) -> dict:
     key: dict = {
         "kind": "stress_kernel",
         "mu": mu,
+        "nu": fault._medium.poisson_ratio,
         "fault_lat": fault._lat,
         "fault_lon": fault._lon,
         "fault_depth": fault._depth,

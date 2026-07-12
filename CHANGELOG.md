@@ -9,6 +9,13 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Added
 
+- `geodef.medium.ElasticMedium`: one declared home for half-space elastic
+  parameters. `Fault` accepts `medium=` in every factory (and
+  `fault.with_medium(...)` copies a fault with new parameters); Poisson's
+  ratio now actually reaches the dislocation kernels from the high-level
+  path (it was previously frozen at 0.25 below `Fault.greens_matrix`), and
+  `moment`/`magnitude`/`stress_kernel` default their `mu` to the fault's
+  medium. Green's and stress cache keys include the medium.
 - MIT `LICENSE`, `CITATION.cff` citation metadata, and complete package
   metadata (authors, URLs, classifiers, dependency minimums).
 - `py.typed` marker: downstream type checkers now see GeoDef's annotations.

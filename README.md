@@ -46,6 +46,7 @@ notes).
 | Rectangular dislocations (surface + depth) | `okada85`, `okada92`, `okada` | base install |
 | Triangular dislocations | `tri` | base install |
 | Fault geometry, forward models, moment | `fault` | base install |
+| Elastic medium parameters | `medium` | base install |
 | GNSS / InSAR / vertical datasets | `data` | base install |
 | Green's assembly, Laplacians, caching | `greens`, `cache` | base install |
 | Linear slip inversion + model assessment | `invert` | base install |
@@ -162,6 +163,7 @@ Full API docs with examples are in `docs/`:
 | Doc | Module |
 |-----|--------|
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
+| [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |
 | [`docs/data.md`](docs/data.md) | `GNSS`, `InSAR`, `Vertical` data types |
 | [`docs/greens.md`](docs/greens.md) | Green's matrix assembly and Laplacian operators |
 | [`docs/invert.md`](docs/invert.md) | Inversion, regularization, hyperparameter tuning, model assessment |

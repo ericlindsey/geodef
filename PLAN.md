@@ -246,13 +246,13 @@ semantics that later objects will wrap.
 
 ### 0.4 Make caching and material parameters provably safe
 
-- [ ] Include every input that affects a cached result in its key: elastic
+- [x] Include every input that affects a cached result in its key: elastic
   parameters, backend precision, and a kernel/format version stamp that is
   bumped whenever an engine's numerics change. Add tests asserting that each
   varied input produces a cache miss.
 - [x] Define the cache invalidation story: what a version bump invalidates,
   how users clear stale entries, and what `cache.info()` reports about them.
-- [ ] Thread Poisson's ratio through `Fault.greens_matrix` and the assembly
+- [x] Thread Poisson's ratio through `Fault.greens_matrix` and the assembly
   layer instead of freezing the kernel default, and give `mu` one declared
   home shared by `moment`, `magnitude`, and `stress_kernel`. Design this as a
   small elastic-medium parameter object so layered engines (6.2) extend it

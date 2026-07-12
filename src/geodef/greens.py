@@ -630,6 +630,7 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
         "fault_strike": fault.strike,
         "fault_dip": fault.dip,
         "engine": fault.engine,
+        "nu": fault.medium.poisson_ratio,
         "obs_lat": data.lat,
         "obs_lon": data.lon,
         "data_class": type(data).__name__,

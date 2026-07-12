@@ -28,6 +28,7 @@ DOCUMENTED_MODULES = [
     "gradients",
     "greens",
     "invert",
+    "medium",
     "mesh",
     "okada",
     "plot",
