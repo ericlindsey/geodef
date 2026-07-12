@@ -92,9 +92,7 @@ class TestTriJaxReference:
         triangle = ref["tri"].astype(float)
         slip = ref["slip"].astype(float)
         nu = float(ref["nu"])
-        disp_func = (
-            tdcalc.TDdispFS if config_name.startswith("FS") else tdcalc.TDdispHS
-        )
+        disp_func = tdcalc.TDdispFS if config_name.startswith("FS") else tdcalc.TDdispHS
 
         disp = backend.to_numpy(disp_func(obs, triangle, slip, nu))
 
@@ -142,20 +140,19 @@ class TestFloat32Mode:
         for r, x in zip(result, ref):
             assert backend.to_numpy(r).dtype == np.float32
             np.testing.assert_allclose(
-                backend.to_numpy(r), backend.to_numpy(x),
-                rtol=2e-3, atol=2e-4 * scale,
+                backend.to_numpy(r),
+                backend.to_numpy(x),
+                rtol=2e-3,
+                atol=2e-4 * scale,
             )
 
     def test_tri_displacement_close_to_float64(self) -> None:
         rng = np.random.default_rng(4)
         nobs = 100
         obs = np.column_stack(
-            [rng.uniform(-2e4, 2e4, nobs), rng.uniform(-2e4, 2e4, nobs),
-             np.zeros(nobs)]
+            [rng.uniform(-2e4, 2e4, nobs), rng.uniform(-2e4, 2e4, nobs), np.zeros(nobs)]
         )
-        triangle = np.array(
-            [[0.0, 0.0, -1e3], [8e3, 2e3, -4e3], [1e3, 6e3, -6e3]]
-        )
+        triangle = np.array([[0.0, 0.0, -1e3], [8e3, 2e3, -4e3], [1e3, 6e3, -6e3]])
         slip = np.array([1.0, 0.5, 0.2])
 
         backend.set_precision("float64")
@@ -203,8 +200,15 @@ class TestAbicSweepJax:
         from geodef.invert import abic_curve
 
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=15e3, strike=320.0, dip=15.0,
-            length=80e3, width=40e3, n_length=4, n_width=3,
+            lat=0.0,
+            lon=100.0,
+            depth=15e3,
+            strike=320.0,
+            dip=15.0,
+            length=80e3,
+            width=40e3,
+            n_length=4,
+            n_width=3,
         )
         lat_1d = np.linspace(-0.5, 0.5, 5)
         lon_1d = np.linspace(99.5, 100.5, 5)
@@ -219,8 +223,14 @@ class TestAbicSweepJax:
         ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
         n = len(lat)
         gnss = GNSS(
-            lon, lat, ve=ue, vn=un, vu=uz,
-            se=np.full(n, 0.001), sn=np.full(n, 0.001), su=np.full(n, 0.001),
+            lon,
+            lat,
+            ve=ue,
+            vn=un,
+            vu=uz,
+            se=np.full(n, 0.001),
+            sn=np.full(n, 0.001),
+            su=np.full(n, 0.001),
         )
 
         result_np = abic_curve(fault, gnss, smoothing_range=(1e0, 1e6), n=12)
@@ -230,9 +240,7 @@ class TestAbicSweepJax:
         np.testing.assert_allclose(
             result_jax.abic_values, result_np.abic_values, rtol=1e-8
         )
-        np.testing.assert_allclose(
-            result_jax.misfits, result_np.misfits, rtol=1e-8
-        )
+        np.testing.assert_allclose(result_jax.misfits, result_np.misfits, rtol=1e-8)
         np.testing.assert_allclose(
             result_jax.model_norms, result_np.model_norms, rtol=1e-8
         )

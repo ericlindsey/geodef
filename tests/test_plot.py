@@ -693,9 +693,7 @@ class TestPlotVectors:
 
     def test_vertical_dots_constant_size(self, gnss_3comp, rect_fault):
         """Vertical dots are a single fixed size, independent of value/scale."""
-        ax = geodef.plot.vectors(
-            gnss_3comp, rect_fault, components="vertical", scale=5
-        )
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="vertical", scale=5)
         sc = [
             c
             for c in ax.get_children()

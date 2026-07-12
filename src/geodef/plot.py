@@ -412,9 +412,7 @@ def _plot_patch_scalar(
     from matplotlib.collections import PolyCollection
 
     if coords not in ("fault", "geographic"):
-        raise ValueError(
-            f"coords must be 'fault' or 'geographic', got {coords!r}"
-        )
+        raise ValueError(f"coords must be 'fault' or 'geographic', got {coords!r}")
 
     ax = _ensure_axes(ax)
     if coords == "fault":

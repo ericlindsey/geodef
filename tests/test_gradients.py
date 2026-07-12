@@ -157,9 +157,7 @@ class TestTriForward:
 class TestTriJacobian:
     def test_vertex_jacobian_matches_finite_differences(self):
         obs = _OBS[:2]
-        d, d_dv, d_dslip = gradients.tri_displacement_jacobian(
-            _VERTICES, _SLIP, obs
-        )
+        d, d_dv, d_dslip = gradients.tri_displacement_jacobian(_VERTICES, _SLIP, obs)
         assert d.shape == (2, 3)
         assert d_dv.shape == (2, 3, 3, 3)
         assert d_dslip.shape == (2, 3, 3)
@@ -380,9 +378,7 @@ class TestTriGreens:
         poison from ``arccos`` at ``+/-1``). FD agreement in the smooth
         regime is covered by ``test_vertex_jacobian_matches_finite_differences``.
         """
-        mesh = np.array(
-            [[[0.0, 0.0, 0.0], [0.0, 0.0, -5e3], [6e3, 0.0, -3e3]]]
-        )
+        mesh = np.array([[[0.0, 0.0, 0.0], [0.0, 0.0, -5e3], [6e3, 0.0, -3e3]]])
         obs = np.array([[3e3, 2e3, 0.0]])
         jac = backend.to_numpy(jax.jacfwd(lambda v: gradients.tri_greens(v, obs))(mesh))
         assert np.all(np.isfinite(jac))
