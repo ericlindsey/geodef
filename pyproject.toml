@@ -65,13 +65,13 @@ packages = ["src/geodef"]
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "nbclient",
-    "nbformat",
-    "ruff",
-    "mypy",
-    "ipykernel",
-    "ipywidgets",
+    "pytest>=8.0",
+    "nbclient>=0.9",
+    "nbformat>=5.9",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "ipykernel>=6.29",
+    "ipywidgets>=8.1",
 ]
 
 [tool.pytest.ini_options]
