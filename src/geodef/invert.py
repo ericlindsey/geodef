@@ -643,12 +643,10 @@ class LinearSystem:
             eig_LtL = np.linalg.eigvalsh(self.LtL)
             self.__dict__["_eig_LtL"] = eig_LtL
 
-        eig_prior = alpha2 * np.abs(eig_LtL)
-        eig_prior = eig_prior[eig_prior > 0]
+        eig_prior = alpha2 * _rank_positive_eigs(eig_LtL)
         abic2 = float(np.sum(np.log(eig_prior)))
 
-        eig_post = np.abs(np.linalg.eigvalsh(H))
-        eig_post = eig_post[eig_post > 0]
+        eig_post = _rank_positive_eigs(np.linalg.eigvalsh(H))
         abic3 = float(np.sum(np.log(eig_post)))
 
         abic = abic1 - abic2 + abic3
@@ -705,7 +703,7 @@ class LinearSystem:
         if eig_LtL is None:
             eig_LtL = np.linalg.eigvalsh(self.LtL)
             self.__dict__["_eig_LtL"] = eig_LtL
-        eig_pos = np.abs(eig_LtL)[np.abs(eig_LtL) > 0]
+        eig_pos = _rank_positive_eigs(eig_LtL)
         abic2 = len(eig_pos) * np.log(lambdas) + np.sum(np.log(eig_pos))
 
         _, abic3 = jnp.linalg.slogdet(H)
@@ -1059,26 +1057,44 @@ class LinearSystem:
 
         return diags
 
-    def model_covariance(self, result: InversionResult) -> np.ndarray:
+    def model_covariance(
+        self, result: InversionResult, kind: str = "posterior"
+    ) -> np.ndarray:
         """Compute the model covariance matrix.
 
-        For the unregularized case::
+        For the unregularized case both kinds reduce to::
 
             Cm = (G^T W G)^{-1}
 
-        For the regularized case (Tarantola, 2005)::
+        For the regularized case, with ``H = G^T W G + lambda L^T L``
+        (see docs/conventions.md):
 
-            H_inv = (G^T W G + lambda L^T L)^{-1}
-            Cm = H_inv @ G^T W G @ H_inv
+        - ``kind='posterior'`` (default) — the linear-Gaussian posterior
+          covariance ``Cm = H^{-1}``, treating ``lambda L^T L`` as a prior
+          precision. This is the quantity taught in Tutorial 09 and the one
+          consistent with the Bayesian slip draws in ``geodef.bayes``.
+        - ``kind='estimator'`` — the frequentist covariance of the penalized
+          estimator under data noise alone (Tarantola, 2005)::
+
+              Cm = H^{-1} @ G^T W G @ H^{-1}
+
+          It excludes the bias the regularization introduces, so it shrinks
+          to zero as ``lambda`` grows; interpret it together with the
+          resolution matrix.
 
         Args:
             result: Output from ``invert()``.
+            kind: ``'posterior'`` (default) or ``'estimator'``.
 
         Returns:
             Model covariance matrix, shape (n_params, n_params).
         """
+        if kind not in ("posterior", "estimator"):
+            raise ValueError(f"kind must be 'posterior' or 'estimator', got {kind!r}")
         if self.L is not None and result.smoothing_strength is not None:
             H = self.GtWG + result.smoothing_strength * self.LtL
+            if kind == "posterior":
+                return np.linalg.inv(H)
             H_inv = np.linalg.inv(H)
             return H_inv @ self.GtWG @ H_inv
         return np.linalg.inv(self.GtWG)
@@ -1099,16 +1115,20 @@ class LinearSystem:
             return np.linalg.solve(H, self.GtWG)
         return np.linalg.solve(self.GtWG, self.GtWG)
 
-    def model_uncertainty(self, result: InversionResult) -> np.ndarray:
+    def model_uncertainty(
+        self, result: InversionResult, kind: str = "posterior"
+    ) -> np.ndarray:
         """Compute per-parameter 1-sigma uncertainty from model covariance.
 
         Args:
             result: Output from ``invert()``.
+            kind: Covariance kind, ``'posterior'`` (default) or
+                ``'estimator'``; see :meth:`model_covariance`.
 
         Returns:
             Uncertainty array, shape (n_params,).
         """
-        Cm = self.model_covariance(result)
+        Cm = self.model_covariance(result, kind=kind)
         return np.sqrt(np.maximum(np.diag(Cm), 0.0))
 
 
@@ -1211,12 +1231,10 @@ def compute_abic(
     total = max(misfit + penalty, 1e-300)
     abic1 = n_data * np.log(total)
 
-    eig_prior = alpha2 * np.abs(np.linalg.eigvalsh(LtL))
-    eig_prior = eig_prior[eig_prior > 0]
+    eig_prior = alpha2 * _rank_positive_eigs(np.linalg.eigvalsh(LtL))
     abic2 = np.sum(np.log(eig_prior))
 
-    eig_post = np.abs(np.linalg.eigvalsh(H))
-    eig_post = eig_post[eig_post > 0]
+    eig_post = _rank_positive_eigs(np.linalg.eigvalsh(H))
     abic3 = np.sum(np.log(eig_post))
 
     return float(abic1 - abic2 + abic3)
@@ -1613,22 +1631,25 @@ def model_covariance(
     result: InversionResult,
     fault: Fault,
     datasets: DataSet | list[DataSet],
+    kind: str = "posterior",
 ) -> np.ndarray:
     """Compute the model covariance matrix.
 
-    For the unregularized case::
+    For the unregularized case both kinds reduce to
+    ``Cm = (G^T W G)^{-1}``. For the regularized case, with
+    ``H = G^T W G + lambda L^T L`` (see docs/conventions.md):
 
-        Cm = (G^T W G)^{-1}
-
-    For the regularized case (Tarantola, 2005)::
-
-        H_inv = (G^T W G + lambda L^T L)^{-1}
-        Cm = H_inv @ G^T W G @ H_inv
+    - ``kind='posterior'`` (default) — the linear-Gaussian posterior
+      covariance ``Cm = H^{-1}``.
+    - ``kind='estimator'`` — the frequentist covariance of the penalized
+      estimator under data noise alone (Tarantola, 2005),
+      ``Cm = H^{-1} G^T W G H^{-1}``.
 
     Args:
         result: Output from ``invert()``.
         fault: Fault geometry.
         datasets: Dataset(s) used in the inversion.
+        kind: ``'posterior'`` (default) or ``'estimator'``.
 
     Returns:
         Model covariance matrix, shape (n_params, n_params).
@@ -1641,7 +1662,7 @@ def model_covariance(
         result.rake,
         result.slip_azimuth,
     )
-    return sys.model_covariance(result)
+    return sys.model_covariance(result, kind=kind)
 
 
 def model_resolution(
@@ -1680,6 +1701,7 @@ def model_uncertainty(
     result: InversionResult,
     fault: Fault,
     datasets: DataSet | list[DataSet],
+    kind: str = "posterior",
 ) -> np.ndarray:
     """Compute per-parameter 1-sigma uncertainty from model covariance.
 
@@ -1689,6 +1711,8 @@ def model_uncertainty(
         result: Output from ``invert()``.
         fault: Fault geometry.
         datasets: Dataset(s) used in the inversion.
+        kind: Covariance kind, ``'posterior'`` (default) or
+            ``'estimator'``; see :func:`model_covariance`.
 
     Returns:
         Uncertainty array, shape (n_params,).
@@ -1701,7 +1725,7 @@ def model_uncertainty(
         result.rake,
         result.slip_azimuth,
     )
-    return sys.model_uncertainty(result)
+    return sys.model_uncertainty(result, kind=kind)
 
 
 # ======================================================================
@@ -2026,6 +2050,21 @@ def _solve_constrained(
         options={"maxiter": 1000, "ftol": 1e-12},
     )
     return result.x
+
+
+def _rank_positive_eigs(eigs: np.ndarray) -> np.ndarray:
+    """Eigenvalues above the numerical-rank cutoff (as in ``matrix_rank``).
+
+    A graph Laplacian's zero modes come back from ``eigvalsh`` as values of
+    order 1e-15 with either sign; a plain ``> 0`` filter keeps them, which
+    injects a spurious ``n0 * log(lambda)`` term into ABIC and biases the
+    selected smoothing strength.
+    """
+    eigs = np.abs(np.asarray(eigs, dtype=float))
+    if eigs.size == 0:
+        return eigs
+    tol = eigs.max() * eigs.size * np.finfo(float).eps
+    return eigs[eigs > tol]
 
 
 def _compute_chi2(

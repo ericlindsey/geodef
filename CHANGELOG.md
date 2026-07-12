@@ -26,8 +26,35 @@ change numerical output beyond documented tolerances are tagged **numerical**.
   examples must parse, documented names must exist.
 - README capability table mapping features to modules and install extras.
 
+### Fixed
+
+- **numerical** — ABIC (all three implementations: `compute_abic`,
+  `LinearSystem` sweeps, and the batched JAX sweep) filtered prior
+  eigenvalues with a plain `> 0` test, so a Laplacian's numerically-zero
+  modes (~1e-15) leaked a spurious `n0 * log(lambda)` term into the
+  criterion and biased automatic smoothing selection. The same filter
+  appeared in the Bayesian posteriors' prior pseudo-determinants
+  (`RectPosterior`, `TriPosterior`, `SlipPosterior`), biasing sampled
+  smoothing strengths identically. Eigenvalues are now cut at a
+  numerical-rank threshold (as in `matrix_rank`) everywhere. A new
+  convention test pins the scaling invariance this restores.
+- The regularized objective was written as `lambda^2 ||L m||^2` in
+  tutorials 04/09/10 and the course outline while every solver uses
+  `lambda ||L m||^2`; the text now matches the code, and
+  `docs/conventions.md` records the mapping to published `alpha`/
+  `lambda^2` notations.
+
 ### Changed
 
+- **numerical** — `model_covariance` / `model_uncertainty` now return the
+  linear-Gaussian posterior covariance `H^-1` by default (`H = GtWG +
+  lambda LtL`), matching what Tutorial 09 teaches and what `geodef.bayes`
+  samples; the previous frequentist estimator covariance
+  `H^-1 GtWG H^-1` remains available as `kind='estimator'`. The two agree
+  when unregularized.
+- Every module reference page links `docs/conventions.md`, the single
+  reference for axes, depth sign, angles, units, array ordering, and the
+  regularization/misfit conventions (enforced by a docs test).
 - Disk-cache keys now include the implicit compute context: a
   `cache.KERNEL_VERSION` stamp plus the active backend and precision, so
   kernel fixes and float32/float64 or NumPy/JAX switches can never serve a
