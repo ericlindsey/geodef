@@ -1,10 +1,21 @@
 """Tests for geodef.mesh — Mesh dataclass, I/O, and helpers."""
 
+import importlib.util
+
 import numpy as np
 import numpy.testing as npt
 import pytest
 
 from geodef.mesh import Mesh, _compute_strike_dip
+
+requires_meshpy = pytest.mark.skipif(
+    importlib.util.find_spec("meshpy") is None,
+    reason="requires meshpy (install with the 'mesh' extra)",
+)
+requires_netcdf4 = pytest.mark.skipif(
+    importlib.util.find_spec("netCDF4") is None,
+    reason="requires netCDF4 (install with the 'mesh' extra)",
+)
 
 # ======================================================================
 # Fixtures
@@ -485,6 +496,7 @@ class TestFaultLoadNed:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromPolygon:
     def test_simple_rectangle(self):
         from geodef.mesh import from_polygon
@@ -616,6 +628,7 @@ class TestFromPolygon:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromTrace:
     def test_simple_constant_dip(self):
         from geodef.mesh import from_trace
@@ -998,6 +1011,8 @@ class TestKmToDeg:
         )
 
 
+@requires_meshpy
+@requires_netcdf4
 class TestFromSlab2:
     def test_requires_netcdf4(self, monkeypatch):
         """from_slab2 should give a clear error when netCDF4 is missing."""
@@ -1243,6 +1258,7 @@ class TestFromSlab2:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromPoints:
     def test_basic(self):
         from geodef.mesh import from_points
@@ -1343,6 +1359,7 @@ class TestFromPoints:
 # ======================================================================
 
 
+@requires_meshpy
 class TestIntegration:
     def test_from_trace_to_fault_to_greens(self):
         """Full pipeline: from_trace → Fault → greens matrix."""
