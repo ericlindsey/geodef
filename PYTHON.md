@@ -160,7 +160,8 @@ def calculate_total(items: list[dict], tax_rate: float = 0.0) -> float:
 
 ## Before Committing
 
-- [ ] All tests pass
+- [ ] Tests relevant to the change pass; run the full routine suite when a pull
+      request or major change is wrapping up
 - [ ] Type checking passes (mypy)
 - [ ] Code formatter and linter pass (Ruff)
 - [ ] All functions have docstrings and type hints

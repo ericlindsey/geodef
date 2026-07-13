@@ -66,6 +66,8 @@ See `docs/` for per-module API reference with examples.
 ## Important Rules
 
 - **Read `PYTHON.md` before editing any code.** Mandatory style guidelines, tooling requirements, and coding standards.
+- Work directly on coding tasks. Do not use subagents unless the user explicitly
+  requests delegation or parallel agent work.
 - Use red/green TDD. Write tests first, then write code to pass the tests.
 - Use `uv` for package management. Use `pytest` for testing. Install with `uv pip install -e .`.
 - All new functions must have type hints, docstrings, and tests.
@@ -85,13 +87,13 @@ See `docs/` for per-module API reference with examples.
 
 ## Git Workflow
 
-**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave the test suite passing and represent a coherent, independently revertable change.
+**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave its relevant tests passing and represent a coherent, independently revertable change.
 
 Commit messages should describe the change without AI co-author trailers.
 
 ```bash
-# Run tests before committing
-uv run pytest
+# Run the tests relevant to this contained change before committing
+uv run pytest tests/test_module.py
 
 # Stage specific files (never `git add -A` blindly)
 git add src/geodef/module.py tests/test_module.py
@@ -112,6 +114,11 @@ Commit granularity guidelines:
 ---
 
 ## Testing
+
+For a small, contained commit, run the directly relevant test module(s) or test
+selection. Expand the selection when shared interfaces or cross-module behavior
+are affected. Run the full routine suite when wrapping up a pull request or a
+major change:
 
 ```bash
 uv run pytest

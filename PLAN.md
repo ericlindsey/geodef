@@ -12,7 +12,8 @@ completed work; this document describes what remains and why it matters.
 
 **Read `PYTHON.md` before editing any code.** Use red/green TDD, update relevant
 documentation with every public change, and commit each independently useful
-unit with the full routine test suite passing.
+unit with its relevant tests passing. Run the full routine suite when a pull
+request or major change is wrapping up.
 
 ---
 
