@@ -1,5 +1,7 @@
 # `geodef.invert` — Inversion
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 One-call inversion solving `d = Gm` for fault slip.
 
 ## What problem is being solved?
@@ -94,7 +96,7 @@ chosen slip basis automatically.
 | `slip_vector` | `(2N,)` or `(N,)` | Blocked `[ss_0..ss_N, ds_0..ds_N]`, or one amplitude per patch |
 | `predicted` | `(M,)` | Forward-modeled observations |
 | `residuals` | `(M,)` | `obs - predicted` |
-| `chi2` | scalar | Reduced chi-squared |
+| `reduced_chi2` | scalar | Reduced chi-squared, `r^T W r / (M - P)` |
 | `rms` | scalar | RMS misfit |
 | `moment` | scalar | Seismic moment in N·m |
 | `Mw` | scalar | Moment magnitude |
@@ -242,12 +244,25 @@ Notes:
 
 These are computed on demand (not during `invert()`) as they require forming and inverting dense matrices.
 
-### `model_covariance(result, fault, datasets) → np.ndarray`
+### `model_covariance(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
 Cm = geodef.model_covariance(result, fault, [gnss, insar])
 # shape (P, P), where P is 2N for components='both' and N otherwise
 ```
+
+With `H = GᵀWG + λ LᵀL` (the convention in
+[`conventions.md`](conventions.md)):
+
+- `kind='posterior'` (default) is the linear-Gaussian posterior covariance
+  `H⁻¹`, treating `λ LᵀL` as a prior precision — the quantity Tutorial 09
+  teaches and the one consistent with `geodef.bayes` slip draws.
+- `kind='estimator'` is the frequentist covariance of the penalized
+  estimator under data noise alone, `H⁻¹ GᵀWG H⁻¹` (Tarantola, 2005). It
+  omits regularization bias and shrinks to zero as `λ` grows, so read it
+  together with the resolution matrix.
+
+Both reduce to `(GᵀWG)⁻¹` when the inversion is unregularized.
 
 ### `model_resolution(result, fault, datasets) → np.ndarray`
 
@@ -256,7 +271,7 @@ R = geodef.model_resolution(result, fault, [gnss, insar])
 # shape (P, P); R=I for perfect resolution, diag(R)<1 where regularization dominates
 ```
 
-### `model_uncertainty(result, fault, datasets) → np.ndarray`
+### `model_uncertainty(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
 sigma = geodef.model_uncertainty(result, fault, [gnss, insar])

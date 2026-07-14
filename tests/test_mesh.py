@@ -1,10 +1,21 @@
 """Tests for geodef.mesh — Mesh dataclass, I/O, and helpers."""
 
+import importlib.util
+
 import numpy as np
 import numpy.testing as npt
 import pytest
 
 from geodef.mesh import Mesh, _compute_strike_dip
+
+requires_meshpy = pytest.mark.skipif(
+    importlib.util.find_spec("meshpy") is None,
+    reason="requires meshpy (install with the 'mesh' extra)",
+)
+requires_netcdf4 = pytest.mark.skipif(
+    importlib.util.find_spec("netCDF4") is None,
+    reason="requires netCDF4 (install with the 'mesh' extra)",
+)
 
 # ======================================================================
 # Fixtures
@@ -374,8 +385,8 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         tris = np.array([[0, 1, 2], [1, 3, 2]])
-        f_conn = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
-        f_expl = Fault.from_triangles(nodes[tris], 0.0, 100.0)
+        f_conn = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
+        f_expl = Fault.from_triangles(nodes[tris], ref_lat=0.0, ref_lon=100.0)
         assert f_conn.n_patches == 2
         np.testing.assert_allclose(f_conn._vertices, f_expl._vertices)
         np.testing.assert_allclose(f_conn.strike, f_expl.strike)
@@ -388,7 +399,7 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         tris = np.array([[1, 3, 2], [0, 1, 2]])  # swapped order
-        fault = Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+        fault = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
         np.testing.assert_allclose(fault._vertices[0], nodes[tris[0]])
 
     def test_connectivity_bad_node_shape_raises(self):
@@ -396,14 +407,18 @@ class TestFaultFromTriangles:
 
         verts = np.zeros((2, 3, 3))
         with pytest.raises(ValueError, match="node array"):
-            Fault.from_triangles(verts, 0.0, 100.0, triangles=np.array([[0, 1, 2]]))
+            Fault.from_triangles(
+                verts, ref_lat=0.0, ref_lon=100.0, triangles=np.array([[0, 1, 2]])
+            )
 
     def test_connectivity_index_out_of_range_raises(self):
         from geodef.fault import Fault
 
         nodes = np.zeros((3, 3))
         with pytest.raises(ValueError, match="out of range"):
-            Fault.from_triangles(nodes, 0.0, 100.0, triangles=np.array([[0, 1, 5]]))
+            Fault.from_triangles(
+                nodes, ref_lat=0.0, ref_lon=100.0, triangles=np.array([[0, 1, 5]])
+            )
 
 
 class TestFaultFromMesh:
@@ -485,6 +500,7 @@ class TestFaultLoadNed:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromPolygon:
     def test_simple_rectangle(self):
         from geodef.mesh import from_polygon
@@ -616,6 +632,7 @@ class TestFromPolygon:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromTrace:
     def test_simple_constant_dip(self):
         from geodef.mesh import from_trace
@@ -998,6 +1015,8 @@ class TestKmToDeg:
         )
 
 
+@requires_meshpy
+@requires_netcdf4
 class TestFromSlab2:
     def test_requires_netcdf4(self, monkeypatch):
         """from_slab2 should give a clear error when netCDF4 is missing."""
@@ -1243,6 +1262,7 @@ class TestFromSlab2:
 # ======================================================================
 
 
+@requires_meshpy
 class TestFromPoints:
     def test_basic(self):
         from geodef.mesh import from_points
@@ -1343,6 +1363,7 @@ class TestFromPoints:
 # ======================================================================
 
 
+@requires_meshpy
 class TestIntegration:
     def test_from_trace_to_fault_to_greens(self):
         """Full pipeline: from_trace → Fault → greens matrix."""

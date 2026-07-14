@@ -86,8 +86,8 @@ def gnss_signed(fault3x3):
     sigma = 0.001
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),
@@ -134,8 +134,8 @@ def gnss_1x2_signed(fault1x2):
     sigma = 0.003
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),
@@ -722,8 +722,8 @@ def gnss_positive(fault3x3):
     sigma = 0.001
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),

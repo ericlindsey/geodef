@@ -12,7 +12,8 @@ completed work; this document describes what remains and why it matters.
 
 **Read `PYTHON.md` before editing any code.** Use red/green TDD, update relevant
 documentation with every public change, and commit each independently useful
-unit with the full routine test suite passing.
+unit with its relevant tests passing. Run the full routine suite when a pull
+request or major change is wrapping up.
 
 ---
 
@@ -146,6 +147,37 @@ These are acceptance criteria for every roadmap item.
     backend state, initialization, and posterior diagnostics demand substantial
     package knowledge. A guided setup layer can reduce this without weakening
     the expert API.
+13. **Cache keys are incomplete relative to the computation's inputs.** The
+    Green's-matrix cache key omits Poisson's ratio, the backend precision, and
+    any kernel or format version. Today `nu` is unreachable from the `Fault`
+    path so keys cannot collide yet, but a float32 run and a float64 run share
+    a key, and any future kernel fix would silently serve stale matrices. The
+    cache is a trust feature; its keys must be provably complete.
+14. **Elastic material parameters are implicit.** `nu=0.25` is hard-coded
+    below `Fault.greens_matrix`, and `mu=30e9` appears as an independent
+    default in `moment`, `magnitude`, and `stress_kernel`. There is no single
+    place where a user declares the elastic medium, which also blocks the
+    planned layered-earth engines from having a clean parameter home.
+15. **Release and legal scaffolding is missing.** The repository has no
+    LICENSE, no citation metadata, no CI configuration at all, no `py.typed`
+    marker despite a fully typed and mypy-clean API, and the version string is
+    duplicated between `pyproject.toml` and `__init__.py`. The ported engines
+    derive from the author's own MIT/BSD sources (`geometry/`), so licensing
+    is tractable — but it must be declared before any public release.
+16. **Top-level names collide.** After `import geodef`, `geodef.invert` is the
+    function and shadows the `invert` module, while `geodef.data` and
+    `geodef.fault` remain modules — so `geodef.invert.LinearSystem` fails and
+    docs that qualify names through the module path silently break. Three
+    different callables are named `resolution` (`greens.resolution`,
+    `plot.resolution`, `model_resolution`), and `plot.map` shadows a builtin.
+17. **Taught workflows lack API support.** The tutorials teach checkerboard
+    and spike resolution tests, but the package offers no synthetic-test
+    helpers; every student re-implements the pattern from notebook cells.
+18. **Interseismic coupling has no dedicated vocabulary.** Coupling is one of
+    the package's two declared target applications, yet there is no backslip
+    convention, no coupling-fraction (0–1) parameterization, no plate-rate
+    bound helper, and no moment-deficit-rate output; `euler` block velocities
+    are not connected to the inversion layer.
 
 ---
 
@@ -156,53 +188,77 @@ semantics that later objects will wrap.
 
 ### 0.1 Audit and freeze mathematical conventions
 
-- [ ] Declare one regularization convention everywhere:
+- [x] Declare one regularization convention everywhere:
   `Phi = r.T @ W @ r + lambda * ||L(m - m_ref)||^2`, with augmented rows
   `sqrt(lambda) * L`. Correct the tutorial equations and define how published
   sources using `alpha` or `lambda^2` map to GeoDef.
-- [ ] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
+- [x] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
   geometry search, and Bayesian fixed-lambda modes.
-- [ ] Introduce unambiguous result names `reduced_chi2` and `chi2`; retain the
-  old `result.chi2` behavior through a documented deprecation rather than a
-  silent semantic change.
-- [ ] Write a single reference page for coordinate axes, depth sign, strike,
+- [x] Define unambiguous vocabulary: `reduced_chi2` is the reduced statistic and
+  `chi2` is the unreduced statistic. Rename the pre-release
+  `InversionResult.chi2` field directly to `reduced_chi2`; reserve `chi2` for
+  unreduced values such as those exposed by dataset diagnostics.
+- [x] Write a single reference page for coordinate axes, depth sign, strike,
   dip, rake, slip azimuth, row order, column order, and units; link every public
   geometry/data API to it.
-- [ ] Settle one geographic ordering policy. Make ambiguous multi-array calls
+- [x] Settle one geographic ordering policy. Make ambiguous multi-array calls
   keyword-only over a deprecation cycle, add explicitly named coordinate
   accessors, and never silently reinterpret existing positional arguments.
 
 ### 0.2 Make invalid physical inputs fail early
 
-- [ ] Centralize validation helpers for one-dimensional numeric arrays, finite
+- [x] Centralize validation helpers for one-dimensional numeric arrays, finite
   values, broadcast rules, angle ranges, positive dimensions/uncertainties, and
   matching lengths. Error messages must identify the argument, received shape
   or range, and required unit.
-- [ ] Validate covariance symmetry and positive definiteness with a useful
+- [x] Validate covariance symmetry and positive definiteness with a useful
   remediation message; provide an explicit escape hatch only for advanced
   semidefinite/operator cases.
-- [ ] Validate or explicitly normalize InSAR look vectors; provide a diagnostic
+- [x] Validate or explicitly normalize InSAR look vectors; provide a diagnostic
   for likely satellite-to-ground versus ground-to-satellite sign reversal.
-- [ ] Add `Fault.validate()`, `DataSet.validate()`, and `Mesh.validate()` reports
+- [x] Add `Fault.validate()`, `DataSet.validate()`, and `Mesh.validate()` reports
   for interactive workflows, including patch/triangle degeneracy, above-surface
   sources, extreme aspect ratios, duplicate stations, and coordinate bounds.
-- [ ] Replace user-triggerable `assert` statements in public paths with typed,
+- [x] Replace user-triggerable `assert` statements in public paths with typed,
   informative exceptions; keep trace-only kernel assertions private.
 
-### 0.3 Repair packaging and documentation drift
+### 0.3 Repair packaging, licensing, and documentation drift
 
-- [ ] Make optional extras match actual imports (`meshpy`, `netCDF4`, `pyproj`,
+- [x] Choose and add a LICENSE, confirm attribution for the ported engines
+  (the `geometry/` sources are the author's own MIT/BSD code), add a
+  `CITATION.cff`, and complete `pyproject.toml` metadata (license, authors,
+  URLs, classifiers, readme) before any public release.
+- [x] Stand up CI from scratch (none exists): ruff, mypy, the routine test
+  suite, and executed tutorials, on every push.
+- [x] Ship a `py.typed` marker so downstream type checkers see the existing
+  annotations, and single-source the package version instead of duplicating
+  it between `pyproject.toml` and `__init__.py`.
+- [x] Make optional extras match actual imports (`meshpy`, `netCDF4`, `pyproj`,
   Cartopy, JAX, and BlackJAX), and test each documented install tier in CI.
-- [ ] Test the declared Python/NumPy/SciPy version range, including the oldest
+- [x] Test the declared Python/NumPy/SciPy version range, including the oldest
   supported and newest released combinations; calibrate reference tolerances
   from physical/numerical requirements rather than one platform's roundoff.
-- [ ] Remove hard-coded test counts and stale ten-versus-eleven tutorial status
+- [x] Remove hard-coded test counts and stale ten-versus-eleven tutorial status
   text. Add one authoritative capability/version table.
-- [ ] Add an API documentation check for broken examples, missing public
+- [x] Add an API documentation check for broken examples, missing public
   members, and signature drift. Prefer executable short examples over copied
   signatures.
-- [ ] Add a changelog and a written compatibility/deprecation policy before the
+- [x] Add a changelog and a written compatibility/deprecation policy before the
   next public release.
+
+### 0.4 Make caching and material parameters provably safe
+
+- [x] Include every input that affects a cached result in its key: elastic
+  parameters, backend precision, and a kernel/format version stamp that is
+  bumped whenever an engine's numerics change. Add tests asserting that each
+  varied input produces a cache miss.
+- [x] Define the cache invalidation story: what a version bump invalidates,
+  how users clear stale entries, and what `cache.info()` reports about them.
+- [x] Thread Poisson's ratio through `Fault.greens_matrix` and the assembly
+  layer instead of freezing the kernel default, and give `mu` one declared
+  home shared by `moment`, `magnitude`, and `stress_kernel`. Design this as a
+  small elastic-medium parameter object so layered engines (6.2) extend it
+  rather than adding parallel keyword arguments.
 
 ---
 
@@ -316,6 +372,10 @@ it does not hide the linear algebra or create a mandatory framework.
   novice sequence unless it teaches a general concept.
 - [ ] Replace repeated synthetic setup cells with a documented scenario builder
   only after students have seen the explicit construction once.
+- [ ] Add synthetic-test helpers — checkerboard and spike slip patterns, noisy
+  synthetic data generation with declared seeds, and recovered-versus-input
+  comparison — so the resolution-testing workflow the tutorials teach is a
+  supported API rather than notebook-only code.
 
 ### 2.3 Make real workflows reproducible
 
@@ -351,6 +411,12 @@ not reorganize numerical reference ports merely to make their style conventional
 - [ ] Publish an API stability map: beginner-public, expert-public, and private.
   Reduce top-level exports to a deliberately documented set over a deprecation
   cycle; advanced modules remain importable.
+- [ ] Resolve top-level name collisions as part of that map: the `invert`
+  function currently shadows the `invert` module on the `geodef` namespace
+  while `data` and `fault` remain modules; three callables are named
+  `resolution`; `plot.map` shadows a builtin. Fix with renames or module
+  reorganization behind deprecation shims, never by silently changing what an
+  existing name returns.
 - [ ] Define dependency direction: domain types → operators/problem assembly →
   solvers/results, with plotting and I/O at the edges and kernels below all of
   them. Remove imports through `geodef.__init__` from internal modules.
@@ -439,9 +505,22 @@ not reorganize numerical reference ports merely to make their style conventional
 - [ ] Support multiple epochs and temporal basis functions as a bridge from
   static inversion to time-dependent slip.
 
----
+### 4.4 First-class interseismic coupling
 
-## Priority 5 — Finish and deepen the accelerated inference stack
+Coupling is a declared target application and should not remain an exercise in
+manually re-signing slip vectors.
+
+- [ ] Define and document the backslip convention once: sign, rake/azimuth
+  relationship to plate motion, and how a backslip inversion maps onto the
+  existing slip basis and bounds machinery.
+- [ ] Add a coupling-fraction parameterization: solve for coupling in [0, 1]
+  against a per-patch plate-rate vector, with the plate rate derivable from
+  `euler` block models so rigid-block prediction and coupling inversion share
+  one vocabulary.
+- [ ] Report moment-deficit rate (and its uncertainty) alongside moment, with
+  explicit units and epoch semantics tied to the velocity metadata from 1.5.
+- [ ] Deliver the Priority 2 interseismic example through this API and promote
+  it to a golden workflow once stable.
 
 ### 5.1 Close the remaining JAX gaps
 
@@ -531,7 +610,8 @@ The priorities are ordered deliberately, but each phase should deliver useful
 increments rather than becoming a long-lived rewrite.
 
 1. **v1.1.x consistency releases:** Priority 0, documentation corrections,
-   packaging fixes, validation, and deprecation scaffolding.
+   packaging fixes, licensing/CI/typing scaffolding, cache-key completeness,
+   validation, and deprecation scaffolding.
 2. **v1.2 beginner workflow:** `LocalFrame`, named geometry/slip/displacement,
    dataset result views, friendly constructors, and the revised quickstart.
 3. **v1.3 problem and scale layer:** validated `SlipProblem`, noise operators,
@@ -564,7 +644,9 @@ For each user-facing phase, require:
   everyday code.
 - NumPy remains the default runtime and JAX remains optional.
 - Hash-based caching may accelerate pure computations but must never change
-  results or hide problem provenance.
+  results or hide problem provenance. Cache keys include every input that
+  affects the result — geometry, observation locations, material parameters,
+  precision, and a kernel version — or the computation is not cached.
 - `PLAN.md` is forward-looking. When work ships, replace detailed checklists
   with a concise baseline entry or release note rather than accumulating an
   implementation diary here.

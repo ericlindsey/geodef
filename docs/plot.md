@@ -1,5 +1,7 @@
 # `geodef.plot` — Visualization
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 All plot functions follow a consistent pattern:
 
 - Accept optional `ax=None`; create a new figure if `None`

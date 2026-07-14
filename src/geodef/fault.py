@@ -11,6 +11,15 @@ import numpy as np
 
 from geodef import greens as _greens
 from geodef import transforms
+from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.validation import (
+    ValidationReport,
+    _ReportBuilder,
+    as_1d_floats,
+    check_finite_scalar,
+    check_positive,
+    check_range,
+)
 
 if TYPE_CHECKING:
     from geodef.mesh import Mesh
@@ -36,6 +45,9 @@ class Fault:
         vertices: Triangle vertices in local ENU, shape (N, 3, 3). None for rectangular.
         grid_shape: ``(n_length, n_width)`` for structured rectangular grids.
         engine: Green's function engine, ``"okada"`` or ``"tri"``.
+        medium: Elastic half-space parameters used by Green's functions,
+            stress kernels, and moment. Defaults to
+            ``geodef.medium.DEFAULT_MEDIUM`` (30 GPa Poisson solid).
     """
 
     def __init__(
@@ -51,29 +63,40 @@ class Fault:
         vertices: np.ndarray | None = None,
         grid_shape: tuple[int, int] | None = None,
         engine: str = "okada",
+        medium: ElasticMedium | None = None,
     ) -> None:
-        lat = np.asarray(lat, dtype=float)
-        lon = np.asarray(lon, dtype=float)
-        depth = np.asarray(depth, dtype=float)
-        strike = np.asarray(strike, dtype=float)
-        dip = np.asarray(dip, dtype=float)
-
+        lat = as_1d_floats("lat", np.atleast_1d(lat), unit="degrees")
         n = lat.shape[0]
-        if not all(arr.shape == (n,) for arr in (lon, depth, strike, dip)):
-            raise ValueError(
-                "lat, lon, depth, strike, dip must all be 1-D arrays of the same length"
-            )
+        lon = as_1d_floats("lon", np.atleast_1d(lon), n=n, unit="degrees")
+        depth = as_1d_floats("depth", np.atleast_1d(depth), n=n, unit="meters")
+        strike = as_1d_floats("strike", np.atleast_1d(strike), n=n, unit="degrees")
+        dip = as_1d_floats("dip", np.atleast_1d(dip), n=n, unit="degrees")
+
+        check_range("lat", lat, -90.0, 90.0, unit="degrees")
+        check_range("lon", lon, -360.0, 360.0, unit="degrees")
+        check_range("dip", dip, 0.0, 90.0, unit="degrees")
 
         if engine not in ("okada", "tri"):
             raise ValueError(f"engine must be 'okada' or 'tri', got {engine!r}")
 
+        # Rectangular centroid depths feed the Okada kernel directly and must
+        # be below the surface. Triangular centroid depths are derived
+        # metadata (the kernel uses the ENU vertices) and legitimately carry
+        # meter-scale ellipsoidal-curvature offsets near the surface, so
+        # above-surface *vertices* are reported by validate() instead.
+        if engine == "okada" and n and np.min(depth) < 0.0:
+            raise ValueError(
+                "depth is positive down (meters); centroid depths must be "
+                f">= 0, got minimum {np.min(depth):g}"
+            )
+
         if engine == "okada":
             if length is None or width is None:
                 raise ValueError("Rectangular faults require length and width arrays")
-            length = np.asarray(length, dtype=float)
-            width = np.asarray(width, dtype=float)
-            if length.shape != (n,) or width.shape != (n,):
-                raise ValueError("length and width must have shape (N,)")
+            length = as_1d_floats("length", np.atleast_1d(length), n=n, unit="meters")
+            width = as_1d_floats("width", np.atleast_1d(width), n=n, unit="meters")
+            check_positive("length", length, unit="meters")
+            check_positive("width", width, unit="meters")
         else:
             if vertices is None:
                 raise ValueError("Triangular faults require a vertices array")
@@ -98,6 +121,7 @@ class Fault:
         self._vertices = vertices
         self._grid_shape = grid_shape
         self._engine = engine
+        self._medium = DEFAULT_MEDIUM if medium is None else medium
 
         # Make arrays read-only
         for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
@@ -121,6 +145,7 @@ class Fault:
     @classmethod
     def planar(
         cls,
+        *,
         lat: float,
         lon: float,
         depth: float,
@@ -130,6 +155,7 @@ class Fault:
         width: float,
         n_length: int = 1,
         n_width: int = 1,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its center.
 
@@ -143,10 +169,22 @@ class Fault:
             width: Total down-dip width in meters.
             n_length: Number of patches along strike.
             n_width: Number of patches down dip.
+            medium: Elastic half-space parameters. Defaults to the 30 GPa
+                Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
+        for pname, val, unit in (
+            ("lat", lat, "degrees"),
+            ("lon", lon, "degrees"),
+            ("depth", depth, "meters"),
+            ("strike", strike, "degrees"),
+            ("dip", dip, "degrees"),
+            ("length", length, "meters"),
+            ("width", width, "meters"),
+        ):
+            check_finite_scalar(pname, val, unit=unit)
         patch_L = length / n_length
         patch_W = width / n_width
 
@@ -205,11 +243,13 @@ class Fault:
             width_arr,
             grid_shape=(n_length, n_width),
             engine="okada",
+            medium=medium,
         )
 
     @classmethod
     def planar_from_corner(
         cls,
+        *,
         lat: float,
         lon: float,
         depth: float,
@@ -219,6 +259,7 @@ class Fault:
         width: float,
         n_length: int = 1,
         n_width: int = 1,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its top-left corner.
 
@@ -239,6 +280,16 @@ class Fault:
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
+        for pname, val, unit in (
+            ("lat", lat, "degrees"),
+            ("lon", lon, "degrees"),
+            ("depth", depth, "meters"),
+            ("strike", strike, "degrees"),
+            ("dip", dip, "degrees"),
+            ("length", length, "meters"),
+            ("width", width, "meters"),
+        ):
+            check_finite_scalar(pname, val, unit=unit)
         sin_str = np.sin(np.radians(strike))
         cos_str = np.cos(np.radians(strike))
         sin_dip = np.sin(np.radians(dip))
@@ -262,25 +313,27 @@ class Fault:
         # Delegate to planar() which handles the grid generation
         # Note: we negate center_u because depth convention is positive-down
         return cls.planar(
-            float(center_lat),
-            float(center_lon),
-            float(center_depth),
-            strike,
-            dip,
-            length,
-            width,
-            n_length,
-            n_width,
+            lat=float(center_lat),
+            lon=float(center_lon),
+            depth=float(center_depth),
+            strike=strike,
+            dip=dip,
+            length=length,
+            width=width,
+            n_length=n_length,
+            n_width=n_width,
+            medium=medium,
         )
 
     @classmethod
     def from_triangles(
         cls,
         vertices: np.ndarray,
+        *,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
-        *,
         triangles: np.ndarray | None = None,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a triangular fault from ENU vertex coordinates.
 
@@ -303,6 +356,8 @@ class Fault:
             ref_lon: Reference longitude for the ENU origin.
             triangles: Optional connectivity indices into ``vertices``, shape
                 (N, 3). When given, ``vertices`` is treated as a node array.
+            medium: Elastic half-space parameters. Defaults to the 30 GPa
+                Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A triangular Fault with ``engine="tri"``.
@@ -354,12 +409,15 @@ class Fault:
             None,
             vertices=vertices,
             engine="tri",
+            medium=medium,
         )
 
     @classmethod
     def from_mesh(
         cls,
         mesh: "Mesh",
+        *,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a triangular fault from a ``Mesh`` object.
 
@@ -375,7 +433,9 @@ class Fault:
         ref_lat = float(np.mean(mesh.lat))
         ref_lon = float(np.mean(mesh.lon))
         vertices = mesh.vertices_enu(ref_lat, ref_lon)
-        return cls.from_triangles(vertices, ref_lat, ref_lon)
+        return cls.from_triangles(
+            vertices, ref_lat=ref_lat, ref_lon=ref_lon, medium=medium
+        )
 
     @classmethod
     def load(
@@ -385,6 +445,7 @@ class Fault:
         format: str | None = None,
         ref_lat: float = 0.0,
         ref_lon: float = 0.0,
+        medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Load a fault model from a text file.
 
@@ -397,6 +458,9 @@ class Fault:
             ref_lat: Reference latitude for formats that use local Cartesian
                 coordinates (e.g. ``"seg"``). Ignored for geographic formats.
             ref_lon: Reference longitude for local Cartesian formats.
+            medium: Elastic half-space parameters. Fault files store geometry
+                only, so the medium is always supplied at load time; defaults
+                to ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A Fault object.
@@ -418,17 +482,19 @@ class Fault:
             from geodef.mesh import Mesh
 
             mesh = Mesh.load(fname, format="ned")
-            return cls.from_mesh(mesh)
+            return cls.from_mesh(mesh, medium=medium)
 
         if format == "seg":
-            return cls._load_seg(fname, ref_lat, ref_lon)
-
-        filedata = np.loadtxt(fname, ndmin=2)
-        if format == "center":
-            return cls._load_center(filedata)
-        elif format == "topleft":
-            return cls._load_topleft(filedata)
-        raise ValueError(f"Unknown format: {format!r}")
+            fault = cls._load_seg(fname, ref_lat, ref_lon)
+        else:
+            filedata = np.loadtxt(fname, ndmin=2)
+            if format == "center":
+                fault = cls._load_center(filedata)
+            elif format == "topleft":
+                fault = cls._load_topleft(filedata)
+            else:
+                raise ValueError(f"Unknown format: {format!r}")
+        return fault if medium is None else fault.with_medium(medium)
 
     @classmethod
     def _load_center(cls, filedata: np.ndarray) -> "Fault":
@@ -647,8 +713,21 @@ class Fault:
 
     @property
     def centers(self) -> np.ndarray:
-        """Patch centroids as (N, 3) array of [lat, lon, depth]."""
+        """Patch centroids as (N, 3) array of [lat, lon, depth].
+
+        Note the legacy latitude-first order; prefer :attr:`centers_geo`
+        for the documented [lon, lat, depth] convention.
+        """
         return np.column_stack([self._lat, self._lon, self._depth])
+
+    @property
+    def centers_geo(self) -> np.ndarray:
+        """Patch centroids as (N, 3) array of [lon, lat, depth].
+
+        Follows the documented geographic ordering (x, y order; matches
+        ``Mesh.centers_geo``). Depth is in meters, positive down.
+        """
+        return np.column_stack([self._lon, self._lat, self._depth])
 
     @property
     def centers_local(self) -> np.ndarray:
@@ -686,6 +765,94 @@ class Fault:
     def engine(self) -> str:
         """Green's function engine: ``"okada"`` or ``"tri"``."""
         return self._engine
+
+    def validate(self) -> ValidationReport:
+        """Check the geometry for physically invalid or suspicious setups.
+
+        Errors: patch material above the free surface, degenerate
+        (zero-area) triangles. Warnings: extreme patch aspect ratios,
+        strike angles outside [0, 360).
+
+        Returns:
+            A :class:`geodef.validation.ValidationReport`.
+        """
+        b = _ReportBuilder()
+        if self._engine == "okada":
+            assert self._length is not None and self._width is not None
+            top_edge = self._depth - 0.5 * self._width * np.sin(np.radians(self.dip))
+            n_above = int(np.sum(top_edge < -1.0))
+            if n_above:
+                b.error(
+                    "depth/width/dip",
+                    f"{n_above} patch(es) extend above the free surface "
+                    f"(shallowest top edge {np.min(top_edge):.1f} m): the "
+                    "half-space solution is invalid there. Deepen the fault "
+                    "or reduce its width.",
+                )
+            ratio = self._length / self._width
+            if np.max(ratio) > 50.0 or np.min(ratio) < 1.0 / 50.0:
+                b.warning(
+                    "length/width",
+                    f"extreme patch aspect ratio (max {np.max(ratio):.3g}, "
+                    f"min {np.min(ratio):.3g}); very elongated patches "
+                    "resolve slip poorly across their short dimension",
+                )
+        else:
+            assert self._vertices is not None
+            up = self._vertices[:, :, 2]
+            n_above = int(np.sum(np.any(up > 1.0, axis=1)))
+            if n_above:
+                b.error(
+                    "vertices",
+                    f"{n_above} triangle(s) have vertices above the free "
+                    f"surface (highest {np.max(up):.1f} m up): the "
+                    "half-space solution is invalid there",
+                )
+            tiny = np.flatnonzero(self.areas < 1.0)
+            if tiny.size:
+                b.error(
+                    "vertices",
+                    f"{tiny.size} degenerate triangle(s) with area < 1 m^2 "
+                    f"(first indices {tiny[:5].tolist()})",
+                )
+        if np.any(self.strike < 0.0) or np.any(self.strike >= 360.0):
+            b.warning(
+                "strike",
+                "strike angles outside [0, 360) are accepted but usually "
+                "indicate a sign or convention slip",
+            )
+        return b.report()
+
+    @property
+    def medium(self) -> ElasticMedium:
+        """Elastic half-space parameters used by this fault's computations."""
+        return self._medium
+
+    def with_medium(self, medium: ElasticMedium) -> "Fault":
+        """Return a copy of this fault with different elastic parameters.
+
+        The geometry arrays are shared (they are immutable); only the medium
+        differs.
+
+        Args:
+            medium: Elastic half-space parameters for the new fault.
+
+        Returns:
+            A new ``Fault`` with the same geometry and the given medium.
+        """
+        return Fault(
+            self._lat,
+            self._lon,
+            self._depth,
+            self.strike,
+            self.dip,
+            self._length,
+            self._width,
+            vertices=self._vertices,
+            grid_shape=self._grid_shape,
+            engine=self._engine,
+            medium=medium,
+        )
 
     @property
     def vertices(self) -> np.ndarray | None:
@@ -751,6 +918,7 @@ class Fault:
         Raises:
             ValueError: If kind is unknown or engine doesn't support it.
         """
+        nu = self._medium.poisson_ratio
         if self._engine == "okada":
             assert self._length is not None and self._width is not None
             if kind == "displacement":
@@ -764,6 +932,7 @@ class Fault:
                     self.dip,
                     self._length,
                     self._width,
+                    nu=nu,
                 )
             elif kind == "strain":
                 return _greens.strain_greens(
@@ -776,6 +945,7 @@ class Fault:
                     self.dip,
                     self._length,
                     self._width,
+                    nu=nu,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -790,6 +960,7 @@ class Fault:
                     self._lon,
                     self._depth,
                     self._vertices,
+                    nu=nu,
                 )
             elif kind == "strain":
                 return _greens.tri_strain_greens(
@@ -799,6 +970,7 @@ class Fault:
                     self._lon,
                     self._depth,
                     self._vertices,
+                    nu=nu,
                     obs_depth=obs_depth,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
@@ -850,20 +1022,23 @@ class Fault:
     # Stress kernel
     # ==================================================================
 
-    def stress_kernel(self, mu: float = 30e9) -> np.ndarray:
+    def stress_kernel(self, mu: float | None = None) -> np.ndarray:
         """Compute the stress interaction kernel for the fault.
 
         Evaluates strain Green's functions at patch centroid depths using
         okada92 (DC3D) for internal deformation.
 
         Args:
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Stress kernel matrix K, shape (4*N, 2*N).
         """
         from geodef import cache as _cache
 
+        if mu is None:
+            mu = self._medium.shear_modulus
         key = _build_stress_key(self, mu)
         return _cache.cached_compute(
             key,
@@ -882,25 +1057,29 @@ class Fault:
     # Moment and magnitude
     # ==================================================================
 
-    def moment(self, slip: np.ndarray, mu: float = 30e9) -> float:
+    def moment(self, slip: np.ndarray, mu: float | None = None) -> float:
         """Compute scalar seismic moment.
 
         Args:
             slip: Slip magnitude per patch, shape (N,), in meters.
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Seismic moment in N-m.
         """
+        if mu is None:
+            mu = self._medium.shear_modulus
         slip = np.asarray(slip, dtype=float)
         return float(mu * np.sum(slip * self.areas))
 
-    def magnitude(self, slip: np.ndarray, mu: float = 30e9) -> float:
+    def magnitude(self, slip: np.ndarray, mu: float | None = None) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:
             slip: Slip magnitude per patch, shape (N,), in meters.
-            mu: Shear modulus in Pa (default 30 GPa).
+            mu: Shear modulus in Pa. Defaults to this fault's
+                ``medium.shear_modulus``.
 
         Returns:
             Moment magnitude Mw.
@@ -1319,6 +1498,7 @@ def _build_stress_key(fault: Fault, mu: float) -> dict:
     key: dict = {
         "kind": "stress_kernel",
         "mu": mu,
+        "nu": fault._medium.poisson_ratio,
         "fault_lat": fault._lat,
         "fault_lon": fault._lon,
         "fault_depth": fault._depth,

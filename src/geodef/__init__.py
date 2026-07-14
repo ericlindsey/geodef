@@ -10,6 +10,7 @@ from geodef import (
     geomap,
     gradients,
     greens,
+    medium,
     mesh,
     okada,
     okada85,
@@ -17,6 +18,7 @@ from geodef import (
     plot,
     transforms,
     tri,
+    validation,
 )
 from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 from geodef.fault import Fault, magnitude_to_moment, moment_to_magnitude
@@ -38,6 +40,7 @@ from geodef.invert import (
     model_resolution,
     model_uncertainty,
 )
+from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 
 __all__ = [
     # Submodules
@@ -48,6 +51,7 @@ __all__ = [
     "geomap",
     "gradients",
     "greens",
+    "medium",
     "mesh",
     "okada",
     "okada85",
@@ -55,14 +59,17 @@ __all__ = [
     "plot",
     "transforms",
     "tri",
+    "validation",
     # Data types
     "GNSS",
     "InSAR",
     "Vertical",
     "DataSet",
     "spatial_covariance",
-    # Fault geometry and moment
+    # Fault geometry, medium, and moment
     "Fault",
+    "ElasticMedium",
+    "DEFAULT_MEDIUM",
     "magnitude_to_moment",
     "moment_to_magnitude",
     # Green's matrix assembly

@@ -92,7 +92,7 @@ def gnss_3comp():
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
     su = np.full(n, 0.002)
-    return GNSS(lon, lat, ve, vn, vu, se, sn, su)
+    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su)
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ def gnss_horiz():
     vn = rng.normal(0, 0.01, n)
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
-    return GNSS(lon, lat, ve, vn, None, se, sn, None)
+    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=None, se=se, sn=sn, su=None)
 
 
 @pytest.fixture
@@ -121,8 +121,16 @@ def insar_data():
     # Near-vertical look vector (typical ascending geometry)
     look_e = np.full(n, -0.1)
     look_n = np.full(n, 0.08)
-    look_u = np.full(n, 0.99)
-    return InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
+    look_u = np.full(n, np.sqrt(1.0 - 0.1**2 - 0.08**2))
+    return InSAR(
+        lon=lon,
+        lat=lat,
+        los=los,
+        sigma=sigma,
+        look_e=look_e,
+        look_n=look_n,
+        look_u=look_u,
+    )
 
 
 @pytest.fixture
@@ -134,7 +142,7 @@ def vertical_data():
     lon = rng.uniform(-0.1, 0.1, n)
     obs = rng.normal(0, 0.02, n)
     sigma = np.full(n, 0.005)
-    return Vertical(lon, lat, obs, sigma)
+    return Vertical(lon=lon, lat=lat, displacement=obs, sigma=sigma)
 
 
 @pytest.fixture(autouse=True)
@@ -423,7 +431,7 @@ def tri_fault_4():
         ]
     )
     tris = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3], [4, 5, 3]])
-    return Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+    return Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
 
 
 class TestSlipInterpolated:
@@ -693,9 +701,7 @@ class TestPlotVectors:
 
     def test_vertical_dots_constant_size(self, gnss_3comp, rect_fault):
         """Vertical dots are a single fixed size, independent of value/scale."""
-        ax = geodef.plot.vectors(
-            gnss_3comp, rect_fault, components="vertical", scale=5
-        )
+        ax = geodef.plot.vectors(gnss_3comp, rect_fault, components="vertical", scale=5)
         sc = [
             c
             for c in ax.get_children()

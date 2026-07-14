@@ -149,8 +149,19 @@ def _strain_depth_batch(
     y_dc3d = ss * nc - cs * ec + cd * W_c
 
     displacement, strain, _ = okada92.DC3D(
-        alpha, x_dc3d, y_dc3d, z, d_top, dip_c,
-        0.0, L_c, 0.0, W_c, disl1, disl2, disl3,
+        alpha,
+        x_dc3d,
+        y_dc3d,
+        z,
+        d_top,
+        dip_c,
+        0.0,
+        L_c,
+        0.0,
+        W_c,
+        disl1,
+        disl2,
+        disl3,
     )
     _, strain_geo = okada92._rotate_to_geographic(displacement, strain, ss, cs)
     return strain_geo
@@ -429,11 +440,27 @@ def strain_greens(
                 float(W[ipatch]),
             )
             _, strain_ss = okada92.okada92(
-                e, n, z_obs, *patch_params, 1.0, 0.0, 0.0, G_mu, nu,
+                e,
+                n,
+                z_obs,
+                *patch_params,
+                1.0,
+                0.0,
+                0.0,
+                G_mu,
+                nu,
                 allow_singular=True,
             )
             _, strain_ds = okada92.okada92(
-                e, n, z_obs, *patch_params, 0.0, 1.0, 0.0, G_mu, nu,
+                e,
+                n,
+                z_obs,
+                *patch_params,
+                0.0,
+                1.0,
+                0.0,
+                G_mu,
+                nu,
                 allow_singular=True,
             )
             strain_ss = backend.to_numpy(strain_ss)
@@ -603,6 +630,7 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
         "fault_strike": fault.strike,
         "fault_dip": fault.dip,
         "engine": fault.engine,
+        "nu": fault.medium.poisson_ratio,
         "obs_lat": data.lat,
         "obs_lon": data.lon,
         "data_class": type(data).__name__,

@@ -53,7 +53,12 @@ from geodef import backend, transforms
 from geodef.data import DataSet
 from geodef.fault import Fault
 from geodef.gradients import rect_greens, tri_greens
-from geodef.invert import _THETA_NAMES, LinearSystem, _projection_matrix
+from geodef.invert import (
+    _THETA_NAMES,
+    LinearSystem,
+    _projection_matrix,
+    _rank_positive_eigs,
+)
 
 _VALID_MODES = ("hierarchical", "weak", "profiled")
 _VALID_SLIP_MODES = ("hierarchical", "weak", "fixed")
@@ -729,7 +734,7 @@ class RectPosterior(_CollapsedPosterior):
                 self._lambda_fixed = float(smoothing_strength)
             else:
                 self._lambda_fixed = None
-            pos = eig[eig > 0]
+            pos = _rank_positive_eigs(eig)
             self._logdet_rank = len(pos)
             self._logdet_sum = float(np.sum(np.log(pos)))
 
@@ -1273,7 +1278,9 @@ class TriWarp:
             A triangular ``Fault`` with the warped geometry.
         """
         verts = backend.to_numpy(self.vertices(np.asarray(theta, dtype=float)))
-        return Fault.from_triangles(verts.astype(float), self._ref_lat, self._ref_lon)
+        return Fault.from_triangles(
+            verts.astype(float), ref_lat=self._ref_lat, ref_lon=self._ref_lon
+        )
 
     def plot(self, theta: npt.ArrayLike | None = None, ax: Any = None) -> tuple:
         """3D preview of the reference mesh, an optional warp, and knots.
@@ -1523,7 +1530,7 @@ class TriPosterior(_CollapsedPosterior):
                 self._lambda_fixed = float(smoothing_strength)
             else:
                 self._lambda_fixed = None
-            pos = eig[eig > 0]
+            pos = _rank_positive_eigs(eig)
             self._logdet_rank = len(pos)
             self._logdet_sum = float(np.sum(np.log(pos)))
         self._include_logdet = mode != "profiled"
@@ -1769,7 +1776,7 @@ class SlipPosterior:
         else:
             self._K = np.asarray(sys.LtL, dtype=np.float64)
             eig = np.abs(np.linalg.eigvalsh(self._K))
-            pos = eig[eig > 0]
+            pos = _rank_positive_eigs(eig)
             self._logdet_rank = len(pos)
             self._logdet_sum = float(np.sum(np.log(pos)))
             if mode == "fixed":
@@ -2060,12 +2067,12 @@ def _parse_positive(
             "positive must be None, 'strike', 'dip', 'both', or a bool array, "
             f"got {positive!r}"
         )
-    mask = np.asarray(positive, dtype=bool)
-    if mask.shape != (n_params,):
+    positive_mask = np.asarray(positive, dtype=bool)
+    if positive_mask.shape != (n_params,):
         raise ValueError(
-            f"positive array must have shape ({n_params},), got {mask.shape}"
+            f"positive array must have shape ({n_params},), got {positive_mask.shape}"
         )
-    return mask
+    return positive_mask
 
 
 # ======================================================================

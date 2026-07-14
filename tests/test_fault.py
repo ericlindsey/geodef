@@ -551,7 +551,17 @@ class TestCrossValidation:
         length, width = 60e3, 40e3
         nL, nW = 3, 2
 
-        fault = Fault.planar(lat0, lon0, depth0, strike, dip, length, width, nL, nW)
+        fault = Fault.planar(
+            lat=lat0,
+            lon=lon0,
+            depth=depth0,
+            strike=strike,
+            dip=dip,
+            length=length,
+            width=width,
+            n_length=nL,
+            n_width=nW,
+        )
 
         patchW = width / nW
         sin_dip = np.sin(np.radians(dip))

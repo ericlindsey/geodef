@@ -36,8 +36,15 @@ _TRUE = {
 }
 _NL, _NW = 3, 3
 _THETA_TRUE = np.array(
-    [0.0, 0.0, _TRUE["depth"], _TRUE["strike"], _TRUE["dip"], _TRUE["length"],
-     _TRUE["width"]]
+    [
+        0.0,
+        0.0,
+        _TRUE["depth"],
+        _TRUE["strike"],
+        _TRUE["dip"],
+        _TRUE["length"],
+        _TRUE["width"],
+    ]
 )
 
 
@@ -69,8 +76,8 @@ def gnss_data():
     sigma = 0.002
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),
@@ -116,8 +123,11 @@ class TestConstruction:
 
     def test_param_names_weak(self, gnss_data):
         post = _posterior(
-            gnss_data, mode="weak", smoothing=None, smoothing_strength=None,
-            slip_scale=10.0
+            gnss_data,
+            mode="weak",
+            smoothing=None,
+            smoothing_strength=None,
+            slip_scale=10.0,
         )
         assert post.param_names == ["dip", "depth", "log10_sigma"]
 
@@ -148,9 +158,7 @@ class TestConstruction:
 
     def test_weak_requires_slip_scale(self, gnss_data):
         with pytest.raises(ValueError, match="slip_scale"):
-            _posterior(
-                gnss_data, mode="weak", smoothing=None, smoothing_strength=None
-            )
+            _posterior(gnss_data, mode="weak", smoothing=None, smoothing_strength=None)
 
     def test_hierarchical_requires_smoothing(self, gnss_data):
         with pytest.raises(ValueError, match="smoothing"):
@@ -187,8 +195,11 @@ class TestMarginalLikelihood:
         """mode='weak' (L = I, full-rank prior) admits an exact dense
         reference density via the matrix determinant lemma."""
         post = _posterior(
-            gnss_data, mode="weak", smoothing=None, smoothing_strength=None,
-            slip_scale=5.0
+            gnss_data,
+            mode="weak",
+            smoothing=None,
+            smoothing_strength=None,
+            slip_scale=5.0,
         )
         for dip, depth, log10_sigma in [
             (15.0, 25e3, 0.0),
@@ -199,9 +210,7 @@ class TestMarginalLikelihood:
             ll = float(post.log_likelihood(x))
             theta = _THETA_TRUE.copy()
             theta[4], theta[2] = dip, depth
-            ref = _dense_reference_loglik(
-                post, theta, 1.0 / 5.0**2, 10.0**log10_sigma
-            )
+            ref = _dense_reference_loglik(post, theta, 1.0 / 5.0**2, 10.0**log10_sigma)
             np.testing.assert_allclose(ll, ref, rtol=1e-9)
 
     def test_hierarchical_matches_dense_gaussian_with_damping(self, gnss_data):
@@ -211,9 +220,7 @@ class TestMarginalLikelihood:
         for log10_lam in (-1.0, 0.0, 2.0):
             x = np.array([15.0, 25e3, 0.1, log10_lam])
             ll = float(post.log_likelihood(x))
-            ref = _dense_reference_loglik(
-                post, _THETA_TRUE, 10.0**log10_lam, 10.0**0.1
-            )
+            ref = _dense_reference_loglik(post, _THETA_TRUE, 10.0**log10_lam, 10.0**0.1)
             np.testing.assert_allclose(ll, ref, rtol=1e-9)
 
     def test_hierarchical_matches_abic(self, gnss_data):
@@ -386,8 +393,8 @@ def gnss_single_patch():
     sigma = 0.003
     n = len(glat)
     data = GNSS(
-        glon,
-        glat,
+        lon=glon,
+        lat=glat,
         ve=ue + rng.normal(0, sigma, n),
         vn=un + rng.normal(0, sigma, n),
         vu=uz + rng.normal(0, sigma, n),
@@ -438,9 +445,7 @@ class TestSample:
     def test_hierarchical_smoke(self, gnss_data):
         pytest.importorskip("blackjax")
         post = _posterior(gnss_data, free=["dip"], theta_prior={"dip": (5.0, 45.0)})
-        result = bayes.sample(
-            post, n_samples=150, n_warmup=200, n_chains=2, seed=1
-        )
+        result = bayes.sample(post, n_samples=150, n_warmup=200, n_chains=2, seed=1)
         assert result.samples.shape == (2, 150, 3)
         assert result.param_names == ["dip", "log10_sigma", "log10_lambda"]
         assert np.all(np.isfinite(result.samples))
@@ -477,9 +482,7 @@ class TestSample:
         nwalkers = 16
         rng = np.random.default_rng(3)
         p0 = nuts_mean + 3.0 * nuts_sd * rng.standard_normal((nwalkers, ndim))
-        sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, lambda x: float(logpdf(x))
-        )
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lambda x: float(logpdf(x)))
         sampler.run_mcmc(p0, 800, progress=False)
         chain = sampler.get_chain(discard=300, flat=True)
 
@@ -567,9 +570,7 @@ class TestConditionalSlip:
         # average prediction converges to the conditional-mode prediction
         m_hat = post.slip_mode(x)
         G3 = backend.to_numpy(
-            gradients.rect_greens(
-                _THETA_TRUE, post._e_obs, post._n_obs, _NL, _NW
-            )
+            gradients.rect_greens(_THETA_TRUE, post._e_obs, post._n_obs, _NL, _NW)
         )
         P = _projection_matrix([gnss_data])
         G_d = (P @ G3)[:, post._col_start : post._col_stop]
@@ -581,9 +582,7 @@ class TestConditionalSlip:
         """Different geometry samples must produce different conditional
         distributions (the whole point of propagating theta)."""
         post = _posterior(gnss_data)
-        xs = np.array(
-            [[12.0, 20e3, 0.0, 1.0], [18.0, 30e3, 0.0, 1.0]]
-        )
+        xs = np.array([[12.0, 20e3, 0.0, 1.0], [18.0, 30e3, 0.0, 1.0]])
         draws = post.slip_draws(xs, seed=7)
         assert draws.shape == (2, _NL * _NW)
         assert not np.allclose(draws[0], draws[1])
@@ -608,6 +607,4 @@ class TestGradients:
         post = _posterior(gnss_data)
         x = np.array([16.0, 26e3, 0.1, 0.5])
         jitted = jax.jit(post.logpdf)
-        np.testing.assert_allclose(
-            float(jitted(x)), float(post.logpdf(x)), rtol=1e-12
-        )
+        np.testing.assert_allclose(float(jitted(x)), float(post.logpdf(x)), rtol=1e-12)

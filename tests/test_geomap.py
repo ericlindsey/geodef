@@ -27,14 +27,24 @@ def _close_figures():
 
 @pytest.fixture
 def rect_fault():
-    return Fault.planar(0.0, 100.0, 15e3, 320.0, 15.0, 80e3, 40e3, 4, 3)
+    return Fault.planar(
+        lat=0.0,
+        lon=100.0,
+        depth=15e3,
+        strike=320.0,
+        dip=15.0,
+        length=80e3,
+        width=40e3,
+        n_length=4,
+        n_width=3,
+    )
 
 
 @pytest.fixture
 def tri_fault():
     nodes = np.array([[0.0, 0, 0], [1e4, 0, 0], [0, 1e4, -5e3], [1e4, 1e4, -5e3]])
     tris = np.array([[0, 1, 2], [1, 3, 2]])
-    return Fault.from_triangles(nodes, 0.0, 100.0, triangles=tris)
+    return Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
 
 
 class TestBasemap:
@@ -79,8 +89,8 @@ class TestAddVectors:
         ax = geomap.basemap(coastlines=False, gridlines=False)
         n = 5
         g = GNSS(
-            np.linspace(99.5, 100.5, n),
-            np.zeros(n),
+            lon=np.linspace(99.5, 100.5, n),
+            lat=np.zeros(n),
             ve=np.ones(n) * 0.01,
             vn=np.ones(n) * 0.02,
             vu=None,

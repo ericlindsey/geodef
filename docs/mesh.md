@@ -1,5 +1,7 @@
 # `geodef.mesh` — Triangular mesh generation
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Provides the `Mesh` dataclass and four factory functions for creating
 triangular fault meshes.
 
@@ -13,9 +15,8 @@ ratios, depth signs, surface continuity, and normal orientation visually before
 inversion. A mesh that looks smooth in longitude/latitude can still contain
 poorly shaped elements in meters.
 
-**Optional dependencies:** `meshpy` (meshing) and `netCDF4` (slab2.0 grids).
-Install them into the active environment when needed, for example:
-`uv pip install meshpy netCDF4`.
+**Optional dependencies:** `meshpy` (meshing) and `netCDF4` (slab2.0 grids),
+both provided by the `mesh` extra: `uv pip install -e ".[mesh]"`.
 
 ---
 

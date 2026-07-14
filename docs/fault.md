@@ -1,5 +1,7 @@
 # `geodef.fault` — Fault class
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Always create via factory classmethods, not `__init__` directly.
 
 ## What a discretized fault represents
@@ -19,7 +21,10 @@ Up and uses depth positive downward.
 
 ## Factory classmethods
 
-### `Fault.planar(lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1)`
+### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None)`
+
+All arguments are keyword-only so latitude/longitude order can never be
+confused (see [`conventions.md`](conventions.md)).
 
 Create a discretized planar fault from its centroid.
 
@@ -86,7 +91,8 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `n_patches` | scalar | Number of patches |
 | `engine` | `str` | `"okada"` or `"tri"` |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
-| `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` |
+| `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` (legacy latitude-first order) |
+| `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |
 | `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` (lazy, cached) |
 | `strike` | `(N,)` | Patch strike angles in degrees clockwise from north |
 | `dip` | `(N,)` | Patch dip angles in degrees from horizontal |

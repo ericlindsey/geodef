@@ -16,6 +16,15 @@ from pathlib import Path
 
 import numpy as np
 
+from geodef.validation import (
+    ValidationReport,
+    _ReportBuilder,
+    as_1d_floats,
+    check_covariance,
+    check_positive,
+    check_range,
+)
+
 
 def _make_readonly(arr: np.ndarray) -> np.ndarray:
     """Set an array's writeable flag to False and return it."""
@@ -63,18 +72,21 @@ class DataSet(ABC):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
-        *,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
+        validate_covariance: bool = True,
     ) -> None:
-        lon = _make_readonly(np.asarray(lon, dtype=float))
-        lat = _make_readonly(np.asarray(lat, dtype=float))
+        lon = _make_readonly(as_1d_floats("lon", lon, unit="degrees"))
+        lat = _make_readonly(as_1d_floats("lat", lat, n=lon.shape[0], unit="degrees"))
 
         n = lat.shape[0]
-        if lat.ndim != 1 or lon.shape != (n,):
-            raise ValueError("lon and lat must be 1-D arrays of the same length")
+        if n == 0:
+            raise ValueError("a dataset requires at least one station")
+        check_range("lat", lat, -90.0, 90.0, unit="degrees")
+        check_range("lon", lon, -360.0, 360.0, unit="degrees")
 
         if name is not None:
             name = np.asarray(name, dtype=str)
@@ -86,6 +98,7 @@ class DataSet(ABC):
         self._lat = lat
         self._name = name
         self._covariance_explicit = covariance
+        self._validate_covariance = validate_covariance
         self._covariance_cache: np.ndarray | None = None
 
     @property
@@ -160,14 +173,50 @@ class DataSet(ABC):
         return self._covariance_cache
 
     def _validate_covariance_shape(self) -> None:
-        """Check explicit covariance shape against n_obs. Call after n_obs is known."""
+        """Validate explicit covariance. Call after n_obs is known.
+
+        Checks shape, symmetry, and (unless the constructor was passed
+        ``validate_covariance=False``) positive definiteness.
+        """
         if self._covariance_explicit is not None:
-            n = self.n_obs
-            cov = np.asarray(self._covariance_explicit, dtype=float)
-            if cov.shape != (n, n):
-                raise ValueError(
-                    f"covariance shape {cov.shape} does not match expected ({n}, {n})"
-                )
+            check_covariance(
+                self._covariance_explicit,
+                self.n_obs,
+                require_positive_definite=self._validate_covariance,
+            )
+
+    def validate(self) -> ValidationReport:
+        """Check this dataset for suspicious-but-legal configurations.
+
+        Constructor validation already rejects invalid inputs; this report
+        flags things worth a look in interactive work: duplicated station
+        coordinates, extreme uncertainty spreads, and subclass-specific
+        checks (e.g. InSAR look-vector sign).
+
+        Returns:
+            A :class:`geodef.validation.ValidationReport`.
+        """
+        b = _ReportBuilder()
+        coords = np.column_stack([self._lon, self._lat])
+        uniq = np.unique(coords, axis=0)
+        if uniq.shape[0] < coords.shape[0]:
+            b.warning(
+                "lon/lat",
+                f"{coords.shape[0] - uniq.shape[0]} duplicated station "
+                "coordinate(s); duplicated rows double-weight those points",
+            )
+        sigma = np.asarray(self.sigma, dtype=float)
+        if sigma.size and sigma.max() / sigma.min() > 1e6:
+            b.warning(
+                "sigma",
+                f"uncertainty spread {sigma.max() / sigma.min():.2g}x between "
+                "largest and smallest; check units and zero placeholders",
+            )
+        self._validate_extra(b)
+        return b.report()
+
+    def _validate_extra(self, builder: "_ReportBuilder") -> None:
+        """Subclass hook for dataset-specific validate() checks."""
 
 
 class GNSS(DataSet):
@@ -197,51 +246,49 @@ class GNSS(DataSet):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         ve: np.ndarray,
         vn: np.ndarray,
-        vu: np.ndarray | None,
+        vu: np.ndarray | None = None,
         se: np.ndarray,
         sn: np.ndarray,
-        su: np.ndarray | None,
-        *,
+        su: np.ndarray | None = None,
         rho: np.ndarray | float | None = None,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
+        validate_covariance: bool = True,
     ) -> None:
         if rho is not None and covariance is not None:
             raise ValueError("Provide either rho or covariance, not both")
-        super().__init__(lon, lat, name=name, covariance=covariance)
-
-        ve = np.asarray(ve, dtype=float)
-        vn = np.asarray(vn, dtype=float)
-        se = np.asarray(se, dtype=float)
-        sn = np.asarray(sn, dtype=float)
+        super().__init__(
+            lon=lon,
+            lat=lat,
+            name=name,
+            covariance=covariance,
+            validate_covariance=validate_covariance,
+        )
 
         n = self.n_stations
-        if ve.shape != (n,) or vn.shape != (n,):
-            raise ValueError("ve, vn must be 1-D arrays of the same length as lat/lon")
-        if se.shape != (n,) or sn.shape != (n,):
-            raise ValueError("se, sn must be 1-D arrays of the same length as lat/lon")
+        ve = as_1d_floats("ve", ve, n=n, unit="meters or meters/time")
+        vn = as_1d_floats("vn", vn, n=n, unit="meters or meters/time")
+        se = as_1d_floats("se", se, n=n, unit="same as ve")
+        sn = as_1d_floats("sn", sn, n=n, unit="same as vn")
 
         # Validate vertical component consistency
         if (vu is None) != (su is None):
             raise ValueError("vu and su must both be None or both provided")
 
         if vu is not None:
-            vu = np.asarray(vu, dtype=float)
-            su = np.asarray(su, dtype=float)
-            if vu.shape != (n,) or su.shape != (n,):
-                raise ValueError(
-                    "vu, su must be 1-D arrays of the same length as lat/lon"
-                )
+            assert su is not None  # enforced by the both-or-neither check
+            vu = as_1d_floats("vu", vu, n=n, unit="meters or meters/time")
+            su = as_1d_floats("su", su, n=n, unit="same as vu")
 
-        # Validate all sigmas are positive
-        if np.any(se <= 0) or np.any(sn <= 0):
-            raise ValueError("All sigma values must be positive")
-        if su is not None and np.any(su <= 0):
-            raise ValueError("All sigma values must be positive")
+        check_positive("se", se, unit="same as ve")
+        check_positive("sn", sn, unit="same as vn")
+        if su is not None:
+            check_positive("su", su, unit="same as vu")
 
         self._ve = _make_readonly(ve)
         self._vn = _make_readonly(vn)
@@ -428,14 +475,27 @@ class GNSS(DataSet):
         if components == "en":
             vu, su = None, None
 
-        return cls(lon, lat, ve, vn, vu, se, sn, su, name=_read_names(path))
+        return cls(
+            lon=lon,
+            lat=lat,
+            ve=ve,
+            vn=vn,
+            vu=vu,
+            se=se,
+            sn=sn,
+            su=su,
+            name=_read_names(path),
+        )
 
 
 class InSAR(DataSet):
     """Line-of-sight displacement observations (e.g. from SAR interferometry).
 
-    Each pixel has a scalar LOS measurement and a 3-component unit look vector
-    defining the satellite-to-ground direction.
+    Each pixel has a scalar LOS measurement and a 3-component **unit** look
+    vector pointing from the ground **to the satellite** (so ``look_u`` is
+    positive and uplift produces positive LOS motion toward the satellite).
+    If your processing chain provides satellite-to-ground vectors, negate
+    all three components; ``validate()`` flags the likely mix-up.
 
     Args:
         lon: Pixel longitudes, shape (n_stations,).
@@ -446,12 +506,17 @@ class InSAR(DataSet):
         look_n: North component of look vector, shape (n_stations,).
         look_u: Up component of look vector, shape (n_stations,).
         covariance: Optional full covariance matrix, shape (n_obs, n_obs).
+        validate_covariance: Set ``False`` to skip the positive-definiteness
+            check on an explicit covariance (advanced semidefinite cases).
+        normalize_look: Renormalize the look vectors to unit length instead
+            of requiring them to arrive normalized.
     """
 
     greens_type = "displacement"
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         los: np.ndarray,
@@ -459,34 +524,72 @@ class InSAR(DataSet):
         look_e: np.ndarray,
         look_n: np.ndarray,
         look_u: np.ndarray,
-        *,
         covariance: np.ndarray | None = None,
+        validate_covariance: bool = True,
+        normalize_look: bool = False,
     ) -> None:
-        super().__init__(lon, lat, covariance=covariance)
-
-        los = np.asarray(los, dtype=float)
-        sigma = np.asarray(sigma, dtype=float)
-        look_e = np.asarray(look_e, dtype=float)
-        look_n = np.asarray(look_n, dtype=float)
-        look_u = np.asarray(look_u, dtype=float)
+        super().__init__(
+            lon=lon,
+            lat=lat,
+            covariance=covariance,
+            validate_covariance=validate_covariance,
+        )
 
         n = self.n_stations
-        if not all(arr.shape == (n,) for arr in (los, sigma, look_e, look_n, look_u)):
-            raise ValueError(
-                "los, sigma, look_e, look_n, look_u must be 1-D arrays of the "
-                "same length as lat/lon"
-            )
+        los = as_1d_floats("los", los, n=n, unit="meters")
+        sigma = as_1d_floats("sigma", sigma, n=n, unit="meters")
+        look_e = as_1d_floats("look_e", look_e, n=n, unit="unit vector component")
+        look_n = as_1d_floats("look_n", look_n, n=n, unit="unit vector component")
+        look_u = as_1d_floats("look_u", look_u, n=n, unit="unit vector component")
 
-        if np.any(sigma <= 0):
-            raise ValueError("All sigma values must be positive")
+        check_positive("sigma", sigma, unit="meters")
+
+        norms = np.sqrt(look_e**2 + look_n**2 + look_u**2)
+        if normalize_look:
+            check_positive("look vector norm", norms)
+            look_e = look_e / norms
+            look_n = look_n / norms
+            look_u = look_u / norms
+        elif np.any(np.abs(norms - 1.0) > 1e-3):
+            worst = float(norms[np.argmax(np.abs(norms - 1.0))])
+            raise ValueError(
+                "look vectors must be unit length: worst norm is "
+                f"{worst:.6g}. Pass normalize_look=True to renormalize, "
+                "or normalize (look_e, look_n, look_u) yourself."
+            )
 
         self._los = _make_readonly(los)
         self._sigma = _make_readonly(sigma)
-        self._look_e = _make_readonly(look_e)
-        self._look_n = _make_readonly(look_n)
-        self._look_u = _make_readonly(look_u)
+        self._look_e = _make_readonly(np.asarray(look_e))
+        self._look_n = _make_readonly(np.asarray(look_n))
+        self._look_u = _make_readonly(np.asarray(look_u))
 
         self._validate_covariance_shape()
+
+    def _validate_extra(self, builder) -> None:
+        if np.any(self._look_u < 0):
+            builder.warning(
+                "look_u",
+                "negative up-components: these look vectors appear to point "
+                "satellite-to-ground, but GeoDef expects ground-to-satellite "
+                "(look_u > 0). If so, negate all three components or the "
+                "predicted LOS sign will be reversed.",
+            )
+
+    @property
+    def look_e(self) -> np.ndarray:
+        """East components of the unit look vectors, shape (n_stations,)."""
+        return self._look_e
+
+    @property
+    def look_n(self) -> np.ndarray:
+        """North components of the unit look vectors, shape (n_stations,)."""
+        return self._look_n
+
+    @property
+    def look_u(self) -> np.ndarray:
+        """Up components of the unit look vectors, shape (n_stations,)."""
+        return self._look_u
 
     @property
     def n_obs(self) -> int:
@@ -585,7 +688,15 @@ class InSAR(DataSet):
         los, sigma = raw[:, 2], raw[:, 3]
         look_e, look_n, look_u = raw[:, 4], raw[:, 5], raw[:, 6]
 
-        return cls(lon, lat, los, sigma, look_e, look_n, look_u)
+        return cls(
+            lon=lon,
+            lat=lat,
+            los=los,
+            sigma=sigma,
+            look_e=look_e,
+            look_n=look_n,
+            look_u=look_u,
+        )
 
 
 class Vertical(DataSet):
@@ -607,28 +718,27 @@ class Vertical(DataSet):
 
     def __init__(
         self,
+        *,
         lon: np.ndarray,
         lat: np.ndarray,
         displacement: np.ndarray,
         sigma: np.ndarray,
-        *,
         name: np.ndarray | None = None,
         covariance: np.ndarray | None = None,
+        validate_covariance: bool = True,
     ) -> None:
-        super().__init__(lon, lat, name=name, covariance=covariance)
-
-        displacement = np.asarray(displacement, dtype=float)
-        sigma = np.asarray(sigma, dtype=float)
+        super().__init__(
+            lon=lon,
+            lat=lat,
+            name=name,
+            covariance=covariance,
+            validate_covariance=validate_covariance,
+        )
 
         n = self.n_stations
-        if displacement.shape != (n,) or sigma.shape != (n,):
-            raise ValueError(
-                "displacement and sigma must be 1-D arrays of the same length "
-                "as lat/lon"
-            )
-
-        if np.any(sigma <= 0):
-            raise ValueError("All sigma values must be positive")
+        displacement = as_1d_floats("displacement", displacement, n=n, unit="meters")
+        sigma = as_1d_floats("sigma", sigma, n=n, unit="meters")
+        check_positive("sigma", sigma, unit="meters")
 
         self._displacement = _make_readonly(displacement)
         self._sigma = _make_readonly(sigma)
@@ -726,7 +836,13 @@ class Vertical(DataSet):
         lon, lat = raw[:, 0], raw[:, 1]
         displacement, sigma = raw[:, 2], raw[:, 3]
 
-        return cls(lon, lat, displacement, sigma, name=_read_names(path))
+        return cls(
+            lon=lon,
+            lat=lat,
+            displacement=displacement,
+            sigma=sigma,
+            name=_read_names(path),
+        )
 
 
 def spatial_covariance(

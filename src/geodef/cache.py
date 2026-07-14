@@ -26,6 +26,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Version stamp for the numerical kernels feeding cached results. Bump this
+# whenever a change to any engine (okada85/okada92/tri), Green's assembly, or
+# projection alters numerical output: every existing cache entry then misses,
+# so a stale pre-fix matrix can never be served. Record bumps in CHANGELOG.md.
+KERNEL_VERSION: int = 1
+
 
 @dataclasses.dataclass
 class _CacheConfig:
@@ -145,6 +151,22 @@ def compute_hash(key_data: dict[str, Any]) -> str:
 # ====================================================================
 
 
+def _compute_context() -> dict[str, Any]:
+    """Implicit inputs that affect every cached computation.
+
+    The kernel version stamp plus the active backend and precision are merged
+    into every cache key so that a kernel fix, a backend switch, or a
+    float32/float64 change can never serve a stale entry.
+    """
+    from geodef import backend
+
+    return {
+        "__kernel_version": KERNEL_VERSION,
+        "__backend": backend.get_backend(),
+        "__precision": backend.get_precision(),
+    }
+
+
 def cached_compute(
     key_data: dict[str, Any],
     compute_fn: Callable[[], np.ndarray],
@@ -155,9 +177,16 @@ def cached_compute(
     and the result is saved as a compressed ``.npz`` file. Subsequent calls
     with identical ``key_data`` load from disk without recomputing.
 
+    The hash additionally covers the module's ``KERNEL_VERSION`` stamp and
+    the active backend name/precision, so entries written under a different
+    compute context are never returned. Entries orphaned by a context change
+    stay on disk until ``clear()`` removes them.
+
     Args:
-        key_data: Dict describing all inputs that affect the result.
-            Used to build a deterministic hash for the cache filename.
+        key_data: Dict describing all explicit inputs that affect the
+            result. Used to build a deterministic hash for the cache
+            filename. Keys starting with ``__`` are reserved for the
+            implicit compute context.
         compute_fn: Zero-argument callable that returns the matrix.
 
     Returns:
@@ -166,7 +195,7 @@ def cached_compute(
     if not _config.enabled:
         return compute_fn()
 
-    hex_hash = compute_hash(key_data)
+    hex_hash = compute_hash({**key_data, **_compute_context()})
     cache_path = _config.directory / hex_hash[:2] / f"{hex_hash}.npz"
 
     if cache_path.exists():

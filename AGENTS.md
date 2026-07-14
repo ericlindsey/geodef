@@ -25,7 +25,7 @@ geodef/
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
-├── tests/                 # 926 tests collected across 24 files
+├── tests/                 # Test suite (one file per module plus integration)
 ├── tutorials/             # Eleven-part teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
@@ -47,6 +47,7 @@ geodef/
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
 | `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
+| `medium` | `ElasticMedium`: shear modulus and Poisson's ratio, shared by Green's functions, stress kernels, and moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
 | `bayes` | Bayesian inference: collapsed rect/tri-mesh geometry posteriors (`RectPosterior`, `TriWarp`+`TriPosterior`), joint slip sampling with positivity (`SlipPosterior`), NUTS sampling (blackjax), slip credible intervals (JAX) |
@@ -54,6 +55,7 @@ geodef/
 | `geomap` | Optional Cartopy geographic map plotting (basemap, fault/vector overlays) |
 | `cache` | Hash-based disk caching for Green's matrices and stress kernels |
 | `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
+| `validation` | Fail-early input checks and `.validate()` reports (`ValidationReport`) |
 | `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 (optional deps) |
 | `euler` | Euler pole fitting and rigid-block velocity prediction |
 
@@ -64,6 +66,8 @@ See `docs/` for per-module API reference with examples.
 ## Important Rules
 
 - **Read `PYTHON.md` before editing any code.** Mandatory style guidelines, tooling requirements, and coding standards.
+- Work directly on coding tasks. Do not use subagents unless the user explicitly
+  requests delegation or parallel agent work.
 - Use red/green TDD. Write tests first, then write code to pass the tests.
 - Use `uv` for package management. Use `pytest` for testing. Install with `uv pip install -e .`.
 - All new functions must have type hints, docstrings, and tests.
@@ -83,13 +87,13 @@ See `docs/` for per-module API reference with examples.
 
 ## Git Workflow
 
-**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave the test suite passing and represent a coherent, independently revertable change.
+**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave its relevant tests passing and represent a coherent, independently revertable change.
 
 Commit messages should describe the change without AI co-author trailers.
 
 ```bash
-# Run tests before committing
-uv run pytest
+# Run the tests relevant to this contained change before committing
+uv run pytest tests/test_module.py
 
 # Stage specific files (never `git add -A` blindly)
 git add src/geodef/module.py tests/test_module.py
@@ -111,11 +115,17 @@ Commit granularity guidelines:
 
 ## Testing
 
+For a small, contained commit, run the directly relevant test module(s) or test
+selection. Expand the selection when shared interfaces or cross-module behavior
+are affected. Run the full routine suite when wrapping up a pull request or a
+major change:
+
 ```bash
 uv run pytest
 ```
 
-**926 tests collected** across 24 test files covering all modules. Reference
+The suite covers every module (do not hard-code collected-test counts
+here; they drift). Reference
 data in `tests/reference_data/` — Matlab-generated `.npz` files for
 cross-validation of Green's function engines. Tests skip rather than fail when
 their optional dependency is absent: a few `Fault.load` tests need reference

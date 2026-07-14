@@ -1,5 +1,7 @@
 # `geodef.data` — Geodetic data types
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Three concrete data classes (`GNSS`, `InSAR`, `Vertical`) all inherit from
 `DataSet`. They define how displacements are projected into observation space
 and provide common infrastructure for coordinates, uncertainties, and
@@ -34,11 +36,13 @@ Three-component (E, N, U) or horizontal-only (E, N) displacement/velocity data.
 from geodef import GNSS
 
 # Construct directly
-gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su)          # full 3-component
-gnss = GNSS(lon, lat, ve, vn, None, se, sn, None)      # horizontal-only
+gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu,
+            se=se, sn=sn, su=su)               # full 3-component
+gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, se=se, sn=sn)  # horizontal-only
 
 # Optional per-station East-North correlation (scalar or per-station array)
-gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, rho=0.4)
+gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu,
+            se=se, sn=sn, su=su, rho=0.4)
 
 # Load from file (columns: lon lat uE uN uZ sigE sigN sigZ)
 gnss = GNSS.load("stations.dat")
@@ -73,7 +77,8 @@ Line-of-sight displacement with per-pixel look vectors.
 ```python
 from geodef import InSAR
 
-insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u)
+insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma,
+              look_e=look_e, look_n=look_n, look_u=look_u)
 
 # Load from file (columns: lon lat uLOS sigLOS losE losN losU)
 insar = InSAR.load("ascending.dat")
@@ -98,7 +103,7 @@ Single-component vertical displacement (coral uplift, tide gauges, etc.).
 ```python
 from geodef import Vertical
 
-vert = Vertical(lon, lat, displacement, sigma)
+vert = Vertical(lon=lon, lat=lat, displacement=displacement, sigma=sigma)
 
 # Load from file (columns: lon lat uZ sigZ)
 vert = Vertical.load("coral.dat")
@@ -132,7 +137,8 @@ When present, names round-trip through `save()`/`load()` as a leading
 `# names:` comment line, so the numeric data block stays unchanged:
 
 ```python
-gnss = GNSS(lon, lat, ve, vn, vu, se, sn, su, name=["P001", "P002", "P003"])
+gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su,
+            name=["P001", "P002", "P003"])
 gnss.save("stations.dat")
 GNSS.load("stations.dat").name   # array(['P001', 'P002', 'P003'])
 ```
@@ -145,7 +151,8 @@ it when constructing the dataset:
 ```python
 # Compute full covariance (e.g. from empirical semivariogram)
 Cdata = compute_full_covariance(lat, lon, ...)  # (n_obs, n_obs)
-insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
+insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma, look_e=look_e,
+              look_n=look_n, look_u=look_u, covariance=Cdata)
 ```
 
 `load()` reads diagonal-uncertainty files. If a loaded dataset needs a full
@@ -169,7 +176,8 @@ Cdata = spatial_covariance(
     lon, lat, sill=4e-4, correlation_length=8_000.0,
     model="exponential", nugget=1e-4,
 )
-insar = InSAR(lon, lat, los, sigma, look_e, look_n, look_u, covariance=Cdata)
+insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma, look_e=look_e,
+              look_n=look_n, look_u=look_u, covariance=Cdata)
 ```
 
 `C_ij = sill * rho(d_ij) + nugget * delta_ij`, with `rho(d) = exp(-d / L)`

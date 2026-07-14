@@ -296,11 +296,15 @@ class TestOkada92Vectorized:
             0.25,
             allow_singular=True,
         )
+        # The golden arrays were captured on one platform/NumPy version;
+        # transcendental-function roundoff drifts by ~1e-11 relative across
+        # library versions. 1e-9 still catches any algorithmic regression
+        # while staying insensitive to that platform noise.
         np.testing.assert_allclose(
-            disp, ref[f"{geometry}_{slip}_disp"], rtol=1e-12, atol=1e-20
+            disp, ref[f"{geometry}_{slip}_disp"], rtol=1e-9, atol=1e-20
         )
         np.testing.assert_allclose(
-            strain, ref[f"{geometry}_{slip}_strain"], rtol=1e-12, atol=1e-22
+            strain, ref[f"{geometry}_{slip}_strain"], rtol=1e-9, atol=1e-22
         )
 
 

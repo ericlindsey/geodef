@@ -1,5 +1,7 @@
 # `geodef.backend` — Array backend selection
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Selects the array library used by the compute kernels: **NumPy** (the default)
 or **JAX**. The JAX backend JIT-compiles the Green's-function kernels through
 XLA on ordinary CPUs and offloads to a GPU when one is available, and it
@@ -144,6 +146,12 @@ Backend arrays are converted back to NumPy at public API boundaries:
 ```python
 geodef.backend.to_numpy(arr)   # → np.ndarray, zero-copy where possible
 ```
+
+The kernels use `backend.masked_eval(func, mask, args, n_out)` to evaluate a
+vectorized function only where a boolean mask is true: on NumPy the true lanes
+are gathered and scattered back (no wasted work), while on JAX the function
+runs on full arrays under `where` because traced shapes cannot depend on data.
+It is public so custom engines can reuse the same backend-portable pattern.
 
 Most high-level user-facing functions convert results to `np.ndarray`
 regardless of the active backend. The low-level traceable functions in

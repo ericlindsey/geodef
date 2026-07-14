@@ -1,5 +1,7 @@
 # `geodef.geomap`
 
+> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+
 Optional geographic map plotting with [Cartopy](https://scitools.org.uk/cartopy/).
 Most `geodef.plot` functions work in a local Cartesian frame (East/North km);
 `geomap` provides the complementary geographic view — coastlines, borders, and
