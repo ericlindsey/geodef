@@ -146,13 +146,18 @@ Rectangular patches (Okada85). Returns shape `(3*nobs, 2*npatch)`.
 
 Rectangular patches, strain output. Shape `(4*nobs, 2*npatch)`. Pass `obs_depth` for internal points (uses Okada92).
 
-### `tri_displacement_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25)`
+### `tri_displacement_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25, *, frame=None)`
 
 Triangular patches (Nikkhoo & Walter). Returns shape `(3*nobs, 2*npatch)`.
 
-### `tri_strain_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25, obs_depth=None)`
+### `tri_strain_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25, obs_depth=None, *, frame=None)`
 
 Triangular patches, strain output. Shape `(6*nobs, 2*npatch)`.
+
+For direct low-level triangular calls, pass the `LocalFrame` that defines
+`vertices`. Omitting it retains legacy mean-centroid frame inference.
+`Fault.greens_matrix` always supplies `fault.frame`, so domain-level assembly
+cannot silently reinterpret triangular vertices.
 
 ---
 

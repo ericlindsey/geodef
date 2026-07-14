@@ -15,10 +15,13 @@ mapping is given here.
   (`Fault.centers` predates this policy and stores `[lat, lon, depth]`;
   use `Fault.centers_geo` for the documented `[lon, lat, depth]` order.)
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
-  to an explicit reference origin (`ref_lat`, `ref_lon`). Anything named
-  `*_enu` or `*_local` uses this frame; `z`/`up` is negative below the
-  surface, while `depth` is positive down. Convert with
-  `geodef.transforms`.
+  to a `LocalFrame` that records origin latitude, longitude, altitude, and
+  projection. The current projection identifier is `"wgs84-enu"` (WGS84
+  geographic → ECEF → tangent ENU); it is explicit so later projections do
+  not make saved or combined local arrays ambiguous. Anything named `*_enu`
+  or `*_local` uses its object's `.frame`; `z`/`up` is negative below the
+  surface, while `depth` is positive down. Use `LocalFrame.to_enu`,
+  `to_geographic`, and explicit `transform_enu`/`geometry.to_frame` methods.
 - Kernel-native frames (Okada's fault-aligned x/y, DC3D internals,
   triangular dislocation coordinates) never appear in public signatures;
   they are converted at the adapter layer inside `geodef.greens`.

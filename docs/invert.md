@@ -177,7 +177,7 @@ results, one fused sweep instead of a Python loop.
 
 ## Nonlinear geometry search (JAX)
 
-### `geometry_search(theta0, datasets, *, ref_lat, ref_lon, ...) → GeometrySearchResult`
+### `geometry_search(geometry0, datasets, *, ...) → GeometrySearchResult`
 
 Gradient-based inversion for planar fault geometry: the slip is solved
 linearly inside a nonlinear search over selected geometry parameters
@@ -203,12 +203,16 @@ and `lambda` describe the chosen slip regularization.
 ```python
 geodef.backend.set_backend('jax')
 
-theta0 = [0.0, 0.0, 25e3, 315.0, 30.0, 180e3, 90e3]
-#         e0   n0   depth strike dip   length width  (start; true dip 15)
+frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+geometry0 = geodef.PlanarGeometry(
+    center=(0.0, 0.0),
+    depth=25e3, strike=315.0, dip=30.0,
+    length=180e3, width=90e3,
+    frame=frame,
+)
 
 result = geodef.geometry_search(
-    theta0, gnss,
-    ref_lat=-2.0, ref_lon=100.0,     # anchors the local frame
+    geometry0, gnss,
     free=['dip', 'depth'],           # parameters to optimize; rest fixed
     bounds={'dip': (5.0, 45.0)},
     n_length=12, n_width=6,
@@ -216,7 +220,8 @@ result = geodef.geometry_search(
     smoothing='laplacian', smoothing_strength=1.0,
 )
 
-result.theta          # full 7-vector at the optimum
+result.geometry       # named optimum with units and frame
+result.theta          # expert/JAX seven-vector for the same geometry
 result.slip           # inner-solve slip at the optimal geometry
 result.theta_cov      # Gauss-Newton covariance of the free parameters
 result.reduced_chi2
@@ -224,8 +229,10 @@ result.reduced_chi2
 
 Notes:
 
-- `theta0` is in the local Cartesian frame anchored at
-  `(ref_lat, ref_lon)`; `e0`/`n0` are centroid offsets in meters.
+- For expert/JAX workflows, the legacy seven-element `theta0` array remains
+  supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
+- `result.geometry` is the ordinary named view. `result.theta` is retained as
+  the exact `[e0, n0, depth, strike, dip, length, width]` array view.
 - The inner solve is unconstrained WLS with fixed `smoothing_strength`;
   choose λ first (e.g. with `abic_curve` at a reasonable starting
   geometry).

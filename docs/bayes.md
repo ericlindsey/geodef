@@ -46,8 +46,9 @@ models with small `L m`; for a Laplacian, that means neighboring patches tend
 to have similar slip. These assumptions are choices, not universal physical
 laws, and should be reported with the result.
 
-- `theta` — planar-fault geometry `[e0, n0, depth, strike, dip, length,
-  width]`; any subset can be sampled (`free`), the rest stay fixed.
+- `geometry` — a `PlanarGeometry`; any subset of its named parameters can be
+  sampled (`free`), while the rest stay fixed. Its `.theta` property is the
+  expert/JAX `[e0, n0, depth, strike, dip, length, width]` view.
 - `sigma` — dimensionless noise scale factor multiplying the dataset
   covariances (`sigma = 1` means the reported data errors are exact).
   Sampled as `log10_sigma`.
@@ -80,10 +81,16 @@ just the best-fitting slip model.
 ## Building a posterior
 
 ```python
+frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+geometry0 = geodef.PlanarGeometry(
+    center=(0.0, 0.0), depth=25e3,
+    strike=315.0, dip=30.0, length=180e3, width=90e3,
+    frame=frame,
+)
+
 post = geodef.bayes.RectPosterior(
-    theta0,                       # [e0, n0, depth, strike, dip, length, width]
+    geometry0,
     [gnss, insar],                # any DataSet mix
-    ref_lat=-2.0, ref_lon=100.0,  # local Cartesian anchor
     free=["dip", "depth"],
     theta_prior={
         "dip": (5.0, 60.0),               # uniform
@@ -98,8 +105,12 @@ post = geodef.bayes.RectPosterior(
 
 post.param_names   # ['dip', 'depth', 'log10_sigma', 'log10_lambda']
 post.x0            # starting point (theta0 values + scale defaults)
+post.geometry(post.x0)  # named geometry represented by one state
 post.logpdf(x)     # traceable, differentiable log-posterior
 ```
+
+The legacy seven-element `theta0` array remains supported with either
+`frame=frame` or `ref_lat=..., ref_lon=...`.
 
 `logpdf`, `log_likelihood`, and `log_prior` are pure JAX-traceable
 functions of the sampled vector `x` — hand them to any JAX sampler or
@@ -339,9 +350,10 @@ enough to set priors on directly.
 ### Setup workflow — look before you sample
 
 ```python
-fault = geodef.Fault.from_triangles(nodes, ref_lat, ref_lon, triangles=tri)
+tri_geometry = geodef.TriGeometry.from_nodes(nodes, tri, frame=frame)
 
-warp = geodef.bayes.TriWarp(fault, n_knots=(3, 2))   # or knots=(nk, 2) array
+warp = geodef.bayes.TriWarp(tri_geometry, n_knots=(3, 2))
+# TriWarp also accepts an existing triangular Fault
 warp.knots_uv, warp.knots_xyz    # where the knots sit
 warp.length_scale                # RBF smoothness (m); override if needed
 

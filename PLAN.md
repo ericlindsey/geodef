@@ -269,15 +269,17 @@ it does not hide the linear algebra or create a mandatory framework.
 
 ### 1.1 Named geometry and coordinate frames
 
-- [ ] Add immutable `LocalFrame(origin_lat, origin_lon, origin_alt=0)` and
-  `PlanarGeometry(center, depth, strike, dip, length, width)` value objects.
+- [x] Add immutable `LocalFrame(origin_lat, origin_lon, origin_alt=0,
+  projection="wgs84-enu")`, `PlanarGeometry(center, depth, strike, dip,
+  length, width, frame)`, and `TriGeometry(vertices_enu, frame)` value objects.
   They validate units/conventions and convert explicitly to geographic arrays,
-  ENU arrays, and the autodiff parameter vector.
-- [ ] Let `Fault.planar` and geometry-search/Bayesian constructors accept these
+  ENU arrays, other frames, and (for planar geometry) the autodiff parameter
+  vector.
+- [x] Let `Fault.planar` and geometry-search/Bayesian constructors accept these
   objects while preserving keyword-based scalar calls.
-- [ ] Replace unexplained seven-element `theta` arrays in beginner-facing docs
+- [x] Replace unexplained seven-element `theta` arrays in beginner-facing docs
   and results with named geometry views; keep `.theta` as the expert/JAX view.
-- [ ] Give every local-coordinate-bearing object a `.frame` and reject combining
+- [x] Give every local-coordinate-bearing object a `.frame` and reject combining
   objects with incompatible frames unless the user explicitly transforms them.
 
 ### 1.2 One canonical slip representation
@@ -286,6 +288,11 @@ it does not hide the linear algebra or create a mandatory framework.
   `strike`, `dip`, `magnitude`, `rake`, and `.vector` for the blocked linear-
   algebra view. Support one-component rake/azimuth amplitudes without pretending
   they are already two components.
+- [ ] For triangular faults with strongly varying patch strike/dip, define a
+  large-scale plate-motion slip basis (constant plate rake or Euler-pole-derived
+  direction) with named rake-parallel/rake-perpendicular components. Keep this
+  kinematic basis on the slip model/specification, not `TriGeometry`, so
+  smoothing and bounds do not inherit noisy per-patch orientation changes.
 - [ ] Accept `SlipModel` anywhere a slip vector is accepted; keep NumPy arrays
   fully supported for low-level and backwards-compatible code.
 - [ ] Make forward results a small named `Displacement(east, north, up)` object

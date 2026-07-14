@@ -29,10 +29,19 @@ from geodef.mesh import Mesh
 
 mesh.n_nodes       # number of vertices
 mesh.n_triangles   # number of triangles
+mesh.frame         # explicit LocalFrame, inferred from mean nodes by default
 mesh.centers_geo   # (M, 3) centroids as [lon, lat, depth_m]
 mesh.areas         # (M,) triangle areas in m²
-mesh.vertices_enu(ref_lat, ref_lon)  # (M, 3, 3) vertices in local ENU meters
+mesh.vertices_enu()                  # vertices in mesh.frame
+mesh.vertices_enu(frame=other_frame) # explicit alternate representation
 ```
+
+Pass `frame=geodef.LocalFrame(...)` when constructing a `Mesh` to choose the
+stored local representation. Legacy `vertices_enu(ref_lat, ref_lon)` remains
+supported. Supplying both forms is rejected because it would make provenance
+ambiguous.
+`mesh.to_frame(other_frame)` returns the same geographic mesh with a different
+default local representation.
 
 ### I/O
 
