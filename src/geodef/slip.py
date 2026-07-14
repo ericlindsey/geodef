@@ -45,6 +45,36 @@ def _broadcast_angle(values: npt.ArrayLike, size: int, name: str) -> np.ndarray:
     return broadcast
 
 
+def plate_rake_from_euler(
+    fault: Fault, pole: tuple[float, float, float]
+) -> np.ndarray:
+    """Compute a smooth geographic plate direction in local patch rake axes.
+
+    Args:
+        fault: Fault whose patch centers and local strikes define the basis.
+        pole: ``(latitude, longitude, rate)`` in degrees, degrees, deg/Myr.
+
+    Returns:
+        Local plate rake in degrees for each patch, shape (N,).
+
+    Raises:
+        ValueError: If a patch center lies on the Euler axis and therefore has
+            no defined velocity direction.
+    """
+    from geodef.euler import pole_velocity
+
+    centers = fault.centers_geo
+    east, north = pole_velocity(
+        centers[:, 1], centers[:, 0], pole[0], pole[1], pole[2]
+    )
+    if np.any(np.hypot(east, north) == 0.0):
+        raise ValueError("Euler pole produces zero velocity at a patch center")
+    azimuth = np.degrees(np.arctan2(east, north))
+    rake = np.asarray(azimuth - fault.strike)
+    rake.flags.writeable = False
+    return rake
+
+
 @dataclasses.dataclass(frozen=True, init=False)
 class SlipModel:
     """Immutable per-patch slip with an explicit linear-algebra basis.
@@ -211,20 +241,10 @@ class SlipModel:
             fault: Fault whose patch centers and local strikes define the basis.
             pole: ``(latitude, longitude, rate)`` in degrees, degrees, deg/Myr.
         """
-        from geodef.euler import pole_velocity
-
-        centers = fault.centers_geo
-        east, north = pole_velocity(
-            centers[:, 1], centers[:, 0], pole[0], pole[1], pole[2]
-        )
-        speed = np.hypot(east, north)
-        if np.any(speed == 0.0):
-            raise ValueError("Euler pole produces zero velocity at a patch center")
-        azimuth = np.degrees(np.arctan2(east, north))
         return cls.from_plate_rake(
             parallel,
             perpendicular,
-            plate_rake=azimuth - fault.strike,
+            plate_rake=plate_rake_from_euler(fault, pole),
         )
 
     @property

@@ -673,6 +673,7 @@ def select_slip_columns(
     rake: float | None = None,
     fault_strike: np.ndarray | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> np.ndarray:
     """Project a two-component Green's matrix onto the requested slip basis.
 
@@ -685,15 +686,19 @@ def select_slip_columns(
         n_patches: Number of fault patches N.
         components: ``'both'`` (no reduction), ``'strike'``, ``'dip'``,
             ``'rake'`` (fixed rake, all patches), or ``'azimuth'`` (fixed
-            geographic slip azimuth, per-patch local rake).
+            geographic slip azimuth, per-patch local rake), or ``'plate'``
+            (two components parallel/perpendicular to a per-patch plate rake).
         rake: Fixed rake angle in degrees, required for ``'rake'``.
         fault_strike: Per-patch strike angles in degrees, shape (N,),
             required for ``'azimuth'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``'azimuth'``.
+        plate_rake: Large-scale plate direction expressed as local rake in
+            degrees, scalar or shape (N,), required for ``'plate'``.
 
     Returns:
-        Reduced matrix: shape (M, 2*N) for ``'both'``, else (M, N).
+        Reduced matrix: shape (M, 2*N) for ``'both'`` and ``'plate'``, else
+        (M, N).
 
     Raises:
         ValueError: If required angles for the chosen basis are missing.
@@ -704,16 +709,29 @@ def select_slip_columns(
         return G_full[:, :n_patches]
     if components == "dip":
         return G_full[:, n_patches:]
+    if components == "plate":
+        if plate_rake is None:
+            raise ValueError("components='plate' requires plate_rake")
+        theta = np.deg2rad(np.broadcast_to(plate_rake, (n_patches,)))
+        cosine = np.cos(theta)
+        sine = np.sin(theta)
+        strike = G_full[:, :n_patches]
+        dip = G_full[:, n_patches:]
+        parallel = strike * cosine + dip * sine
+        perpendicular = -strike * sine + dip * cosine
+        return np.hstack([parallel, perpendicular])
     if components == "rake":
         if rake is None:
             raise ValueError("components='rake' requires a rake angle in degrees")
         theta = np.deg2rad(rake)  # scalar
-    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
+    elif components == "azimuth":
         if fault_strike is None or slip_azimuth is None:
             raise ValueError(
                 "components='azimuth' requires fault_strike and slip_azimuth"
             )
         theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
+    else:
+        raise ValueError(f"Unknown slip components {components!r}")
     return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
 
 
@@ -724,6 +742,7 @@ def greens(
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> np.ndarray:
     """Build a projected Green's matrix for one or more datasets.
 
@@ -736,11 +755,14 @@ def greens(
         datasets: A single ``DataSet`` or a list of them.
         components: Slip basis for the returned columns: ``'both'``
             (default, ``2*N`` columns), ``'strike'``, ``'dip'``, ``'rake'``
-            (fixed rake), or ``'azimuth'`` (fixed geographic slip azimuth).
+            (fixed rake), ``'azimuth'`` (fixed geographic slip azimuth), or
+            ``'plate'`` (plate-rake-parallel/perpendicular coordinates).
             The reduction uses the same semantics as :func:`geodef.invert`.
         rake: Fixed rake angle in degrees, required for ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``components='azimuth'``.
+        plate_rake: Large-scale direction as local rake, scalar or shape (N,),
+            required for ``components='plate'``.
 
     Returns:
         Projected Green's matrix. For a single dataset with M observations
@@ -772,6 +794,7 @@ def greens(
         rake,
         fault_strike=fault.strike,
         slip_azimuth=slip_azimuth,
+        plate_rake=plate_rake,
     )
 
 

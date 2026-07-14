@@ -27,11 +27,12 @@ from geodef.geometry import (
     _resolve_planar_geometry,
 )
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
+from geodef.slip import SlipModel
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
 _VALID_STRENGTH_STRINGS = {"abic", "cv"}
-_VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth"}
+_VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth", "plate"}
 
 # A bound may be a scalar (all parameters), an array of length n_components
 # (one value per slip component, broadcast over patches), or an array of
@@ -71,6 +72,9 @@ class InversionResult:
             North when ``components='azimuth'``, else ``None``. Each
             patch's effective local rake is ``slip_azimuth - strike_i``,
             so this correctly handles faults with varying strike.
+        plate_rake: Large-scale plate direction expressed as local rake per
+            patch when ``components='plate'``. The two solution blocks are
+            rake-parallel and rake-perpendicular.
     """
 
     slip: np.ndarray
@@ -86,6 +90,41 @@ class InversionResult:
     components: str
     rake: float | None = None
     slip_azimuth: float | None = None
+    plate_rake: np.ndarray | None = None
+    local_rake: np.ndarray | None = None
+
+    @property
+    def slip_model(self) -> SlipModel:
+        """Canonical named slip model, preserving the solved basis."""
+        if self.components == "both":
+            return SlipModel(self.slip[:, 0], self.slip[:, 1])
+        if self.components == "strike":
+            return SlipModel.from_strike(self.slip_vector)
+        if self.components == "dip":
+            return SlipModel.from_dip(self.slip_vector)
+        if self.components == "rake":
+            assert self.rake is not None
+            return SlipModel.from_rake(self.slip_vector, self.rake)
+        if self.components == "azimuth":
+            if self.slip_azimuth is None:
+                raise ValueError("azimuth result is missing slip_azimuth metadata")
+            if self.local_rake is None:
+                raise ValueError("azimuth result is missing per-patch rake metadata")
+            return SlipModel.from_azimuth(
+                self.slip_vector,
+                azimuth=self.slip_azimuth,
+                fault_strike=self.slip_azimuth - self.local_rake,
+            )
+        if self.components == "plate":
+            if self.plate_rake is None:
+                raise ValueError("plate result is missing plate_rake metadata")
+            n = self.slip_vector.size // 2
+            return SlipModel.from_plate_rake(
+                self.slip_vector[:n],
+                self.slip_vector[n:],
+                plate_rake=self.plate_rake,
+            )
+        raise ValueError(f"Unknown result components {self.components!r}")
 
     # ------------------------------------------------------------------
     # I/O
@@ -127,6 +166,16 @@ class InversionResult:
             if self.slip_azimuth is None
             else np.array([self.slip_azimuth])
         )
+        plate_rake_arr = (
+            np.array([], dtype=float)
+            if self.plate_rake is None
+            else np.asarray(self.plate_rake, dtype=float)
+        )
+        local_rake_arr = (
+            np.array([], dtype=float)
+            if self.local_rake is None
+            else np.asarray(self.local_rake, dtype=float)
+        )
 
         arrays: dict = {
             "slip": self.slip,
@@ -142,6 +191,8 @@ class InversionResult:
             "components": np.array([self.components]),
             "rake": rake_arr,
             "slip_azimuth": slip_azimuth_arr,
+            "plate_rake": plate_rake_arr,
+            "local_rake": local_rake_arr,
         }
         if smoothing_arr is not None:
             arrays["smoothing_arr"] = smoothing_arr
@@ -178,6 +229,10 @@ class InversionResult:
             float(data["slip_azimuth"][0]) if "slip_azimuth" in data else float("nan")
         )
         slip_azimuth: float | None = None if np.isnan(raw_az) else raw_az
+        plate_rake = data["plate_rake"] if "plate_rake" in data else np.array([])
+        plate_rake_value = None if plate_rake.size == 0 else plate_rake
+        local_rake = data["local_rake"] if "local_rake" in data else np.array([])
+        local_rake_value = None if local_rake.size == 0 else local_rake
 
         return cls(
             slip=data["slip"],
@@ -193,6 +248,8 @@ class InversionResult:
             components=str(data["components"][0]),
             rake=rake,
             slip_azimuth=slip_azimuth,
+            plate_rake=plate_rake_value,
+            local_rake=local_rake_value,
         )
 
     def save_table(self, fname: str | Path, fault: "Fault") -> None:
@@ -268,8 +325,10 @@ class InversionResult:
             slip_col_names = ["slip_strike_m"]
         elif self.components == "dip":
             slip_col_names = ["slip_dip_m"]
-        else:  # rake or azimuth
+        elif self.components in {"rake", "azimuth"}:
             slip_col_names = ["slip_amplitude_m"]
+        else:  # plate
+            slip_col_names = ["slip_rake_parallel_m", "slip_rake_perpendicular_m"]
         slip_cols = "  ".join(slip_col_names)
         header_lines.append(f"{col_names}  {slip_cols}")
 
@@ -526,6 +585,7 @@ class LinearSystem:
         components: str = "both",
         rake: float | None = None,
         slip_azimuth: float | None = None,
+        plate_rake: float | np.ndarray | None = None,
     ) -> None:
         if isinstance(datasets, DataSet):
             datasets = [datasets]
@@ -552,6 +612,13 @@ class LinearSystem:
                 f"slip_azimuth is only used with components='azimuth', "
                 f"got components={components!r}"
             )
+        if components == "plate" and plate_rake is None:
+            raise ValueError("components='plate' requires plate_rake")
+        if plate_rake is not None and components != "plate":
+            raise ValueError(
+                "plate_rake is only used with components='plate', "
+                f"got components={components!r}"
+            )
 
         self.fault = fault
         self.datasets = datasets
@@ -559,9 +626,16 @@ class LinearSystem:
         self.components = components
         self.rake = rake
         self.slip_azimuth = slip_azimuth
+        self.plate_rake = (
+            None
+            if plate_rake is None
+            else np.broadcast_to(
+                np.asarray(plate_rake, dtype=float), (fault.n_patches,)
+            ).copy()
+        )
 
         n_patches = fault.n_patches
-        n_components = 2 if components == "both" else 1
+        n_components = 2 if components in {"both", "plate"} else 1
         self._n_patches = n_patches
         self._n_params = n_components * n_patches
 
@@ -575,6 +649,7 @@ class LinearSystem:
             rake,
             fault_strike=fault.strike,
             slip_azimuth=slip_azimuth,
+            plate_rake=self.plate_rake,
         )
         self.G_w, self.d_w = _apply_weights(self.G, self.d, self.W)
         self.L: np.ndarray | None = (
@@ -586,6 +661,7 @@ class LinearSystem:
                 components,
                 rake,
                 slip_azimuth,
+                self.plate_rake,
             )
             if smoothing is not None
             else None
@@ -819,7 +895,7 @@ class LinearSystem:
         smoothing_strength: float | str = 0.0,
         bounds: BoundsSpec = None,
         method: str | None = None,
-        smoothing_target: np.ndarray | None = None,
+        smoothing_target: np.ndarray | SlipModel | None = None,
         constraints: tuple[np.ndarray, np.ndarray] | None = None,
         cv_folds: int = 5,
     ) -> InversionResult:
@@ -831,7 +907,8 @@ class LinearSystem:
             bounds: Per-component slip bounds ``(lower, upper)``.
             method: Solver — ``'wls'``, ``'nnls'``, ``'bounded_ls'``,
                 or ``'constrained'``. Auto-selected from bounds if None.
-            smoothing_target: Reference model, shape (n_params,).
+            smoothing_target: Named slip model or reference vector, shape
+                (n_params,).
                 Regularizes toward this target instead of zero.
             constraints: Inequality constraints ``(C, d_ineq)`` such
                 that ``C @ m <= d_ineq``.
@@ -843,6 +920,17 @@ class LinearSystem:
         Raises:
             ValueError: For invalid arguments.
         """
+        if isinstance(smoothing_target, SlipModel):
+            expected_basis = (
+                "strike_dip" if self.components == "both" else self.components
+            )
+            if smoothing_target.basis != expected_basis:
+                raise ValueError(
+                    f"smoothing_target basis {smoothing_target.basis!r} does not "
+                    f"match components={self.components!r}"
+                )
+            smoothing_target = smoothing_target.vector
+
         _validate_args(
             self.datasets,
             self.components,
@@ -854,6 +942,7 @@ class LinearSystem:
             self._n_params,
             self.rake,
             self.slip_azimuth,
+            self.plate_rake,
         )
 
         exp_bounds = _expand_bounds(
@@ -893,13 +982,19 @@ class LinearSystem:
         reduced_chi2 = _compute_reduced_chi2(residuals, self.W, self._n_params)
         rms = float(np.sqrt(np.mean(residuals**2)))
 
-        if self.components == "both":
+        if self.components in {"both", "plate"}:
             slip = np.column_stack([m[: self._n_patches], m[self._n_patches :]])
-            slip_mag = np.sqrt(slip[:, 0] ** 2 + slip[:, 1] ** 2)
         else:
             slip = m.reshape(-1, 1)
-            slip_mag = np.abs(m)
-        moment = self.fault.moment(slip_mag)
+        slip_model = _make_slip_model(
+            m,
+            self.components,
+            rake=self.rake,
+            slip_azimuth=self.slip_azimuth,
+            fault_strike=self.fault.strike,
+            plate_rake=self.plate_rake,
+        )
+        moment = self.fault.moment(slip_model)
         mw = moment_to_magnitude(moment)
 
         return InversionResult(
@@ -916,6 +1011,12 @@ class LinearSystem:
             components=self.components,
             rake=self.rake,
             slip_azimuth=self.slip_azimuth,
+            plate_rake=self.plate_rake,
+            local_rake=(
+                self.slip_azimuth - self.fault.strike
+                if self.slip_azimuth is not None
+                else None
+            ),
         )
 
     def lcurve(
@@ -1157,12 +1258,13 @@ def invert(
     smoothing_strength: float | str = 0.0,
     bounds: BoundsSpec = None,
     method: str | None = None,
-    smoothing_target: np.ndarray | None = None,
+    smoothing_target: np.ndarray | SlipModel | None = None,
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
     constraints: tuple[np.ndarray, np.ndarray] | None = None,
     cv_folds: int = 5,
+    plate_rake: float | np.ndarray | None = None,
 ) -> InversionResult:
     """Invert geodetic data for fault slip.
 
@@ -1192,6 +1294,9 @@ def invert(
             required when ``components='azimuth'``. Each patch's
             effective local rake is ``slip_azimuth - strike_i``,
             so this correctly handles faults with varying strike.
+        plate_rake: Large-scale direction as a local rake angle, scalar or
+            shape (N,), required when ``components='plate'``. The solved
+            blocks are rake-parallel and rake-perpendicular.
         constraints: Inequality constraints ``(C, d_ineq)`` such that
             ``C @ m <= d_ineq``. Only used with ``method='constrained'``.
         cv_folds: Number of folds for cross-validation (default 5).
@@ -1202,7 +1307,15 @@ def invert(
     Raises:
         ValueError: For invalid arguments.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
+    sys = LinearSystem(
+        fault,
+        datasets,
+        smoothing,
+        components,
+        rake,
+        slip_azimuth,
+        plate_rake,
+    )
     return sys.invert(
         smoothing_strength, bounds, method, smoothing_target, constraints, cv_folds
     )
@@ -1264,6 +1377,7 @@ def lcurve(
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> LCurveResult:
     """Sweep smoothing strength and compute the L-curve.
 
@@ -1280,11 +1394,15 @@ def lcurve(
             ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees, required when
             ``components='azimuth'``.
+        plate_rake: Local plate-rake direction, required when
+            ``components='plate'``.
 
     Returns:
         LCurveResult with sweep arrays and optimal lambda.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
+    sys = LinearSystem(
+        fault, datasets, smoothing, components, rake, slip_azimuth, plate_rake
+    )
     return sys.lcurve(smoothing_range, n, bounds, method)
 
 
@@ -1297,6 +1415,7 @@ def abic_curve(
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> ABICCurveResult:
     """Sweep smoothing strength and compute the ABIC at each value.
 
@@ -1314,11 +1433,15 @@ def abic_curve(
             ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees, required when
             ``components='azimuth'``.
+        plate_rake: Local plate-rake direction, required when
+            ``components='plate'``.
 
     Returns:
         ABICCurveResult with sweep arrays and optimal lambda.
     """
-    sys = LinearSystem(fault, datasets, smoothing, components, rake, slip_azimuth)
+    sys = LinearSystem(
+        fault, datasets, smoothing, components, rake, slip_azimuth, plate_rake
+    )
     return sys.abic_curve(smoothing_range, n)
 
 
@@ -1635,6 +1758,7 @@ def dataset_diagnostics(
         result.components,
         result.rake,
         result.slip_azimuth,
+        result.plate_rake,
     )
     return sys.dataset_diagnostics(result)
 
@@ -1673,6 +1797,7 @@ def model_covariance(
         result.components,
         result.rake,
         result.slip_azimuth,
+        result.plate_rake,
     )
     return sys.model_covariance(result, kind=kind)
 
@@ -1705,6 +1830,7 @@ def model_resolution(
         result.components,
         result.rake,
         result.slip_azimuth,
+        result.plate_rake,
     )
     return sys.model_resolution(result)
 
@@ -1736,6 +1862,7 @@ def model_uncertainty(
         result.components,
         result.rake,
         result.slip_azimuth,
+        result.plate_rake,
     )
     return sys.model_uncertainty(result, kind=kind)
 
@@ -1743,6 +1870,41 @@ def model_uncertainty(
 # ======================================================================
 # Private helpers
 # ======================================================================
+
+
+def _make_slip_model(
+    vector: np.ndarray,
+    components: str,
+    *,
+    rake: float | None,
+    slip_azimuth: float | None,
+    fault_strike: np.ndarray,
+    plate_rake: np.ndarray | None,
+) -> SlipModel:
+    """Construct named slip from a solved vector and its basis metadata."""
+    n_patches = fault_strike.size
+    if components == "both":
+        return SlipModel(vector[:n_patches], vector[n_patches:])
+    if components == "strike":
+        return SlipModel.from_strike(vector)
+    if components == "dip":
+        return SlipModel.from_dip(vector)
+    if components == "rake":
+        assert rake is not None
+        return SlipModel.from_rake(vector, rake)
+    if components == "azimuth":
+        assert slip_azimuth is not None
+        return SlipModel.from_azimuth(
+            vector, azimuth=slip_azimuth, fault_strike=fault_strike
+        )
+    if components == "plate":
+        assert plate_rake is not None
+        return SlipModel.from_plate_rake(
+            vector[:n_patches],
+            vector[n_patches:],
+            plate_rake=plate_rake,
+        )
+    raise ValueError(f"Unknown slip components {components!r}")
 
 
 def _validate_args(
@@ -1756,6 +1918,7 @@ def _validate_args(
     n_params: int,
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: np.ndarray | None = None,
 ) -> None:
     """Validate invert() arguments."""
     for ds in datasets:
@@ -1781,6 +1944,13 @@ def _validate_args(
     if slip_azimuth is not None and components != "azimuth":
         raise ValueError(
             f"slip_azimuth is only used with components='azimuth', "
+            f"got components={components!r}"
+        )
+    if components == "plate" and plate_rake is None:
+        raise ValueError("components='plate' requires plate_rake")
+    if plate_rake is not None and components != "plate":
+        raise ValueError(
+            "plate_rake is only used with components='plate', "
             f"got components={components!r}"
         )
 
@@ -1850,6 +2020,7 @@ def _build_smoothing_matrix(
     components: str,
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: np.ndarray | None = None,
 ) -> np.ndarray:
     """Build the regularization matrix L.
 
@@ -1862,6 +2033,7 @@ def _build_smoothing_matrix(
         rake: Fixed rake angle, used when ``components='rake'``.
         slip_azimuth: Fixed geographic slip azimuth, used when
             ``components='azimuth'``.
+        plate_rake: Per-patch plate rake, used when ``components='plate'``.
 
     Returns:
         Regularization matrix with n_params columns.
@@ -1887,6 +2059,7 @@ def _build_smoothing_matrix(
             rake,
             fault_strike=fault.strike,
             slip_azimuth=slip_azimuth,
+            plate_rake=plate_rake,
         )
 
     raise ValueError(f"Unknown smoothing type: {smoothing!r}")

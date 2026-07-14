@@ -21,6 +21,7 @@ from geodef.invert import (
     model_resolution,
     model_uncertainty,
 )
+from geodef.slip import SlipModel
 
 # ======================================================================
 # Fixtures
@@ -148,6 +149,15 @@ class TestInversionResultStructure:
         n = fault_4x3.n_patches
         np.testing.assert_array_equal(result.slip[:, 0], result.slip_vector[:n])
         np.testing.assert_array_equal(result.slip[:, 1], result.slip_vector[n:])
+
+    def test_slip_model_is_canonical_named_result(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+
+        result = invert(fault_4x3, gnss)
+
+        assert isinstance(result.slip_model, SlipModel)
+        assert result.slip_model.basis == "strike_dip"
+        np.testing.assert_allclose(result.slip_model.vector, result.slip_vector)
 
     def test_residuals_shape(self, fault_4x3, obs_points):
         slip_ss = np.ones(12)
@@ -1733,6 +1743,22 @@ class TestComponentsRake:
         )
         assert result.slip.shape == (12, 1)
 
+    def test_result_preserves_one_component_model(self, fault_4x3, obs_points):
+        rake = 30.0
+        radians = np.deg2rad(rake)
+        gnss = _make_gnss(
+            fault_4x3,
+            obs_points,
+            np.cos(radians) * np.ones(12),
+            np.sin(radians) * np.ones(12),
+        )
+
+        result = invert(fault_4x3, gnss, components="rake", rake=rake)
+
+        assert result.slip_model.basis == "rake"
+        assert result.slip_model.n_components == 1
+        np.testing.assert_allclose(result.slip_model.vector, result.slip_vector)
+
     def test_save_load_roundtrip(self, fault_4x3, obs_points, tmp_path):
         rake = 30.0
         r = np.deg2rad(rake)
@@ -1768,6 +1794,101 @@ class TestComponentsRake:
         text = fpath.read_text()
         assert "slip_dip_m" in text
         assert "slip_strike_m" not in text
+
+
+# ======================================================================
+# Plate-rake coordinate inversion
+# ======================================================================
+
+
+class TestComponentsPlate:
+    """Plate coordinates smooth and constrain the large-scale basis."""
+
+    def test_recovers_plate_parallel_and_perpendicular(self, fault_4x3, obs_points):
+        plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
+        truth = SlipModel.from_plate_rake(
+            np.ones(12), np.full(12, 0.2), plate_rake=plate_rake
+        )
+        gnss = _make_gnss(fault_4x3, obs_points, truth.strike, truth.dip)
+
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="plate",
+            plate_rake=plate_rake,
+        )
+
+        assert result.components == "plate"
+        assert result.slip_model.basis == "plate"
+        np.testing.assert_allclose(result.slip_model.plate_rake, plate_rake)
+        np.testing.assert_allclose(result.slip_model.rake_parallel, 1.0, atol=0.1)
+        np.testing.assert_allclose(
+            result.slip_model.rake_perpendicular, 0.2, atol=0.1
+        )
+
+    def test_laplacian_and_bounds_use_plate_coordinates(self, fault_4x3, obs_points):
+        plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
+        truth = SlipModel.from_plate_rake(
+            np.ones(12), np.zeros(12), plate_rake=plate_rake
+        )
+        gnss = _make_gnss(fault_4x3, obs_points, truth.strike, truth.dip)
+
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="plate",
+            plate_rake=plate_rake,
+            smoothing="laplacian",
+            smoothing_strength=1.0,
+            bounds=(np.array([0.0, -0.01]), np.array([2.0, 0.01])),
+        )
+
+        assert np.all(result.slip_model.rake_parallel >= 0.0)
+        assert np.all(np.abs(result.slip_model.rake_perpendicular) <= 0.010001)
+
+    def test_slip_model_is_accepted_as_smoothing_target(
+        self, fault_4x3, obs_points
+    ):
+        plate_rake = np.full(12, 30.0)
+        target = SlipModel.from_plate_rake(
+            np.ones(12), np.zeros(12), plate_rake=plate_rake
+        )
+        gnss = _make_gnss(fault_4x3, obs_points, target.strike, target.dip)
+
+        result = invert(
+            fault_4x3,
+            gnss,
+            components="plate",
+            plate_rake=plate_rake,
+            smoothing="damping",
+            smoothing_strength=1.0,
+            smoothing_target=target,
+        )
+
+        assert result.slip_model.basis == "plate"
+
+    def test_missing_plate_rake_raises(self, fault_4x3, obs_points):
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(ValueError, match="plate_rake"):
+            invert(fault_4x3, gnss, components="plate")
+
+    def test_save_load_preserves_plate_basis(self, fault_4x3, obs_points, tmp_path):
+        plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
+        truth = SlipModel.from_plate_rake(
+            np.ones(12), np.zeros(12), plate_rake=plate_rake
+        )
+        gnss = _make_gnss(fault_4x3, obs_points, truth.strike, truth.dip)
+        result = invert(
+            fault_4x3, gnss, components="plate", plate_rake=plate_rake
+        )
+
+        path = tmp_path / "plate_result.npz"
+        result.save(path)
+        loaded = InversionResult.load(path)
+
+        assert loaded.slip_model.basis == "plate"
+        np.testing.assert_allclose(loaded.slip_model.vector, result.slip_model.vector)
+        np.testing.assert_allclose(loaded.slip_model.plate_rake, plate_rake)
 
 
 # ======================================================================

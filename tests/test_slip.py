@@ -7,7 +7,7 @@ import pytest
 from geodef import Displacement as PublicDisplacement
 from geodef import SlipModel as PublicSlipModel
 from geodef.fault import Fault
-from geodef.slip import Displacement, SlipModel
+from geodef.slip import Displacement, SlipModel, plate_rake_from_euler
 
 
 class TestSlipModel:
@@ -88,6 +88,9 @@ class TestSlipModel:
         npt.assert_allclose(model.plate_rake, 90.0, atol=0.2)
         npt.assert_allclose(model.strike, 0.0, atol=4e-3)
         npt.assert_allclose(model.dip, 1.0, atol=4e-3)
+
+        rake = plate_rake_from_euler(fault, (90.0, 0.0, 1.0))
+        npt.assert_allclose(rake, model.plate_rake)
 
     def test_arrays_are_copied_and_read_only(self):
         strike = np.array([1.0, 2.0])
