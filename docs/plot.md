@@ -25,7 +25,7 @@ interpolated map.
 Slip distribution as colored patches (rectangular or triangular).
 
 ```python
-geodef.plot.slip(fault, result.slip_model)
+geodef.plot.slip(fault, result.slip_magnitude)
 
 geodef.plot.slip(fault, result.slip_vector,
     ax=ax,
@@ -52,11 +52,10 @@ station locations (the up-dip edge is then drawn as the surface trace). The
 `plot.resolution`, and `plot.uncertainty` (defaulting to `'geographic'` and
 `False` there).
 
-Pass `result.slip_model` to select physical `'strike'`, `'dip'`, or
-`'magnitude'` fields by name. Plate-coordinate models additionally support
-`'rake_parallel'` and `'rake_perpendicular'`. Raw N/2N vectors remain accepted;
-a raw one-component vector is plotted directly because it carries no basis
-metadata.
+Pass the named result array you want to plot, such as `result.strike_slip`,
+`result.dip_slip`, `result.slip_magnitude`, `result.rake_parallel`, or
+`result.rake_perpendicular`. Raw N/2N vectors remain accepted; a raw
+one-component vector is plotted directly.
 
 ---
 
@@ -68,8 +67,7 @@ Gouraud-shaded `pcolormesh` over the structured grid; triangular (or
 unstructured) faults use `tricontourf` over the patch centroids.
 
 ```python
-geodef.plot.slip_interpolated(fault, result.slip_model,
-    components='magnitude',
+geodef.plot.slip_interpolated(fault, result.slip_magnitude,
     cmap='viridis',
     levels=20,          # filled contour levels (tricontourf path)
     colorbar=True,

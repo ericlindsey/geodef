@@ -14,7 +14,6 @@ from geodef import greens as _greens
 from geodef import transforms
 from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
-from geodef.slip import Displacement, SlipModel
 from geodef.validation import (
     ValidationReport,
     _ReportBuilder,
@@ -1105,44 +1104,30 @@ class Fault:
         self,
         obs_lat: np.ndarray,
         obs_lon: np.ndarray,
-        slip_strike: float | np.ndarray | SlipModel,
+        slip_strike: float | np.ndarray,
         slip_dip: float | np.ndarray = 0.0,
-    ) -> Displacement:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute surface displacements from a slip distribution.
 
         Args:
             obs_lat: Observation latitudes, shape (M,).
             obs_lon: Observation longitudes, shape (M,).
-            slip_strike: A named :class:`~geodef.slip.SlipModel`, or the
-                legacy strike-slip component per patch. Legacy values may be
-                scalar (broadcast to all patches) or shape (N,).
+            slip_strike: Strike-slip component per patch. Values may be scalar
+                (broadcast to all patches) or shape (N,).
             slip_dip: Dip-slip component per patch. Scalar or array of shape (N,).
-                Do not provide this separately when using ``SlipModel``.
 
         Returns:
-            Named East, North, Up displacement arrays. The result also supports
-            legacy tuple unpacking as ``ue, un, uz = fault.displacement(...)``.
+            ``(east, north, up)`` displacement arrays, each shape (M,).
         """
         obs_lat = np.atleast_1d(np.asarray(obs_lat, dtype=float))
         obs_lon = np.atleast_1d(np.asarray(obs_lon, dtype=float))
 
-        if isinstance(slip_strike, SlipModel):
-            if slip_strike.n_patches != self.n_patches:
-                raise ValueError(
-                    f"SlipModel has {slip_strike.n_patches} patches but fault has "
-                    f"{self.n_patches}"
-                )
-            if np.any(np.asarray(slip_dip) != 0.0):
-                raise ValueError("slip_dip cannot be provided with a SlipModel")
-            slip_s = slip_strike.strike
-            slip_d = slip_strike.dip
-        else:
-            slip_s = np.broadcast_to(
-                np.asarray(slip_strike, dtype=float), (self.n_patches,)
-            )
-            slip_d = np.broadcast_to(
-                np.asarray(slip_dip, dtype=float), (self.n_patches,)
-            )
+        slip_s = np.broadcast_to(
+            np.asarray(slip_strike, dtype=float), (self.n_patches,)
+        )
+        slip_d = np.broadcast_to(
+            np.asarray(slip_dip, dtype=float), (self.n_patches,)
+        )
 
         G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
 
@@ -1156,7 +1141,7 @@ class Fault:
         ue = d[0::3]
         un = d[1::3]
         uz = d[2::3]
-        return Displacement(ue, un, uz)
+        return ue, un, uz
 
     # ==================================================================
     # Stress kernel
@@ -1197,12 +1182,11 @@ class Fault:
     # Moment and magnitude
     # ==================================================================
 
-    def moment(self, slip: npt.ArrayLike | SlipModel, mu: float | None = None) -> float:
+    def moment(self, slip: npt.ArrayLike, mu: float | None = None) -> float:
         """Compute scalar seismic moment.
 
         Args:
-            slip: Named slip model or slip magnitude per patch, shape (N,),
-                in meters.
+            slip: Slip magnitude per patch, shape (N,), in meters.
             mu: Shear modulus in Pa. Defaults to this fault's
                 ``medium.shear_modulus``.
 
@@ -1211,18 +1195,16 @@ class Fault:
         """
         if mu is None:
             mu = self._medium.shear_modulus
-        slip_magnitude = slip.magnitude if isinstance(slip, SlipModel) else slip
-        slip_array = np.asarray(slip_magnitude, dtype=float)
+        slip_array = np.asarray(slip, dtype=float)
         return float(mu * np.sum(slip_array * self.areas))
 
     def magnitude(
-        self, slip: npt.ArrayLike | SlipModel, mu: float | None = None
+        self, slip: npt.ArrayLike, mu: float | None = None
     ) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:
-            slip: Named slip model or slip magnitude per patch, shape (N,),
-                in meters.
+            slip: Slip magnitude per patch, shape (N,), in meters.
             mu: Shear modulus in Pa. Defaults to this fault's
                 ``medium.shear_modulus``.
 

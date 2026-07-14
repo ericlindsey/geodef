@@ -279,11 +279,12 @@ computations; ordinary transformations and one-shot workflows are functions.
   `ElasticMedium`: each carries durable identity or invariants shared by many
   computations. Keep immutable result records where named fields prevent tuple
   or ordering mistakes.
-- [ ] Remove the draft `PlanarGeometry`, `TriGeometry`, `SlipModel`, and
-  `Displacement` public wrappers before release. `Fault` already represents
-  rectangular or triangular geometry; slip and displacement are naturally
-  arrays with documented axes. Retain the useful validation and conversions as
-  functions.
+- [ ] Remove the draft `PlanarGeometry` and `TriGeometry` public wrappers before
+  release. `Fault` already represents rectangular or triangular geometry;
+  retain the useful validation and conversions as functions.
+- [x] Replace the draft `SlipModel` and `Displacement` wrappers with `slip`
+  conversion functions, ordinary arrays, direct named `InversionResult` views,
+  and the existing three-array displacement return.
 - [ ] Keep `LinearSystem` as an expert prepared/cache object for repeated
   sweeps and assessment, not as the beginner workflow and not behind a second
   `SlipProblem` facade.

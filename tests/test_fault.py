@@ -19,7 +19,6 @@ from geodef.fault import (
 )
 from geodef.geometry import LocalFrame, PlanarGeometry
 from geodef.medium import ElasticMedium
-from geodef.slip import Displacement, SlipModel
 
 # ======================================================================
 # Fixtures
@@ -335,33 +334,6 @@ class TestForwardModeling:
         assert un.shape == (1,)
         assert uz.shape == (1,)
 
-    def test_displacement_returns_named_object(self, single_patch):
-        result = single_patch.displacement(
-            np.array([0.1]), np.array([100.0]), slip_strike=1.0
-        )
-
-        assert isinstance(result, Displacement)
-        expected = np.ravel(np.column_stack(tuple(result)))
-        np.testing.assert_allclose(result.vector, expected)
-
-    def test_displacement_accepts_slip_model(self, single_patch):
-        model = SlipModel.from_rake([2.0], rake=30.0)
-
-        named = single_patch.displacement(np.array([0.1]), np.array([100.0]), model)
-        legacy = single_patch.displacement(
-            np.array([0.1]),
-            np.array([100.0]),
-            slip_strike=model.strike,
-            slip_dip=model.dip,
-        )
-
-        np.testing.assert_allclose(named.vector, legacy.vector)
-
-    def test_displacement_rejects_wrong_slip_model_size(self, single_patch):
-        model = SlipModel(strike=[1.0, 2.0], dip=[0.0, 0.0])
-        with pytest.raises(ValueError, match="patches"):
-            single_patch.displacement(np.array([0.1]), np.array([100.0]), model)
-
     def test_zero_slip_gives_zero_displacement(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
@@ -417,15 +389,6 @@ class TestMomentMagnitude:
         m0 = single_patch.moment(slip, mu=40e9)
         expected = 40e9 * 10e3 * 10e3 * 1.0
         np.testing.assert_allclose(m0, expected)
-
-    def test_moment_accepts_slip_model(self, single_patch):
-        model = SlipModel(strike=[3.0], dip=[4.0])
-
-        expected_moment = single_patch.moment([5.0])
-        np.testing.assert_allclose(single_patch.moment(model), expected_moment)
-        np.testing.assert_allclose(
-            single_patch.magnitude(model), single_patch.magnitude([5.0])
-        )
 
     def test_magnitude_known_value(self):
         """Mw 7.0 corresponds to M0 ≈ 3.53e19 N-m."""

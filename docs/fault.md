@@ -137,21 +137,17 @@ position; incompatible frames are never silently substituted.
 
 ### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
 
-Compute surface displacements for a named `SlipModel`. Legacy `slip_strike`
-and `slip_dip` scalars/arrays remain supported.
+Compute surface displacements from strike-slip and dip-slip scalars or arrays.
 
 ```python
-slip = geodef.SlipModel(
-    strike=np.zeros(fault.n_patches),
-    dip=np.ones(fault.n_patches),
+strike_slip = np.zeros(fault.n_patches)
+dip_slip = np.ones(fault.n_patches)
+east, north, up = fault.displacement(
+    obs_lat,
+    obs_lon,
+    slip_strike=strike_slip,
+    slip_dip=dip_slip,
 )
-displacement = fault.displacement(obs_lat, obs_lon, slip)
-
-displacement.east   # each named component has shape (n_obs,)
-displacement.vector # interleaved [E, N, U, ...]
-
-# Tuple unpacking remains supported
-ue, un, uz = displacement
 ```
 
 ### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
@@ -178,8 +174,9 @@ well the spatial slip distribution is resolved. `slip` here is slip magnitude,
 not a signed strike- or dip-slip component.
 
 ```python
-M0 = fault.moment(slip, mu=30e9)      # SlipModel or magnitude array; returns N·m
-Mw = fault.magnitude(slip, mu=30e9)  # moment magnitude
+slip_magnitude = np.hypot(strike_slip, dip_slip)
+M0 = fault.moment(slip_magnitude, mu=30e9)     # returns N·m
+Mw = fault.magnitude(slip_magnitude, mu=30e9) # moment magnitude
 
 # Module-level utilities
 from geodef import moment_to_magnitude, magnitude_to_moment

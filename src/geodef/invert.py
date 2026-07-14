@@ -27,7 +27,8 @@ from geodef.geometry import (
     _resolve_planar_geometry,
 )
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
-from geodef.slip import SlipModel
+from geodef.slip import from_plate, from_rake, magnitude, unpack
+from geodef.slip import rake as slip_rake
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
@@ -94,37 +95,57 @@ class InversionResult:
     local_rake: np.ndarray | None = None
 
     @property
-    def slip_model(self) -> SlipModel:
-        """Canonical named slip model, preserving the solved basis."""
-        if self.components == "both":
-            return SlipModel(self.slip[:, 0], self.slip[:, 1])
-        if self.components == "strike":
-            return SlipModel.from_strike(self.slip_vector)
-        if self.components == "dip":
-            return SlipModel.from_dip(self.slip_vector)
+    def n_patches(self) -> int:
+        """Number of fault patches represented by the result."""
+        divisor = 2 if self.components in {"both", "plate"} else 1
+        return self.slip_vector.size // divisor
+
+    @property
+    def strike_slip(self) -> np.ndarray:
+        """Physical strike-slip component per patch."""
+        return self._physical_components()[0]
+
+    @property
+    def dip_slip(self) -> np.ndarray:
+        """Physical dip-slip component per patch."""
+        return self._physical_components()[1]
+
+    @property
+    def slip_magnitude(self) -> np.ndarray:
+        """Unsigned physical slip magnitude per patch."""
+        return magnitude(self.strike_slip, self.dip_slip)
+
+    @property
+    def slip_rake(self) -> np.ndarray:
+        """Physical local rake in degrees per patch."""
+        return slip_rake(self.strike_slip, self.dip_slip)
+
+    @property
+    def rake_parallel(self) -> np.ndarray:
+        """Plate-rake-parallel solution component per patch."""
+        if self.components != "plate":
+            raise AttributeError("rake_parallel requires components='plate'")
+        return self.slip_vector[: self.n_patches]
+
+    @property
+    def rake_perpendicular(self) -> np.ndarray:
+        """Plate-rake-perpendicular solution component per patch."""
+        if self.components != "plate":
+            raise AttributeError("rake_perpendicular requires components='plate'")
+        return self.slip_vector[self.n_patches :]
+
+    def _physical_components(self) -> tuple[np.ndarray, np.ndarray]:
+        """Convert the solved basis to physical strike/dip components."""
+        angle: float | np.ndarray | None
         if self.components == "rake":
-            assert self.rake is not None
-            return SlipModel.from_rake(self.slip_vector, self.rake)
-        if self.components == "azimuth":
-            if self.slip_azimuth is None:
-                raise ValueError("azimuth result is missing slip_azimuth metadata")
-            if self.local_rake is None:
-                raise ValueError("azimuth result is missing per-patch rake metadata")
-            return SlipModel.from_azimuth(
-                self.slip_vector,
-                azimuth=self.slip_azimuth,
-                fault_strike=self.slip_azimuth - self.local_rake,
-            )
-        if self.components == "plate":
-            if self.plate_rake is None:
-                raise ValueError("plate result is missing plate_rake metadata")
-            n = self.slip_vector.size // 2
-            return SlipModel.from_plate_rake(
-                self.slip_vector[:n],
-                self.slip_vector[n:],
-                plate_rake=self.plate_rake,
-            )
-        raise ValueError(f"Unknown result components {self.components!r}")
+            angle = self.rake
+        elif self.components == "azimuth":
+            angle = self.local_rake
+        elif self.components == "plate":
+            angle = self.plate_rake
+        else:
+            angle = None
+        return _physical_components(self.slip_vector, self.components, angle)
 
     # ------------------------------------------------------------------
     # I/O
@@ -900,7 +921,7 @@ class LinearSystem:
         smoothing_strength: float | str = 0.0,
         bounds: BoundsSpec = None,
         method: str | None = None,
-        smoothing_target: np.ndarray | SlipModel | None = None,
+        smoothing_target: np.ndarray | None = None,
         constraints: tuple[np.ndarray, np.ndarray] | None = None,
         cv_folds: int = 5,
     ) -> InversionResult:
@@ -912,8 +933,7 @@ class LinearSystem:
             bounds: Per-component slip bounds ``(lower, upper)``.
             method: Solver — ``'wls'``, ``'nnls'``, ``'bounded_ls'``,
                 or ``'constrained'``. Auto-selected from bounds if None.
-            smoothing_target: Named slip model or reference vector, shape
-                (n_params,).
+            smoothing_target: Reference vector, shape ``(n_params,)``.
                 Regularizes toward this target instead of zero.
             constraints: Inequality constraints ``(C, d_ineq)`` such
                 that ``C @ m <= d_ineq``.
@@ -925,17 +945,6 @@ class LinearSystem:
         Raises:
             ValueError: For invalid arguments.
         """
-        if isinstance(smoothing_target, SlipModel):
-            expected_basis = (
-                "strike_dip" if self.components == "both" else self.components
-            )
-            if smoothing_target.basis != expected_basis:
-                raise ValueError(
-                    f"smoothing_target basis {smoothing_target.basis!r} does not "
-                    f"match components={self.components!r}"
-                )
-            smoothing_target = smoothing_target.vector
-
         _validate_args(
             self.datasets,
             self.components,
@@ -991,15 +1000,20 @@ class LinearSystem:
             slip = np.column_stack([m[: self._n_patches], m[self._n_patches :]])
         else:
             slip = m.reshape(-1, 1)
-        slip_model = _make_slip_model(
-            m,
-            self.components,
-            rake=self.rake,
-            slip_azimuth=self.slip_azimuth,
-            fault_strike=self.fault.strike,
-            plate_rake=self.plate_rake,
+        basis_angle: float | np.ndarray | None
+        if self.components == "rake":
+            basis_angle = self.rake
+        elif self.components == "azimuth":
+            assert self.slip_azimuth is not None
+            basis_angle = self.slip_azimuth - self.fault.strike
+        elif self.components == "plate":
+            basis_angle = self.plate_rake
+        else:
+            basis_angle = None
+        strike_slip, dip_slip = _physical_components(
+            m, self.components, basis_angle
         )
-        moment = self.fault.moment(slip_model)
+        moment = self.fault.moment(magnitude(strike_slip, dip_slip))
         mw = moment_to_magnitude(moment)
 
         return InversionResult(
@@ -1263,7 +1277,7 @@ def invert(
     smoothing_strength: float | str = 0.0,
     bounds: BoundsSpec = None,
     method: str | None = None,
-    smoothing_target: np.ndarray | SlipModel | None = None,
+    smoothing_target: np.ndarray | None = None,
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
@@ -1877,38 +1891,27 @@ def model_uncertainty(
 # ======================================================================
 
 
-def _make_slip_model(
+def _physical_components(
     vector: np.ndarray,
     components: str,
-    *,
-    rake: float | None,
-    slip_azimuth: float | None,
-    fault_strike: np.ndarray,
-    plate_rake: np.ndarray | None,
-) -> SlipModel:
-    """Construct named slip from a solved vector and its basis metadata."""
-    n_patches = fault_strike.size
+    basis_angle: float | np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert a solved basis vector to physical strike/dip components."""
     if components == "both":
-        return SlipModel(vector[:n_patches], vector[n_patches:])
+        return unpack(vector)
     if components == "strike":
-        return SlipModel.from_strike(vector)
+        return vector, np.zeros_like(vector)
     if components == "dip":
-        return SlipModel.from_dip(vector)
-    if components == "rake":
-        assert rake is not None
-        return SlipModel.from_rake(vector, rake)
-    if components == "azimuth":
-        assert slip_azimuth is not None
-        return SlipModel.from_azimuth(
-            vector, azimuth=slip_azimuth, fault_strike=fault_strike
-        )
+        return np.zeros_like(vector), vector
+    if components in {"rake", "azimuth"}:
+        if basis_angle is None:
+            raise ValueError(f"{components} result is missing angle metadata")
+        return from_rake(vector, basis_angle)
     if components == "plate":
-        assert plate_rake is not None
-        return SlipModel.from_plate_rake(
-            vector[:n_patches],
-            vector[n_patches:],
-            plate_rake=plate_rake,
-        )
+        if basis_angle is None:
+            raise ValueError("plate result is missing plate_rake metadata")
+        parallel, perpendicular = unpack(vector)
+        return from_plate(parallel, perpendicular, basis_angle)
     raise ValueError(f"Unknown slip components {components!r}")
 
 

@@ -1,142 +1,107 @@
-# `geodef.slip` — Slip and displacement values
+# Slip vectors and basis conversions
 
-> Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
+> Conventions — axes, depth sign, angles, units, array ordering,
+> regularization: see [`conventions.md`](conventions.md).
 
-`SlipModel` is GeoDef's canonical named representation of per-patch slip.
-NumPy vectors remain accepted by the low-level and legacy APIs, but the named
-object records which coordinates the vector actually uses.
+GeoDef represents slip with NumPy arrays and provides functions for the common
+conversions. For `N` patches, a two-component model vector is blocked:
+`[strike_slip_0, ..., strike_slip_N, dip_slip_0, ..., dip_slip_N]`.
 
-## Strike/dip slip
+## Pack and unpack
 
 ```python
-import geodef
-import numpy as np
+from geodef import slip
 
-slip = geodef.SlipModel(
-    strike=[1.0, 1.2, 0.8],
-    dip=[0.2, 0.3, 0.1],
-)
+model = slip.pack(strike_slip, dip_slip)
+strike_slip, dip_slip = slip.unpack(model)
 
-slip.strike       # physical strike-slip, shape (N,)
-slip.dip          # physical dip-slip, shape (N,)
-slip.magnitude    # hypot(strike, dip), shape (N,)
-slip.rake         # atan2(dip, strike), degrees
-slip.vector       # blocked [strike | dip], shape (2N,)
+slip_magnitude = slip.magnitude(strike_slip, dip_slip)
+slip_rake = slip.rake(strike_slip, dip_slip)
 ```
 
-All stored arrays are copied and read-only. `fault.displacement`,
-`fault.moment`, `fault.magnitude`, inversion smoothing targets, and slip plots
-accept a `SlipModel`; the corresponding NumPy forms remain supported.
-
-## One-component directions
-
-A fixed direction has one independent amplitude per patch. It is not silently
-expanded into a two-component model vector:
+`fault.displacement` accepts the two physical components directly and returns
+three arrays:
 
 ```python
-fixed_rake = geodef.SlipModel.from_rake(amplitude, rake=90.0)
-fixed_azimuth = geodef.SlipModel.from_azimuth(
+east, north, up = fault.displacement(
+    obs_lat,
+    obs_lon,
+    slip_strike=strike_slip,
+    slip_dip=dip_slip,
+)
+```
+
+## Fixed rake and geographic azimuth
+
+A one-component inversion solves one signed amplitude per patch. Convert an
+amplitude to physical strike/dip components with the matching function:
+
+```python
+strike_slip, dip_slip = slip.from_rake(amplitude, rake_degrees=90.0)
+
+strike_slip, dip_slip = slip.from_azimuth(
     amplitude,
-    azimuth=15.0,
-    fault_strike=fault.strike,
+    azimuth_degrees=15.0,
+    fault_strike_degrees=fault.strike,
 )
-
-fixed_rake.n_components   # 1
-fixed_rake.vector         # signed amplitudes, shape (N,)
-fixed_rake.strike         # derived physical strike-slip
-fixed_rake.dip            # derived physical dip-slip
 ```
 
-`from_strike` and `from_dip` construct the corresponding one-component local
-bases. Signed negative amplitudes reverse the physical slip direction;
-`magnitude` is always non-negative.
+`from_rake` uses each patch's local strike/dip axes. `from_azimuth` preserves a
+single geographic direction across a curved mesh by accounting for each
+patch's strike.
 
 ## Plate-motion coordinates
 
-On triangular or curved faults, adjacent patch strike/dip axes can change
-sharply even when the large-scale tectonic direction is smooth. Plate
-coordinates store two components relative to that larger-scale direction:
+For a curved triangular mesh, smoothing physical strike/dip components can
+inherit abrupt changes in patch orientation. A plate basis instead uses a
+smooth large-scale direction:
 
 ```python
-plate_rake = np.full(fault.n_patches, 90.0)
-slip = geodef.SlipModel.from_plate_rake(
+plate_rake = slip.plate_rake_from_euler(
+    fault,
+    pole=(pole_lat, pole_lon, rate_degrees_per_myr),
+)
+
+strike_slip, dip_slip = slip.from_plate(
     parallel,
     perpendicular,
-    plate_rake=plate_rake,
+    plate_rake_degrees=plate_rake,
 )
 
-slip.rake_parallel       # first model block
-slip.rake_perpendicular  # second model block
-slip.vector              # blocked [parallel | perpendicular]
-slip.strike              # derived patch-local physical component
-slip.dip                 # derived patch-local physical component
+parallel, perpendicular = slip.to_plate(
+    strike_slip,
+    dip_slip,
+    plate_rake_degrees=plate_rake,
+)
 ```
 
-The rotation follows
-
-```text
-strike = parallel*cos(r) - perpendicular*sin(r)
-dip    = parallel*sin(r) + perpendicular*cos(r)
-```
-
-where `r` is `plate_rake`. This basis belongs to the kinematic slip model, not
-`TriGeometry`: the same mesh can be used with different plate-motion
-hypotheses.
-
-An Euler pole can supply the smooth geographic direction:
+Invert directly in those coordinates with `components="plate"` and
+`plate_rake=plate_rake`. The result keeps the solved vector blocked as
+`[parallel | perpendicular]` and exposes both the solved and physical views:
 
 ```python
-pole = (pole_lat, pole_lon, rate_deg_per_myr)
-plate_rake = geodef.plate_rake_from_euler(fault, pole)
-
 result = geodef.invert(
     fault,
-    data,
+    datasets,
     components="plate",
     plate_rake=plate_rake,
-    smoothing="laplacian",
-    bounds=(np.array([0.0, -0.1]), np.array([1.0, 0.1])),
 )
 
-result.slip_model.rake_parallel
-result.slip_model.rake_perpendicular
+result.rake_parallel
+result.rake_perpendicular
+result.strike_slip
+result.dip_slip
+result.slip_magnitude
+result.slip_rake
 ```
 
-The Green's matrix is rotated into `[parallel | perpendicular]` before the
-solve. Smoothing, targets, bounds, covariance, and resolution therefore all
-refer to the smooth plate coordinates, while forward deformation and moment
-use the derived physical strike/dip components.
+## Patch ordering
 
-`SlipModel.from_euler_pole(parallel, perpendicular, fault=fault, pole=pole)`
-constructs a complete model in one call.
-
-## Named displacement
-
-`fault.displacement` returns `Displacement(east, north, up)`:
+Structured faults use `(n_width, n_length)` grid shape, with along-strike index
+varying fastest. Use the fault helpers instead of manual reshape assumptions:
 
 ```python
-displacement = fault.displacement(obs_lat, obs_lon, slip)
-displacement.east
-displacement.north
-displacement.up
-displacement.vector  # observation-interleaved [E, N, U, E, N, U, ...]
-
-# Existing tuple idiom remains valid
-east, north, up = displacement
-```
-
-## Patch grid ordering
-
-Structured faults provide explicit conversion helpers, so callers do not need
-to memorize which flat axis varies fastest:
-
-```python
-grid = fault.reshape_patches(slip.magnitude)
-# shape (n_width, n_length): [dip_index, strike_index]
-
+grid = fault.reshape_patches(per_patch_values)
 values = fault.flatten_patches(grid)
-# shape (n_patches,)
+index = fault.patch_index(strike_idx, dip_idx)
 ```
-
-Trailing dimensions are preserved, so an `(N, k)` patch-first array becomes
-`(n_width, n_length, k)`.

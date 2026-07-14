@@ -62,9 +62,9 @@ All angles are degrees.
   first `N` entries are strike-slip, the last `N` dip-slip
   (`m[:N]`, `m[N:]`). Plate coordinates are likewise blocked
   `[rake_parallel | rake_perpendicular]`. Single-component bases (`'strike'`,
-  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. `SlipModel.vector` always
-  follows the declared model basis; its named `strike` and `dip` properties
-  are the derived physical components.
+  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. Use `geodef.slip` conversion
+  functions or the named arrays on `InversionResult` to recover physical
+  strike/dip components.
 - **Green's matrix rows** follow each dataset's observation vector:
   GNSS with 3 components interleaves `[E, N, U]` per station (`[E, N]` for
   2-component data); InSAR contributes one LOS row per pixel; `Vertical`

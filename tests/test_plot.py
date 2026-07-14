@@ -11,7 +11,6 @@ import pytest
 import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
-from geodef.slip import SlipModel
 
 # ======================================================================
 # Fixtures
@@ -241,23 +240,6 @@ class TestGetSlipComponent:
         with pytest.raises(ValueError, match="length"):
             _get_slip_component(np.ones(5), rect_fault.n_patches, "magnitude")
 
-    def test_named_plate_components(self, rect_fault):
-        from geodef.plot import _get_slip_component
-
-        n = rect_fault.n_patches
-        model = SlipModel.from_plate_rake(
-            np.arange(n), np.arange(n) + 10.0, plate_rake=30.0
-        )
-
-        np.testing.assert_array_equal(
-            _get_slip_component(model, n, "rake_parallel"), model.rake_parallel
-        )
-        np.testing.assert_array_equal(
-            _get_slip_component(model, n, "rake_perpendicular"),
-            model.rake_perpendicular,
-        )
-
-
 class TestStationsToLocal:
     """Tests for _stations_to_local_km."""
 
@@ -327,12 +309,14 @@ class TestPlotSlip:
         ax = geodef.plot.slip(rect_fault, slip_magnitude)
         assert len(ax.collections) >= 1
 
-    def test_named_slip_model(self, rect_fault):
-        model = SlipModel(
-            strike=np.ones(rect_fault.n_patches),
-            dip=np.full(rect_fault.n_patches, 0.5),
+    def test_blocked_slip_vector(self, rect_fault):
+        vector = np.concatenate(
+            [
+                np.ones(rect_fault.n_patches),
+                np.full(rect_fault.n_patches, 0.5),
+            ]
         )
-        ax = geodef.plot.slip(rect_fault, model, components="dip")
+        ax = geodef.plot.slip(rect_fault, vector, components="dip")
         assert isinstance(ax, plt.Axes)
 
     def test_tri_fault(self, tri_fault, slip_tri):
@@ -467,11 +451,6 @@ class TestSlipInterpolated:
         assert isinstance(ax, plt.Axes)
         # gouraud pcolormesh registers a QuadMesh collection
         assert len(ax.collections) >= 1
-
-    def test_named_slip_model(self, rect_fault):
-        model = SlipModel.from_rake(np.ones(rect_fault.n_patches), rake=30.0)
-        ax = geodef.plot.slip_interpolated(rect_fault, model)
-        assert isinstance(ax, plt.Axes)
 
     def test_single_component_vector(self, rect_fault):
         n = rect_fault.n_patches
@@ -1090,11 +1069,6 @@ class TestPlotMap:
             components="magnitude",
             colorbar_label="Slip (m)",
         )
-        assert isinstance(ax, plt.Axes)
-
-    def test_map_with_named_slip_model(self, rect_fault):
-        model = SlipModel.from_rake(np.ones(rect_fault.n_patches), rake=30.0)
-        ax = geodef.plot.map(rect_fault, slip_vector=model)
         assert isinstance(ax, plt.Axes)
 
     def test_map_values_and_slip_exclusive(self, rect_fault, slip_magnitude):
