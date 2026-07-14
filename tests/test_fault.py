@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import numpy.testing as npt
 import pytest
 
 from geodef.fault import (
@@ -16,6 +17,8 @@ from geodef.fault import (
     magnitude_to_moment,
     moment_to_magnitude,
 )
+from geodef.geometry import LocalFrame, PlanarGeometry
+from geodef.medium import ElasticMedium
 
 # ======================================================================
 # Fixtures
@@ -117,10 +120,86 @@ class TestConstruction:
         with pytest.raises(ValueError):
             simple_fault._lat[0] = 999.0
 
+    def test_direct_fault_has_explicit_frame(self, single_patch):
+        assert single_patch.frame.projection == "wgs84-enu"
+        assert single_patch.frame.origin_lat == pytest.approx(0.0)
+        assert single_patch.frame.origin_lon == pytest.approx(100.0)
+
 
 # ======================================================================
 # 2. Fault.planar() factory
 # ======================================================================
+
+
+class TestNamedPlanarGeometry:
+    """Fault.planar integration with PlanarGeometry."""
+
+    def test_accepts_named_geometry(self):
+        frame = LocalFrame(-2.0, 100.0)
+        geometry = PlanarGeometry(
+            center=(1200.0, -500.0),
+            depth=15_000.0,
+            strike=315.0,
+            dip=25.0,
+            length=80_000.0,
+            width=40_000.0,
+            frame=frame,
+        )
+
+        fault = Fault.planar(geometry, n_length=4, n_width=2)
+
+        assert fault.geometry is geometry
+        assert fault.frame is frame
+        assert fault.grid_shape == (4, 2)
+        npt.assert_allclose(
+            np.mean(fault.centers_local, axis=0), geometry.to_enu(), atol=1.0
+        )
+
+    def test_scalar_call_builds_named_geometry(self):
+        fault = Fault.planar(
+            lat=-2.0,
+            lon=100.0,
+            depth=15_000.0,
+            strike=315.0,
+            dip=25.0,
+            length=80_000.0,
+            width=40_000.0,
+        )
+
+        assert isinstance(fault.geometry, PlanarGeometry)
+        npt.assert_allclose(fault.geometry.theta[:2], 0.0, atol=1e-8)
+        npt.assert_allclose(fault.geometry.to_geographic(), [100.0, -2.0, 15_000.0])
+
+    def test_rejects_mixed_named_and_scalar_geometry(self):
+        geometry = PlanarGeometry(
+            center=(0.0, 0.0),
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            frame=LocalFrame(0.0, 100.0),
+        )
+
+        with pytest.raises(ValueError, match="either geometry or scalar"):
+            Fault.planar(geometry, lat=0.0)
+
+    def test_named_geometry_survives_medium_copy(self):
+        geometry = PlanarGeometry(
+            center=(0.0, 0.0),
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            frame=LocalFrame(0.0, 100.0),
+        )
+        fault = Fault.planar(geometry)
+
+        changed = fault.with_medium(ElasticMedium(shear_modulus=40e9))
+
+        assert changed.geometry is geometry
+        assert changed.frame is geometry.frame
 
 
 class TestPlanar:

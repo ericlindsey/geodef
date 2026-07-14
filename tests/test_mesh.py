@@ -6,6 +6,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from geodef.fault import Fault
+from geodef.geometry import LocalFrame, TriGeometry
 from geodef.mesh import Mesh, _compute_strike_dip
 
 requires_meshpy = pytest.mark.skipif(
@@ -73,6 +75,24 @@ class TestMeshConstruction:
         assert simple_mesh.n_nodes == 4
         assert simple_mesh.n_triangles == 2
 
+    def test_records_inferred_frame(self, simple_mesh):
+        assert simple_mesh.frame.projection == "wgs84-enu"
+        assert simple_mesh.frame.origin_lat == pytest.approx(np.mean(simple_mesh.lat))
+        assert simple_mesh.frame.origin_lon == pytest.approx(np.mean(simple_mesh.lon))
+
+    def test_accepts_explicit_frame(self):
+        frame = LocalFrame(0.0, 100.0)
+        mesh = Mesh(
+            lon=np.array([100.0, 100.01, 100.0]),
+            lat=np.array([0.0, 0.0, 0.01]),
+            depth=np.array([0.0, 1000.0, 2000.0]),
+            triangles=np.array([[0, 1, 2]]),
+            frame=frame,
+        )
+
+        assert mesh.frame is frame
+        npt.assert_allclose(mesh.vertices_enu(), mesh.vertices_enu(frame=frame))
+
     def test_arrays_stored(self, simple_mesh):
         assert simple_mesh.lon.shape == (4,)
         assert simple_mesh.lat.shape == (4,)
@@ -112,6 +132,14 @@ class TestMeshVerticesENU:
     def test_shape(self, simple_mesh):
         verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
         assert verts.shape == (2, 3, 3)
+
+    def test_rejects_ambiguous_frame_arguments(self, simple_mesh):
+        with pytest.raises(ValueError, match="either frame or ref_lat"):
+            simple_mesh.vertices_enu(
+                ref_lat=0.0,
+                ref_lon=100.0,
+                frame=LocalFrame(0.0, 100.0),
+            )
 
     def test_z_convention(self, simple_mesh):
         """Depth positive down → z negative in ENU (up-positive)."""
@@ -311,6 +339,44 @@ class TestFaultFromTriangles:
         assert fault.n_patches == 2
         assert fault.engine == "tri"
 
+    def test_accepts_named_tri_geometry(self):
+        frame = LocalFrame(0.0, 100.0)
+        geometry = TriGeometry(
+            np.array(
+                [
+                    [
+                        [0.0, 0.0, -1000.0],
+                        [1000.0, 0.0, -1000.0],
+                        [0.0, 0.0, -2000.0],
+                    ]
+                ]
+            ),
+            frame,
+        )
+
+        fault = Fault.from_triangles(geometry)
+
+        assert fault.geometry is geometry
+        assert fault.frame is frame
+        npt.assert_allclose(fault.centers_local, geometry.centers_enu)
+
+    def test_rejects_incompatible_named_tri_frame(self):
+        geometry = TriGeometry(
+            np.array(
+                [
+                    [
+                        [0.0, 0.0, -1000.0],
+                        [1000.0, 0.0, -1000.0],
+                        [0.0, 0.0, -2000.0],
+                    ]
+                ]
+            ),
+            LocalFrame(0.0, 100.0),
+        )
+
+        with pytest.raises(ValueError, match="incompatible local frames"):
+            Fault.from_triangles(geometry, frame=LocalFrame(0.0, 101.0))
+
     def test_strike_dip_derived(self):
         from geodef.fault import Fault
 
@@ -428,6 +494,7 @@ class TestFaultFromMesh:
         fault = Fault.from_mesh(simple_mesh)
         assert fault.n_patches == simple_mesh.n_triangles
         assert fault.engine == "tri"
+        assert fault.frame is simple_mesh.frame
 
     def test_vertices_shape(self, simple_mesh):
         from geodef.fault import Fault
