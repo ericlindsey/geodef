@@ -41,6 +41,10 @@ All angles are degrees.
 - **Slip azimuth:** geographic azimuth of horizontal slip, clockwise from
   North. `components='azimuth'` converts to each patch's local rake as
   `slip_azimuth - strike_i`, so it remains meaningful on curved meshes.
+- **Plate rake:** a large-scale kinematic direction expressed in each patch's
+  local strike/dip plane. Plate coordinates are rake-parallel and
+  rake-perpendicular; unlike raw triangle-local components, they can remain a
+  smooth basis across a variable-orientation mesh.
 
 ## Units
 
@@ -56,8 +60,11 @@ All angles are degrees.
 
 - **Slip vectors** are blocked: for `N` patches and both components, the
   first `N` entries are strike-slip, the last `N` dip-slip
-  (`m[:N]`, `m[N:]`). Single-component bases (`'strike'`, `'dip'`,
-  `'rake'`, `'azimuth'`) have length `N`.
+  (`m[:N]`, `m[N:]`). Plate coordinates are likewise blocked
+  `[rake_parallel | rake_perpendicular]`. Single-component bases (`'strike'`,
+  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. `SlipModel.vector` always
+  follows the declared model basis; its named `strike` and `dip` properties
+  are the derived physical components.
 - **Green's matrix rows** follow each dataset's observation vector:
   GNSS with 3 components interleaves `[E, N, U]` per station (`[E, N]` for
   2-component data); InSAR contributes one LOS row per pixel; `Vertical`
@@ -69,6 +76,8 @@ All angles are degrees.
 - **Patch order** for structured rectangular grids varies along strike
   fastest: patch `k = i_strike + n_length * j_dip`; use
   `Fault.patch_index(strike_idx, dip_idx)` instead of hand-computing this.
+  `Fault.reshape_patches` converts patch-first arrays to
+  `[dip_index, strike_index, ...]`; `Fault.flatten_patches` reverses it.
 
 ## Regularization
 

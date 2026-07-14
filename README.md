@@ -164,6 +164,7 @@ Full API docs with examples are in `docs/`:
 | Doc | Module |
 |-----|--------|
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
+| [`docs/slip.md`](docs/slip.md) | `SlipModel`, plate-motion coordinates, `Displacement`, and patch ordering |
 | [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |
 | [`docs/data.md`](docs/data.md) | `GNSS`, `InSAR`, `Vertical` data types |
 | [`docs/greens.md`](docs/greens.md) | Green's matrix assembly and Laplacian operators |

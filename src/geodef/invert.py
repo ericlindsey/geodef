@@ -568,7 +568,12 @@ class LinearSystem:
         smoothing: Regularization type — ``'laplacian'``, ``'damping'``,
             ``'stresskernel'``, a custom matrix, or ``None``.
         components: Slip components to solve for: ``'both'`` (default),
-            ``'strike'``, or ``'dip'``.
+            ``'strike'``, ``'dip'``, ``'rake'``, ``'azimuth'``, or ``'plate'``.
+        rake: Constant local rake for ``components='rake'``.
+        slip_azimuth: Constant geographic direction for
+            ``components='azimuth'``.
+        plate_rake: Scalar or per-patch large-scale direction in local rake
+            coordinates for ``components='plate'``.
 
     Examples:
         >>> sys = LinearSystem(fault, [gnss, insar], smoothing='laplacian')

@@ -46,6 +46,11 @@ result = geodef.invert(fault, [gnss, insar],
 result = geodef.invert(fault, gnss, components='rake', rake=90.0)
 result = geodef.invert(fault, gnss,
                        components='azimuth', slip_azimuth=15.0)
+
+# Two plate-motion coordinates, suitable for variable-orientation meshes
+plate_rake = geodef.plate_rake_from_euler(fault, (pole_lat, pole_lon, rate))
+result = geodef.invert(fault, gnss,
+                       components='plate', plate_rake=plate_rake)
 ```
 
 ### Key parameters
@@ -55,11 +60,12 @@ result = geodef.invert(fault, gnss,
 | `method` | auto | `'wls'`, `'nnls'`, `'bounded_ls'`, `'constrained'` |
 | `smoothing` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
 | `smoothing_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
-| `smoothing_target` | `None` | Reference model for `(m - m_ref)` regularization |
+| `smoothing_target` | `None` | `SlipModel` or vector reference for `(m - m_ref)` regularization |
 | `bounds` | `None` | `(lower, upper)` slip bounds; each side is a scalar, a per-component array, a per-parameter array, or `None` |
-| `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, or `'azimuth'` |
+| `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, `'azimuth'`, or `'plate'` |
 | `rake` | `None` | Fixed local rake angle in degrees; required for `components='rake'` |
 | `slip_azimuth` | `None` | Fixed geographic slip azimuth in degrees clockwise from north; required for `components='azimuth'` |
+| `plate_rake` | `None` | Scalar or per-patch large-scale direction in local rake coordinates; required for `components='plate'` |
 | `cv_folds` | `5` | Number of folds for cross-validation |
 | `constraints` | `None` | `(C, d)` for `C @ m <= d` (constrained solver only) |
 
@@ -86,14 +92,22 @@ using each patch's strike, so it is better for curved or variable-strike meshes.
 The Green's matrix and stress-kernel regularization are projected into the
 chosen slip basis automatically.
 
+`components='plate'` retains two parameters per patch but rotates them into
+large-scale rake-parallel/rake-perpendicular coordinates. Laplacian smoothing,
+targets, component bounds, covariance, and resolution all operate in that
+basis. This prevents abrupt triangle-local strike/dip changes from defining
+the regularization coordinates. The physical strike/dip slip remains available
+through `result.slip_model`.
+
 ---
 
 ## `InversionResult`
 
 | Attribute | Shape | Description |
 |-----------|-------|-------------|
-| `slip` | `(N, 2)` or `(N, 1)` | Per-patch strike/dip slip for `components='both'`, or one active amplitude per patch |
-| `slip_vector` | `(2N,)` or `(N,)` | Blocked `[ss_0..ss_N, ds_0..ds_N]`, or one amplitude per patch |
+| `slip_model` | `SlipModel` | Canonical named result; `.vector` preserves the solved basis and `.strike`/`.dip` expose physical components |
+| `slip` | `(N, 2)` or `(N, 1)` | Backwards-compatible per-patch array in the solved coordinates |
+| `slip_vector` | `(2N,)` or `(N,)` | Backwards-compatible blocked vector in the solved coordinates |
 | `predicted` | `(M,)` | Forward-modeled observations |
 | `residuals` | `(M,)` | `obs - predicted` |
 | `reduced_chi2` | scalar | Reduced chi-squared, `r^T W r / (M - P)` |
@@ -105,6 +119,11 @@ chosen slip basis automatically.
 | `components` | str | Slip basis used in the inversion |
 | `rake` | float or `None` | Fixed rake angle for `components='rake'` |
 | `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
+| `plate_rake` | `(N,)` or `None` | Per-patch large-scale direction for `components='plate'` |
+
+`slip` and `slip_vector` are retained for existing array workflows. New code
+should normally start from `slip_model`, then request `.vector` explicitly only
+when assembling linear algebra.
 
 ```python
 result.save("result.npz")                   # save to disk

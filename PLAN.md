@@ -284,20 +284,20 @@ it does not hide the linear algebra or create a mandatory framework.
 
 ### 1.2 One canonical slip representation
 
-- [ ] Add an immutable `SlipModel` with named per-patch fields/accessors:
+- [x] Add an immutable `SlipModel` with named per-patch fields/accessors:
   `strike`, `dip`, `magnitude`, `rake`, and `.vector` for the blocked linear-
   algebra view. Support one-component rake/azimuth amplitudes without pretending
   they are already two components.
-- [ ] For triangular faults with strongly varying patch strike/dip, define a
+- [x] For triangular faults with strongly varying patch strike/dip, define a
   large-scale plate-motion slip basis (constant plate rake or Euler-pole-derived
   direction) with named rake-parallel/rake-perpendicular components. Keep this
   kinematic basis on the slip model/specification, not `TriGeometry`, so
   smoothing and bounds do not inherit noisy per-patch orientation changes.
-- [ ] Accept `SlipModel` anywhere a slip vector is accepted; keep NumPy arrays
+- [x] Accept `SlipModel` anywhere a slip vector is accepted; keep NumPy arrays
   fully supported for low-level and backwards-compatible code.
-- [ ] Make forward results a small named `Displacement(east, north, up)` object
+- [x] Make forward results a small named `Displacement(east, north, up)` object
   with tuple unpacking and `.vector` so existing idioms remain concise.
-- [ ] Standardize patch ordering utilities and provide `fault.reshape_patches`
+- [x] Standardize patch ordering utilities and provide `fault.reshape_patches`
   / `fault.flatten_patches` rather than requiring learners to know which grid
   axis varies fastest.
 

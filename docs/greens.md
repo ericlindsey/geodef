@@ -28,7 +28,7 @@ ordering as the stacked observation vector.
 
 ## High-level assembly
 
-### `greens(fault, datasets, *, components='both', rake=None, slip_azimuth=None) → np.ndarray`
+### `greens(fault, datasets, *, components='both', rake=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
 Build the projected Green's matrix for one or more datasets. Results are automatically cached.
 
@@ -49,19 +49,26 @@ G_strike = geodef.greens.greens(fault, gnss, components='strike')
 G_dip    = geodef.greens.greens(fault, gnss, components='dip')
 G_rake   = geodef.greens.greens(fault, gnss, components='rake', rake=90.0)
 G_az     = geodef.greens.greens(fault, gnss, components='azimuth', slip_azimuth=350.0)
+G_plate  = geodef.greens.greens(fault, gnss, components='plate', plate_rake=plate_rake)
 ```
 
 For `'rake'` (a single rake for every patch) and `'azimuth'` (a fixed
 geographic slip azimuth, so each patch's local rake is `slip_azimuth - strike_i`)
 the two blocked column sets are combined as `cos(theta)*G_strike + sin(theta)*G_dip`.
 
-### `select_slip_columns(G_full, n_patches, components, rake=None, fault_strike=None, slip_azimuth=None) → np.ndarray`
+`'plate'` keeps two blocked columns per patch, but rotates them to
+`[rake_parallel | rake_perpendicular]` using a scalar or per-patch
+`plate_rake`. This is the appropriate matrix basis when bounds and smoothing
+should follow a large-scale tectonic direction rather than variable local
+triangle orientations.
+
+### `select_slip_columns(G_full, n_patches, components, rake=None, fault_strike=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
 The reduction primitive behind `greens(components=...)`. Apply it to any
 already-assembled `(M, 2*N)` matrix — a Green's matrix or a stress kernel — to
 project it into a one-component slip basis. `geodef.invert()` uses it internally
-for `components='strike'|'dip'|'rake'|'azimuth'` and to project stress-kernel
-regularization into the active basis.
+for `components='strike'|'dip'|'rake'|'azimuth'|'plate'` and to project
+stress-kernel regularization into the active basis.
 
 ### `stack_obs(datasets) → np.ndarray`
 

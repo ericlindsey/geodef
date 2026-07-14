@@ -137,12 +137,21 @@ position; incompatible frames are never silently substituted.
 
 ### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
 
-Compute surface displacements for a slip distribution. `slip_strike` and
-`slip_dip` may be scalars broadcast to every patch or arrays with shape `(N,)`.
+Compute surface displacements for a named `SlipModel`. Legacy `slip_strike`
+and `slip_dip` scalars/arrays remain supported.
 
 ```python
-ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=1.0)
-# ue, un, uz each have shape (n_obs,)
+slip = geodef.SlipModel(
+    strike=np.zeros(fault.n_patches),
+    dip=np.ones(fault.n_patches),
+)
+displacement = fault.displacement(obs_lat, obs_lon, slip)
+
+displacement.east   # each named component has shape (n_obs,)
+displacement.vector # interleaved [E, N, U, ...]
+
+# Tuple unpacking remains supported
+ue, un, uz = displacement
 ```
 
 ### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
@@ -169,7 +178,7 @@ well the spatial slip distribution is resolved. `slip` here is slip magnitude,
 not a signed strike- or dip-slip component.
 
 ```python
-M0 = fault.moment(slip, mu=30e9)      # slip magnitude shape (N,); returns N·m
+M0 = fault.moment(slip, mu=30e9)      # SlipModel or magnitude array; returns N·m
 Mw = fault.magnitude(slip, mu=30e9)  # moment magnitude
 
 # Module-level utilities
@@ -202,6 +211,9 @@ friction convention, and normal-stress sign convention.
 ```python
 idx = fault.patch_index(strike_idx=3, dip_idx=1)
 # Only valid for structured grids (Fault.planar or Fault.load with grid)
+
+grid = fault.reshape_patches(values)  # (N, ...) -> (n_width, n_length, ...)
+values = fault.flatten_patches(grid)  # inverse conversion
 ```
 
 ---
