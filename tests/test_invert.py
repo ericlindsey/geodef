@@ -1538,23 +1538,8 @@ class TestInversionResultIO:
         loaded = InversionResult.load(fpath)
         np.testing.assert_allclose(loaded.predicted, result.predicted)
 
-    def test_chi2_attribute_raises_with_guidance(self, fault_4x3, obs_points):
-        result = self._make_result(fault_4x3, obs_points)
-        with pytest.raises(AttributeError, match="reduced_chi2"):
-            _ = result.chi2
-
-    def test_load_legacy_chi2_key(self, fault_4x3, obs_points, tmp_path):
-        """Files written before the rename stored the reduced statistic
-        under 'chi2'; load() must map it to reduced_chi2."""
-        result = self._make_result(fault_4x3, obs_points)
-        fpath = tmp_path / "new.npz"
-        result.save(fpath)
-        data = dict(np.load(fpath, allow_pickle=False))
-        data["chi2"] = data.pop("reduced_chi2")
-        legacy = tmp_path / "legacy.npz"
-        np.savez_compressed(legacy, **data)
-        loaded = InversionResult.load(legacy)
-        np.testing.assert_allclose(loaded.reduced_chi2, result.reduced_chi2)
+    def test_chi2_has_no_compatibility_alias(self):
+        assert "chi2" not in InversionResult.__dict__
 
     def test_save_load_roundtrip_scalars(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)

@@ -194,9 +194,10 @@ semantics that later objects will wrap.
   sources using `alpha` or `lambda^2` map to GeoDef.
 - [x] Add a convention test spanning direct inversion, `LinearSystem`, ABIC,
   geometry search, and Bayesian fixed-lambda modes.
-- [x] Introduce unambiguous result names `reduced_chi2` and `chi2`; retain the
-  old `result.chi2` behavior through a documented deprecation rather than a
-  silent semantic change.
+- [x] Define unambiguous vocabulary: `reduced_chi2` is the reduced statistic and
+  `chi2` is the unreduced statistic. Rename the pre-release
+  `InversionResult.chi2` field directly to `reduced_chi2`; reserve `chi2` for
+  unreduced values such as those exposed by dataset diagnostics.
 - [x] Write a single reference page for coordinate axes, depth sign, strike,
   dip, rake, slip azimuth, row order, column order, and units; link every public
   geometry/data API to it.

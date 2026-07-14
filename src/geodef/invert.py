@@ -50,8 +50,6 @@ class InversionResult:
         residuals: Observation minus prediction, shape (M,).
         predicted: Forward-modeled observations, shape (M,).
         reduced_chi2: Reduced chi-squared misfit, r^T W r / (M - P).
-            (Accessing the removed ambiguous name ``chi2`` raises with
-            migration guidance; see docs/conventions.md.)
         rms: Root-mean-square of residuals.
         moment: Scalar seismic moment in N-m.
         Mw: Moment magnitude.
@@ -83,16 +81,6 @@ class InversionResult:
     components: str
     rake: float | None = None
     slip_azimuth: float | None = None
-
-    @property
-    def chi2(self) -> float:
-        """Removed: this name ambiguously held the *reduced* statistic."""
-        raise AttributeError(
-            "InversionResult.chi2 has been renamed: it held the reduced "
-            "chi-squared, now available as `reduced_chi2`. The unreduced "
-            "statistic r^T W r is available per dataset via "
-            "dataset_diagnostics(). See docs/conventions.md."
-        )
 
     # ------------------------------------------------------------------
     # I/O
@@ -191,9 +179,7 @@ class InversionResult:
             slip_vector=data["slip_vector"],
             residuals=data["residuals"],
             predicted=data["predicted"],
-            reduced_chi2=float(
-                data["reduced_chi2" if "reduced_chi2" in data else "chi2"][0]
-            ),
+            reduced_chi2=float(data["reduced_chi2"][0]),
             rms=float(data["rms"][0]),
             moment=float(data["moment"][0]),
             Mw=float(data["Mw"][0]),
