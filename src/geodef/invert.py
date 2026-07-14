@@ -2008,12 +2008,18 @@ def _solve_constrained(
 
     Returns:
         Solution vector m.
+
+    Raises:
+        RuntimeError: If SLSQP fails to converge to a feasible solution.
     """
-    GtG = G.T @ G
-    Gtd = G.T @ d
+    objective_scale = max(float(np.linalg.norm(G)), float(np.linalg.norm(d)), 1.0)
+    G_scaled = G / objective_scale
+    d_scaled = d / objective_scale
+    GtG = G_scaled.T @ G_scaled
+    Gtd = G_scaled.T @ d_scaled
 
     def objective(m: np.ndarray) -> float:
-        r = G @ m - d
+        r = G_scaled @ m - d_scaled
         return 0.5 * float(r @ r)
 
     def gradient(m: np.ndarray) -> np.ndarray:
@@ -2049,6 +2055,17 @@ def _solve_constrained(
         constraints=scipy_constraints,
         options={"maxiter": 1000, "ftol": 1e-12},
     )
+    if not result.success:
+        raise RuntimeError(f"Constrained solver failed: {result.message}")
+    if constraints is not None:
+        C, d_ineq = constraints
+        feasibility_tolerance = 1e-8 * max(float(np.max(np.abs(d_ineq))), 1.0)
+        max_violation = float(np.max(C @ result.x - d_ineq))
+        if max_violation > feasibility_tolerance:
+            raise RuntimeError(
+                "Constrained solver returned an infeasible solution: "
+                f"maximum inequality violation is {max_violation:.3g}"
+            )
     return result.x
 
 

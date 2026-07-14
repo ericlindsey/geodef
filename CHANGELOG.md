@@ -36,6 +36,10 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Fixed
 
+- The constrained least-squares solver now normalizes its objective before
+  calling SLSQP and rejects unsuccessful or infeasible optimizer results;
+  previously, objective scaling on some supported SciPy versions could return
+  a solution just outside the declared inequality constraint.
 - The geodetic fixed-point iteration in `transforms.ecef2geod` looped
   forever when fed NaN coordinates (pegging a core at 100%); it is now
   iteration-bounded so non-finite inputs propagate as NaN, and constructor
