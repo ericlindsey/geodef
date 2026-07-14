@@ -1,4 +1,4 @@
-"""Tests for named geometry and coordinate-frame value objects."""
+"""Tests for coordinate frames and geometry-array functions."""
 
 from dataclasses import FrozenInstanceError
 
@@ -6,7 +6,13 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
+from geodef.geometry import (
+    LocalFrame,
+    as_planar_vector,
+    planar_parameter_dict,
+    triangle_strike_dip,
+    vertices_from_nodes,
+)
 
 
 class TestLocalFrame:
@@ -83,67 +89,31 @@ class TestLocalFrame:
             frame.require_compatible(other)
 
 
-class TestPlanarGeometry:
-    """PlanarGeometry named and array views."""
+class TestPlanarFunctions:
+    """Planar parameter mappings and expert vectors round-trip."""
 
-    def test_named_views_and_theta(self) -> None:
-        frame = LocalFrame(-2.0, 100.0)
-        geometry = PlanarGeometry(
-            center=(1200.0, -500.0),
-            depth=15_000.0,
-            strike=315.0,
-            dip=25.0,
-            length=80_000.0,
-            width=40_000.0,
-            frame=frame,
-        )
+    def test_mapping_to_vector_and_back(self) -> None:
+        parameters = {
+            "depth": 15_000.0,
+            "e0": 1200.0,
+            "n0": -500.0,
+            "strike": 315.0,
+            "dip": 25.0,
+            "length": 80_000.0,
+            "width": 40_000.0,
+        }
+
+        vector = as_planar_vector(parameters)
 
         npt.assert_array_equal(
-            geometry.theta,
+            vector,
             [1200.0, -500.0, 15_000.0, 315.0, 25.0, 80_000.0, 40_000.0],
         )
-        npt.assert_array_equal(geometry.to_enu(), [1200.0, -500.0, -15_000.0])
-        assert geometry.to_geographic().shape == (3,)
-        assert not geometry.theta.flags.writeable
-
-    def test_from_geographic_round_trip(self) -> None:
-        frame = LocalFrame(-2.0, 100.0)
-        geometry = PlanarGeometry.from_geographic(
-            lon=100.1,
-            lat=-1.9,
-            depth=12_000.0,
-            strike=30.0,
-            dip=45.0,
-            length=20_000.0,
-            width=10_000.0,
-            frame=frame,
-        )
-
-        lon, lat, depth = geometry.to_geographic()
-        assert lon == pytest.approx(100.1)
-        assert lat == pytest.approx(-1.9)
-        assert depth == pytest.approx(12_000.0)
-
-    def test_from_theta_and_to_frame_preserve_physical_center(self) -> None:
-        source = LocalFrame(0.0, 100.0)
-        target = LocalFrame(0.1, 100.2)
-        geometry = PlanarGeometry.from_theta(
-            [500.0, -300.0, 10_000.0, 5.0, 40.0, 20_000.0, 8_000.0],
-            frame=source,
-        )
-
-        transformed = geometry.to_frame(target)
-
-        npt.assert_allclose(
-            transformed.to_geographic(), geometry.to_geographic(), atol=1e-6
-        )
-        assert transformed.frame == target
-        assert transformed.depth == geometry.depth
+        assert planar_parameter_dict(vector) == parameters
 
     @pytest.mark.parametrize(
         ("field", "value"),
         [
-            ("center", (0.0,)),
             ("depth", -1.0),
             ("strike", 360.0),
             ("dip", 91.0),
@@ -151,27 +121,26 @@ class TestPlanarGeometry:
             ("width", np.inf),
         ],
     )
-    def test_invalid_geometry_raises(self, field: str, value: object) -> None:
-        kwargs: dict[str, object] = {
-            "center": (0.0, 0.0),
+    def test_invalid_parameter_raises(self, field: str, value: float) -> None:
+        parameters = {
+            "e0": 0.0,
+            "n0": 0.0,
             "depth": 10_000.0,
             "strike": 0.0,
             "dip": 30.0,
             "length": 20_000.0,
             "width": 10_000.0,
-            "frame": LocalFrame(0.0, 100.0),
         }
-        kwargs[field] = value
+        parameters[field] = value
 
         with pytest.raises(ValueError, match=field):
-            PlanarGeometry(**kwargs)  # type: ignore[arg-type]
+            as_planar_vector(parameters)
 
 
-class TestTriGeometry:
-    """TriGeometry construction, derived values, and frame transforms."""
+class TestTriangleFunctions:
+    """Triangle expansion and orientation functions."""
 
-    @pytest.fixture
-    def geometry(self) -> TriGeometry:
+    def test_orientation(self) -> None:
         vertices = np.array(
             [
                 [[0.0, 0.0, -1000.0], [1000.0, 0.0, -1000.0], [0.0, 0.0, -2000.0]],
@@ -182,27 +151,13 @@ class TestTriGeometry:
                 ],
             ]
         )
-        return TriGeometry(vertices_enu=vertices, frame=LocalFrame(0.0, 100.0))
 
-    def test_named_views_and_derived_orientation(self, geometry: TriGeometry) -> None:
-        assert geometry.n_triangles == 2
-        assert geometry.to_enu().shape == (2, 3, 3)
-        assert geometry.to_geographic().shape == (2, 3, 3)
-        assert geometry.centers_enu.shape == (2, 3)
-        assert geometry.centers_geographic.shape == (2, 3)
-        npt.assert_allclose(geometry.dip, 90.0)
-        assert np.all((geometry.strike >= 0.0) & (geometry.strike < 360.0))
+        strike, dip = triangle_strike_dip(vertices)
 
-    def test_owns_read_only_copy(self) -> None:
-        vertices = np.array([[[0.0, 0.0, -1.0], [1.0, 0.0, -1.0], [0.0, 1.0, -1.0]]])
-        geometry = TriGeometry(vertices, LocalFrame(0.0, 0.0))
-        vertices[0, 0, 0] = 999.0
+        npt.assert_allclose(dip, 90.0)
+        assert np.all((strike >= 0.0) & (strike < 360.0))
 
-        assert geometry.vertices_enu[0, 0, 0] == 0.0
-        with pytest.raises(ValueError):
-            geometry.vertices_enu[0, 0, 0] = 1.0
-
-    def test_from_nodes_preserves_connectivity_order(self) -> None:
+    def test_vertices_from_nodes_preserves_connectivity_order(self) -> None:
         nodes = np.array(
             [
                 [0.0, 0.0, -1000.0],
@@ -213,35 +168,10 @@ class TestTriGeometry:
         )
         triangles = np.array([[1, 3, 2], [0, 1, 2]])
 
-        geometry = TriGeometry.from_nodes(
-            nodes, triangles, frame=LocalFrame(0.0, 100.0)
-        )
+        vertices = vertices_from_nodes(nodes, triangles)
 
-        npt.assert_array_equal(geometry.vertices_enu[0], nodes[triangles[0]])
+        npt.assert_array_equal(vertices[0], nodes[triangles[0]])
 
-    def test_from_geographic_and_to_frame_round_trip(self) -> None:
-        lon = np.array([100.0, 100.01, 100.0])
-        lat = np.array([0.0, 0.0, 0.01])
-        depth = np.array([1000.0, 1000.0, 2000.0])
-        triangles = np.array([[0, 1, 2]])
-        source = LocalFrame(0.0, 100.0)
-
-        geometry = TriGeometry.from_geographic(
-            lon=lon,
-            lat=lat,
-            depth=depth,
-            triangles=triangles,
-            frame=source,
-        )
-        transformed = geometry.to_frame(LocalFrame(0.05, 100.05))
-
-        npt.assert_allclose(
-            transformed.to_geographic(), geometry.to_geographic(), atol=1e-6
-        )
-
-    def test_invalid_vertices_raise(self) -> None:
-        frame = LocalFrame(0.0, 0.0)
-        with pytest.raises(ValueError, match="vertices_enu"):
-            TriGeometry(np.zeros((3, 3)), frame)
-        with pytest.raises(ValueError, match="finite"):
-            TriGeometry(np.full((1, 3, 3), np.nan), frame)
+    def test_vertices_from_nodes_rejects_invalid_connectivity(self) -> None:
+        with pytest.raises(ValueError, match="triangles"):
+            vertices_from_nodes(np.zeros((3, 3)), np.array([[0, 1, 3]]))

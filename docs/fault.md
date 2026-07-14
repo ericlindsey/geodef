@@ -21,24 +21,9 @@ Up and uses depth positive downward.
 
 ## Factory classmethods
 
-### `Fault.planar(geometry=None, *, lat=None, lon=None, depth=None, strike=None, dip=None, length=None, width=None, n_length=1, n_width=1, medium=None)`
+### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
 
-Create a discretized planar fault from a named `PlanarGeometry`:
-
-```python
-frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
-geometry = geodef.PlanarGeometry(
-    center=(0.0, 0.0), depth=30_000.0,
-    strike=90.0, dip=15.0,
-    length=100_000.0, width=50_000.0,
-    frame=frame,
-)
-fault = geodef.Fault.planar(geometry, n_length=10, n_width=5)
-```
-
-The scalar call remains supported. Its geographic arguments are keyword-only
-so latitude/longitude order cannot be confused, and it creates an equivalent
-named geometry automatically:
+Create a discretized planar fault directly from named geographic parameters:
 
 ```python
 fault = Fault.planar(
@@ -48,6 +33,15 @@ fault = Fault.planar(
     n_length=10, n_width=5,
 )
 # → Fault with 50 rectangular patches, engine='okada'
+```
+
+Geographic arguments are keyword-only so latitude/longitude order cannot be
+confused. Pass an explicit frame when the fault must share local coordinates
+with another object:
+
+```python
+frame = geodef.LocalFrame(-2.0, 100.0)
+fault = Fault.planar(..., frame=frame)
 ```
 
 ### `Fault.planar_from_corner(lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1)`
@@ -66,14 +60,7 @@ fault = Fault.from_mesh(mesh)
 
 ### `Fault.from_triangles(vertices, *, frame=None, ref_lat=None, ref_lon=None, triangles=None)`
 
-Create a triangular fault directly from a named `TriGeometry`:
-
-```python
-geometry = geodef.TriGeometry.from_nodes(nodes, triangles, frame=frame)
-fault = geodef.Fault.from_triangles(geometry)
-```
-
-Numeric ENU input remains supported in two forms:
+Create a triangular fault from ENU arrays in either of two forms:
 
 - Explicit corners: `vertices` has shape `(N, 3, 3)` (leave `triangles=None`).
 - Node array + connectivity: pass a shared `(M, 3)` node array as `vertices`
@@ -112,7 +99,6 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `n_patches` | scalar | Number of patches |
 | `engine` | `str` | `"okada"` or `"tri"` |
 | `frame` | `LocalFrame` | Frame defining every local-coordinate view and triangular vertex |
-| `geometry` | `PlanarGeometry`, `TriGeometry`, or `None` | Named source geometry; `None` only where a legacy rectangular patch collection cannot be reduced to one plane |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
 | `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` (legacy latitude-first order) |
 | `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |

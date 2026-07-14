@@ -9,7 +9,7 @@ from geodef import cache
 from geodef.cache import compute_hash
 from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame, TriGeometry
+from geodef.geometry import LocalFrame
 from geodef.greens import greens
 
 # ====================================================================
@@ -403,8 +403,8 @@ class TestGreensIntegration:
                 ]
             ]
         )
-        fault_a = Fault.from_triangles(TriGeometry(vertices, LocalFrame(0.0, 100.0)))
-        fault_b = Fault.from_triangles(TriGeometry(vertices, LocalFrame(0.0, 101.0)))
+        fault_a = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 100.0))
+        fault_b = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 101.0))
 
         greens(fault_a, gnss_data)
         greens(fault_b, gnss_data)

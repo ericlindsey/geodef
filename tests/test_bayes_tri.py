@@ -14,7 +14,6 @@ import pytest
 from geodef import backend, bayes, gradients
 from geodef.data import GNSS
 from geodef.fault import Fault
-from geodef.geometry import TriGeometry
 from geodef.invert import LinearSystem
 
 jax = pytest.importorskip("jax")
@@ -184,14 +183,12 @@ def tri_post_profiled(warp4, gnss_tri):
 
 
 class TestTriWarp:
-    def test_accepts_named_tri_geometry(self, small_mesh_fault):
-        geometry = TriGeometry(small_mesh_fault.vertices, small_mesh_fault.frame)
+    def test_preserves_fault_frame(self, small_mesh_fault):
+        warp = bayes.TriWarp(small_mesh_fault, n_knots=(2, 2))
 
-        warp = bayes.TriWarp(geometry, n_knots=(2, 2))
-
-        assert warp.frame is geometry.frame
+        assert warp.frame is small_mesh_fault.frame
         trial = warp.fault(np.zeros(warp.n_knots))
-        assert trial.frame is geometry.frame
+        assert trial.frame is small_mesh_fault.frame
 
     def test_n_knots_and_shapes(self, small_warp):
         assert small_warp.n_knots == 6

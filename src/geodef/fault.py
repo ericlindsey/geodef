@@ -12,7 +12,12 @@ import numpy.typing as npt
 
 from geodef import greens as _greens
 from geodef import transforms
-from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
+from geodef.geometry import (
+    LocalFrame,
+    as_planar_vector,
+    triangle_strike_dip,
+    vertices_from_nodes,
+)
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 from geodef.validation import (
     ValidationReport,
@@ -52,7 +57,6 @@ class Fault:
             ``geodef.medium.DEFAULT_MEDIUM`` (30 GPa Poisson solid).
         frame: Local frame for local-coordinate views. Inferred from mean patch
             coordinates for direct legacy construction.
-        geometry: Named source geometry when known.
     """
 
     def __init__(
@@ -70,7 +74,6 @@ class Fault:
         engine: str = "okada",
         medium: ElasticMedium | None = None,
         frame: LocalFrame | None = None,
-        geometry: PlanarGeometry | TriGeometry | None = None,
     ) -> None:
         lat = as_1d_floats("lat", np.atleast_1d(lat), unit="degrees")
         n = lat.shape[0]
@@ -131,16 +134,6 @@ class Fault:
         self._medium = DEFAULT_MEDIUM if medium is None else medium
         inferred_frame = LocalFrame(float(np.mean(lat)), float(np.mean(lon)))
         self._frame = inferred_frame if frame is None else frame
-        if geometry is not None:
-            self._frame.require_compatible(geometry.frame)
-            if engine == "okada" and not isinstance(geometry, PlanarGeometry):
-                raise ValueError("okada faults require PlanarGeometry")
-            if engine == "tri" and not isinstance(geometry, TriGeometry):
-                raise ValueError("tri faults require TriGeometry")
-        elif engine == "tri":
-            assert vertices is not None
-            geometry = TriGeometry(vertices, self._frame)
-        self._geometry = geometry
 
         # Make arrays read-only
         for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
@@ -164,24 +157,22 @@ class Fault:
     @classmethod
     def planar(
         cls,
-        geometry: PlanarGeometry | None = None,
         *,
-        lat: float | None = None,
-        lon: float | None = None,
-        depth: float | None = None,
-        strike: float | None = None,
-        dip: float | None = None,
-        length: float | None = None,
-        width: float | None = None,
+        lat: float,
+        lon: float,
+        depth: float,
+        strike: float,
+        dip: float,
+        length: float,
+        width: float,
         n_length: int = 1,
         n_width: int = 1,
         medium: ElasticMedium | None = None,
+        frame: LocalFrame | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its center.
 
         Args:
-            geometry: Named planar geometry. When provided, do not also pass
-                the scalar geometry parameters.
             lat: Latitude of fault centroid.
             lon: Longitude of fault centroid.
             depth: Depth of fault centroid in meters (positive down).
@@ -193,55 +184,21 @@ class Fault:
             n_width: Number of patches down dip.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
                 Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
+            frame: Local frame for local-coordinate views. Defaults to a frame
+                centered horizontally on the fault.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
-        scalar_values = {
-            "lat": lat,
-            "lon": lon,
-            "depth": depth,
-            "strike": strike,
-            "dip": dip,
-            "length": length,
-            "width": width,
-        }
-        if geometry is not None:
-            supplied = [
-                name for name, value in scalar_values.items() if value is not None
-            ]
-            if supplied:
-                raise ValueError(
-                    "provide either geometry or scalar planar parameters, "
-                    f"not both; also received {supplied}"
-                )
-        else:
-            missing = [name for name, value in scalar_values.items() if value is None]
-            if missing:
-                raise ValueError(
-                    "scalar Fault.planar requires lat, lon, depth, strike, dip, "
-                    f"length, and width; missing {missing}"
-                )
-            assert lat is not None and lon is not None
-            assert depth is not None and strike is not None and dip is not None
-            assert length is not None and width is not None
-            geometry = PlanarGeometry.from_geographic(
-                lon=lon,
-                lat=lat,
-                depth=depth,
-                strike=strike,
-                dip=dip,
-                length=length,
-                width=width,
-            )
         if n_length < 1 or n_width < 1:
             raise ValueError("n_length and n_width must be positive integers")
-
-        depth = geometry.depth
-        strike = geometry.strike
-        dip = geometry.dip
-        length = geometry.length
-        width = geometry.width
+        selected_frame = LocalFrame(lat, lon) if frame is None else frame
+        center = selected_frame.to_enu(
+            lon=lon, lat=lat, alt=selected_frame.origin_alt
+        )
+        as_planar_vector(
+            [center[0], center[1], depth, strike, dip, length, width]
+        )
         patch_L = length / n_length
         patch_W = width / n_width
 
@@ -274,9 +231,9 @@ class Fault:
         )
         u_offsets = fault_u0 + (jj + 0.5) * patch_W * sin_dip
 
-        geographic = geometry.frame.to_geographic(
-            east=geometry.center[0] + e_offsets,
-            north=geometry.center[1] + n_offsets,
+        geographic = selected_frame.to_geographic(
+            east=center[0] + e_offsets,
+            north=center[1] + n_offsets,
             up=np.zeros_like(e_offsets),
         )
         lon_c = geographic[:, 0]
@@ -300,8 +257,7 @@ class Fault:
             grid_shape=(n_length, n_width),
             engine="okada",
             medium=medium,
-            frame=geometry.frame,
-            geometry=geometry,
+            frame=selected_frame,
         )
 
     @classmethod
@@ -386,7 +342,7 @@ class Fault:
     @classmethod
     def from_triangles(
         cls,
-        vertices: np.ndarray | TriGeometry,
+        vertices: np.ndarray,
         *,
         ref_lat: float | None = None,
         ref_lon: float | None = None,
@@ -409,13 +365,13 @@ class Fault:
           mesh and its node sharing.
 
         Args:
-            vertices: A :class:`geodef.geometry.TriGeometry`, per-triangle
-                corners with shape (N, 3, 3), or a shared node array with shape
-                (M, 3). Numeric rows are [east, north, up] in meters.
+            vertices: Per-triangle corners with shape (N, 3, 3), or a shared
+                node array with shape (M, 3). Numeric rows are [east, north,
+                up] in meters.
             ref_lat: Reference latitude for the ENU origin.
             ref_lon: Reference longitude for the ENU origin.
             frame: Explicit local frame. Mutually exclusive with legacy
-                ``ref_lat``/``ref_lon``; must match a supplied ``TriGeometry``.
+                ``ref_lat``/``ref_lon``.
             triangles: Optional connectivity indices into ``vertices``, shape
                 (N, 3). When given, ``vertices`` is treated as a node array.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
@@ -436,44 +392,40 @@ class Fault:
         if frame is not None and legacy_frame is not None:
             frame.require_compatible(legacy_frame)
 
-        if isinstance(vertices, TriGeometry):
-            if triangles is not None:
-                raise ValueError("triangles must be None when vertices is TriGeometry")
-            selected_frame = frame if frame is not None else legacy_frame
-            if selected_frame is not None:
-                vertices.frame.require_compatible(selected_frame)
-            geometry = vertices
-        else:
-            selected_frame = frame if frame is not None else legacy_frame
-            if selected_frame is None:
-                selected_frame = LocalFrame(0.0, 0.0)
-            if triangles is None:
-                geometry = TriGeometry(vertices, selected_frame)
-            else:
-                vertices_array = np.asarray(vertices, dtype=float)
-                if vertices_array.ndim != 2 or vertices_array.shape[1] != 3:
-                    raise ValueError(
-                        "with triangles, vertices must be a node array of shape (M, 3)"
-                    )
-                geometry = TriGeometry.from_nodes(
-                    vertices_array, triangles, frame=selected_frame
+        selected_frame = frame if frame is not None else legacy_frame
+        if selected_frame is None:
+            selected_frame = LocalFrame(0.0, 0.0)
+        if triangles is None:
+            vertices_array = np.asarray(vertices, dtype=float)
+            if vertices_array.ndim != 3 or vertices_array.shape[1:] != (3, 3):
+                raise ValueError(
+                    "without triangles, vertices must have shape (N, 3, 3)"
                 )
+            if not np.all(np.isfinite(vertices_array)):
+                raise ValueError("vertices must contain only finite values")
+        else:
+            vertices_array = vertices_from_nodes(vertices, triangles)
 
-        centers = geometry.centers_geographic
+        centers_enu = np.mean(vertices_array, axis=1)
+        centers_geo = selected_frame.to_geographic(
+            east=centers_enu[:, 0],
+            north=centers_enu[:, 1],
+            up=centers_enu[:, 2],
+        )
+        strike, dip = triangle_strike_dip(vertices_array)
 
         return cls(
-            centers[:, 1],
-            centers[:, 0],
-            centers[:, 2],
-            geometry.strike,
-            geometry.dip,
+            centers_geo[:, 1],
+            centers_geo[:, 0],
+            -centers_geo[:, 2],
+            strike,
+            dip,
             None,
             None,
-            vertices=geometry.vertices_enu,
+            vertices=vertices_array,
             engine="tri",
             medium=medium,
-            frame=geometry.frame,
-            geometry=geometry,
+            frame=selected_frame,
         )
 
     @classmethod
@@ -496,14 +448,20 @@ class Fault:
         Returns:
             A triangular Fault with ``engine="tri"``.
         """
-        geometry = TriGeometry.from_geographic(
+        frame = mesh.frame
+        if frame is None:
+            raise ValueError("mesh must define a local frame")
+        nodes_enu = frame.to_enu(
             lon=mesh.lon,
             lat=mesh.lat,
-            depth=mesh.depth,
-            triangles=mesh.triangles,
-            frame=mesh.frame,
+            alt=-mesh.depth,
         )
-        return cls.from_triangles(geometry, medium=medium)
+        return cls.from_triangles(
+            nodes_enu,
+            triangles=mesh.triangles,
+            frame=frame,
+            medium=medium,
+        )
 
     @classmethod
     def load(
@@ -804,8 +762,8 @@ class Fault:
         Coordinates are expressed in :attr:`frame`.
         """
         if self._centers_local is None:
-            if isinstance(self._geometry, TriGeometry):
-                self._centers_local = self._geometry.centers_enu
+            if self._vertices is not None:
+                self._centers_local = np.mean(self._vertices, axis=1)
             else:
                 enu = self._frame.to_enu(
                     lon=self._lon,
@@ -821,11 +779,6 @@ class Fault:
     def frame(self) -> LocalFrame:
         """Local coordinate frame for :attr:`centers_local` and vertices."""
         return self._frame
-
-    @property
-    def geometry(self) -> PlanarGeometry | TriGeometry | None:
-        """Named source geometry when known, else ``None`` for legacy grids."""
-        return self._geometry
 
     @property
     def areas(self) -> np.ndarray:
@@ -932,7 +885,6 @@ class Fault:
             engine=self._engine,
             medium=medium,
             frame=self._frame,
-            geometry=self._geometry,
         )
 
     def to_frame(self, frame: LocalFrame) -> "Fault":
@@ -951,15 +903,11 @@ class Fault:
         """
         if self._frame.is_compatible(frame):
             return self
-        if isinstance(self._geometry, TriGeometry):
+        if self._vertices is not None:
+            vertices = self._frame.transform_enu(self._vertices, target=frame)
             return Fault.from_triangles(
-                self._geometry.to_frame(frame), medium=self._medium
+                vertices, frame=frame, medium=self._medium
             )
-        geometry = (
-            self._geometry.to_frame(frame)
-            if isinstance(self._geometry, PlanarGeometry)
-            else None
-        )
         return Fault(
             self._lat,
             self._lon,
@@ -972,7 +920,6 @@ class Fault:
             engine=self._engine,
             medium=self._medium,
             frame=frame,
-            geometry=geometry,
         )
 
     @property

@@ -31,9 +31,8 @@ Requires the JAX backend::
     import geodef
     geodef.backend.set_backend("jax")
     frame = geodef.LocalFrame(-2.0, 100.0)
-    geometry0 = geodef.PlanarGeometry.from_theta(theta0, frame=frame)
     post = geodef.bayes.RectPosterior(
-        geometry0, datasets,
+        theta0, datasets, frame=frame,
         free=["dip", "depth"],
         theta_prior={"dip": (5.0, 60.0), "depth": (5e3, 40e3)},
         n_length=8, n_width=4, smoothing="laplacian",
@@ -44,7 +43,7 @@ Requires the JAX backend::
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -56,14 +55,15 @@ from geodef.data import DataSet
 from geodef.fault import Fault
 from geodef.geometry import (
     LocalFrame,
-    PlanarGeometry,
-    TriGeometry,
-    _resolve_planar_geometry,
+    _resolve_frame,
+    as_planar_vector,
+    planar_parameter_dict,
 )
 from geodef.gradients import rect_greens, tri_greens
 from geodef.invert import (
     _THETA_NAMES,
     LinearSystem,
+    _fault_from_planar_vector,
     _projection_matrix,
     _rank_positive_eigs,
 )
@@ -560,7 +560,7 @@ class RectPosterior(_CollapsedPosterior):
     ``-inf``.
 
     Args:
-        theta0: Named template :class:`PlanarGeometry`, or expert array
+        theta0: Named parameter mapping, or expert array
             ``[e0, n0, depth, strike, dip, length, width]``. Fixed parameters
             keep these values and free ones are initialized from them. Array
             input requires ``frame`` or ``ref_lat``/``ref_lon``.
@@ -617,7 +617,7 @@ class RectPosterior(_CollapsedPosterior):
 
     def __init__(
         self,
-        theta0: npt.ArrayLike | PlanarGeometry,
+        theta0: npt.ArrayLike | Mapping[str, float],
         datasets: DataSet | list[DataSet],
         *,
         ref_lat: float | None = None,
@@ -670,17 +670,14 @@ class RectPosterior(_CollapsedPosterior):
                 "mode='profiled' requires a fixed smoothing_strength (lambda)"
             )
 
-        geometry0 = _resolve_planar_geometry(
-            theta0, frame=frame, ref_lat=ref_lat, ref_lon=ref_lon
-        )
-        frame = geometry0.frame
-        theta0 = geometry0.theta
+        frame = _resolve_frame(frame, ref_lat, ref_lon)
+        theta0 = as_planar_vector(theta0)
         self.mode = mode
         self.free = list(free)
         self.components = components
         self._components = components
         self.datasets = datasets
-        self.geometry0 = geometry0
+        self.theta0 = np.array(theta0, copy=True)
         self.frame = frame
         self._theta0 = theta0
         self._free_idx = np.array(
@@ -692,7 +689,7 @@ class RectPosterior(_CollapsedPosterior):
 
         # Template system provides the stacked data, weights, and
         # regularization operator; its Green's matrix is not used.
-        template = Fault.planar(geometry0, n_length=n_length, n_width=n_width)
+        template = _fault_from_planar_vector(theta0, frame, n_length, n_width)
         sys = LinearSystem(template, datasets, smoothing, components)
         n_patches = n_length * n_width
         self._col_start, self._col_stop = {
@@ -796,8 +793,8 @@ class RectPosterior(_CollapsedPosterior):
             self._mask = np.zeros(n_params, dtype=bool)
             self._logpdf_fn = self._build_logpdf()
 
-    def geometry(self, x: npt.ArrayLike) -> PlanarGeometry:
-        """Return the named planar geometry represented by one parameter state.
+    def geometry(self, x: npt.ArrayLike) -> dict[str, float]:
+        """Return named planar parameters represented by one state.
 
         This is a user-facing, non-JAX view. The likelihood methods continue to
         consume array states directly for tracing and vectorization.
@@ -806,7 +803,7 @@ class RectPosterior(_CollapsedPosterior):
             x: One posterior parameter state, shape ``(n_params,)``.
 
         Returns:
-            Named geometry with the posterior's :attr:`frame`.
+            Parameter dictionary in the posterior's :attr:`frame`.
 
         Raises:
             ValueError: If ``x`` is not one complete parameter state.
@@ -816,7 +813,21 @@ class RectPosterior(_CollapsedPosterior):
             raise ValueError(f"x must have shape ({self.n_params},), got {state.shape}")
         theta = np.array(self._theta0, copy=True)
         theta[self._free_idx] = state[: len(self.free)]
-        return PlanarGeometry.from_theta(theta, frame=self.frame)
+        return planar_parameter_dict(theta)
+
+    def fault(self, x: npt.ArrayLike) -> Fault:
+        """Return the planar fault represented by one parameter state.
+
+        Args:
+            x: One posterior parameter state, shape ``(n_params,)``.
+
+        Returns:
+            A fault discretized with this posterior's grid shape.
+        """
+        theta = as_planar_vector(self.geometry(x))
+        return _fault_from_planar_vector(
+            theta, self.frame, self._n_length, self._n_width
+        )
 
     def _setup_positive(
         self,
@@ -1135,8 +1146,8 @@ class TriWarp:
     the same interpolated offset, since they share the same (u, v)).
 
     Args:
-        fault: Reference triangular :class:`Fault` or :class:`TriGeometry`;
-            kept for :meth:`fault` and by :class:`TriPosterior`.
+        fault: Reference triangular :class:`Fault`; kept for :meth:`fault` and
+            by :class:`TriPosterior`.
         knots: Explicit knot locations in the mesh's best-fit-plane (u, v)
             coordinates, shape (nk, 2). Takes precedence over ``n_knots``.
         n_knots: ``(n_u, n_v)`` grid shape spanning the mesh's (u, v)
@@ -1149,22 +1160,19 @@ class TriWarp:
             solving for the interpolation weights (numerical stability).
 
     Raises:
-        ValueError: If ``fault`` is not a triangular fault or geometry,
-            ``knots`` has the wrong shape, or no default ``length_scale`` can
-            be inferred.
+        ValueError: If ``fault`` is not triangular, ``knots`` has the wrong
+            shape, or no default ``length_scale`` can be inferred.
     """
 
     def __init__(
         self,
-        fault: Fault | TriGeometry,
+        fault: Fault,
         *,
         knots: npt.ArrayLike | None = None,
         n_knots: tuple[int, int] = (3, 2),
         length_scale: float | None = None,
         ridge: float = 1e-8,
     ) -> None:
-        if isinstance(fault, TriGeometry):
-            fault = Fault.from_triangles(fault)
         if fault.vertices is None:
             raise ValueError(
                 "TriWarp requires a triangular Fault (fault.vertices is None)"

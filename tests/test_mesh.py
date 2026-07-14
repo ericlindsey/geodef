@@ -7,7 +7,7 @@ import numpy.testing as npt
 import pytest
 
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame, TriGeometry
+from geodef.geometry import LocalFrame
 from geodef.mesh import Mesh, _compute_strike_dip
 
 requires_meshpy = pytest.mark.skipif(
@@ -349,66 +349,50 @@ class TestFaultFromTriangles:
         assert fault.n_patches == 2
         assert fault.engine == "tri"
 
-    def test_accepts_named_tri_geometry(self):
+    def test_accepts_explicit_tri_frame(self):
         frame = LocalFrame(0.0, 100.0)
-        geometry = TriGeometry(
-            np.array(
+        vertices = np.array(
+            [
                 [
-                    [
-                        [0.0, 0.0, -1000.0],
-                        [1000.0, 0.0, -1000.0],
-                        [0.0, 0.0, -2000.0],
-                    ]
+                    [0.0, 0.0, -1000.0],
+                    [1000.0, 0.0, -1000.0],
+                    [0.0, 0.0, -2000.0],
                 ]
-            ),
-            frame,
+            ]
         )
 
-        fault = Fault.from_triangles(geometry)
+        fault = Fault.from_triangles(vertices, frame=frame)
 
-        assert fault.geometry is geometry
         assert fault.frame is frame
-        npt.assert_allclose(fault.centers_local, geometry.centers_enu)
-
-    def test_rejects_incompatible_named_tri_frame(self):
-        geometry = TriGeometry(
-            np.array(
-                [
-                    [
-                        [0.0, 0.0, -1000.0],
-                        [1000.0, 0.0, -1000.0],
-                        [0.0, 0.0, -2000.0],
-                    ]
-                ]
-            ),
-            LocalFrame(0.0, 100.0),
-        )
-
-        with pytest.raises(ValueError, match="incompatible local frames"):
-            Fault.from_triangles(geometry, frame=LocalFrame(0.0, 101.0))
+        npt.assert_allclose(fault.centers_local, np.mean(vertices, axis=1))
 
     def test_fault_to_frame_transforms_tri_vertices(self):
-        geometry = TriGeometry(
-            np.array(
+        vertices = np.array(
+            [
                 [
-                    [
-                        [0.0, 0.0, -1000.0],
-                        [1000.0, 0.0, -1000.0],
-                        [0.0, 0.0, -2000.0],
-                    ]
+                    [0.0, 0.0, -1000.0],
+                    [1000.0, 0.0, -1000.0],
+                    [0.0, 0.0, -2000.0],
                 ]
-            ),
-            LocalFrame(0.0, 100.0),
+            ]
         )
-        fault = Fault.from_triangles(geometry)
+        fault = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 100.0))
 
         transformed = fault.to_frame(LocalFrame(0.1, 100.2))
 
         assert transformed.frame != fault.frame
-        assert isinstance(transformed.geometry, TriGeometry)
+        assert transformed.vertices is not None
+        original_geo = fault.frame.to_geographic(
+            east=vertices[..., 0], north=vertices[..., 1], up=vertices[..., 2]
+        )
+        transformed_geo = transformed.frame.to_geographic(
+            east=transformed.vertices[..., 0],
+            north=transformed.vertices[..., 1],
+            up=transformed.vertices[..., 2],
+        )
         npt.assert_allclose(
-            transformed.geometry.to_geographic(),
-            geometry.to_geographic(),
+            transformed_geo,
+            original_geo,
             atol=1e-6,
         )
 

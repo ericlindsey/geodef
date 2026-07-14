@@ -279,7 +279,7 @@ computations; ordinary transformations and one-shot workflows are functions.
   `ElasticMedium`: each carries durable identity or invariants shared by many
   computations. Keep immutable result records where named fields prevent tuple
   or ordering mistakes.
-- [ ] Remove the draft `PlanarGeometry` and `TriGeometry` public wrappers before
+- [x] Remove the draft `PlanarGeometry` and `TriGeometry` public wrappers before
   release. `Fault` already represents rectangular or triangular geometry;
   retain the useful validation and conversions as functions.
 - [x] Replace the draft `SlipModel` and `Displacement` wrappers with `slip`
@@ -312,14 +312,14 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 - [x] Attach one immutable `LocalFrame` to every `Fault` and `Mesh` that owns
   local coordinates; reject incompatible frames unless explicitly transformed.
-- [ ] Put conversions in `transforms`/`geometry` functions accepting
+- [x] Put conversions in `transforms`/`geometry` functions accepting
   `frame=...`. Keep `Fault.planar(...)` keyword geometry and
   `Fault.from_triangles(..., frame=...)` as the named construction paths.
-- [ ] Replace unexplained seven-element geometry arrays in beginner docs with
+- [x] Replace unexplained seven-element geometry arrays in beginner docs with
   keyword calls and named result fields. Advanced JAX/Bayesian functions may
   retain `theta`, but must accept a mapping keyed by `e0`, `n0`, `depth`,
   `strike`, `dip`, `length`, and `width` in addition to the array view.
-- [ ] Return optimized geometry as a `Fault` plus the expert `theta` array and
+- [x] Return optimized geometry as a `Fault` plus the expert `theta` array and
   frame on the existing result record, rather than introducing a parallel
   geometry value hierarchy.
 

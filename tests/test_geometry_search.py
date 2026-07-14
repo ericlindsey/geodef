@@ -11,7 +11,7 @@ import pytest
 from geodef import backend
 from geodef.data import GNSS
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame, PlanarGeometry
+from geodef.geometry import LocalFrame
 from geodef.invert import geometry_search
 
 jax = pytest.importorskip("jax")
@@ -109,34 +109,36 @@ def _theta_start(**overrides):
 
 
 class TestGeometrySearch:
-    def test_accepts_and_returns_named_geometry(self, gnss_data):
+    def test_accepts_mapping_and_returns_fault(self, gnss_data):
         frame = LocalFrame(_REF_LAT, _REF_LON)
-        geometry = PlanarGeometry.from_theta(_theta_start(dip=30.0), frame=frame)
+        parameters = dict(
+            zip(
+                ["e0", "n0", "depth", "strike", "dip", "length", "width"],
+                _theta_start(dip=30.0),
+                strict=True,
+            )
+        )
 
         result = geometry_search(
-            geometry,
+            parameters,
             gnss_data,
+            frame=frame,
             free=["dip"],
             bounds={"dip": (5.0, 45.0)},
             **_THETA0_KWARGS,
         )
 
-        assert isinstance(result.geometry, PlanarGeometry)
-        assert result.geometry.frame is frame
+        assert isinstance(result.fault, Fault)
+        assert result.fault.frame is frame
         assert result.frame is frame
-        np.testing.assert_allclose(result.geometry.theta, result.theta)
-        assert abs(result.geometry.dip - _TRUE["dip"]) < 0.5
+        assert abs(np.mean(result.fault.dip) - _TRUE["dip"]) < 0.5
 
-    def test_rejects_incompatible_named_geometry_frame(self, gnss_data):
-        geometry = PlanarGeometry.from_theta(
-            _theta_start(), frame=LocalFrame(_REF_LAT, _REF_LON)
-        )
-
-        with pytest.raises(ValueError, match="incompatible local frames"):
+    def test_rejects_mapping_with_missing_parameter(self, gnss_data):
+        with pytest.raises(ValueError, match="missing keys"):
             geometry_search(
-                geometry,
+                {"depth": 20_000.0},
                 gnss_data,
-                frame=LocalFrame(_REF_LAT, _REF_LON + 1.0),
+                frame=LocalFrame(_REF_LAT, _REF_LON),
                 free=["dip"],
                 **_THETA0_KWARGS,
             )

@@ -8,6 +8,7 @@ Automatic hyperparameter tuning via ABIC or cross-validation.
 
 import dataclasses
 import functools
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,8 +24,8 @@ from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
 from geodef.geometry import (
     LocalFrame,
-    PlanarGeometry,
-    _resolve_planar_geometry,
+    _resolve_frame,
+    as_planar_vector,
 )
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
 from geodef.slip import from_plate, from_rake, magnitude, unpack
@@ -459,8 +460,8 @@ class GeometrySearchResult:
     """Result of a gradient-based nonlinear geometry search.
 
     Attributes:
-        geometry: Optimal named geometry and its local frame.
-        frame: Convenience view of ``geometry.frame``.
+        fault: Optimal fault geometry.
+        frame: Local frame defining ``theta``.
         theta: Optimal geometry, full 7-vector
             ``[e0, n0, depth, strike, dip, length, width]`` in the local
             Cartesian :attr:`geometry.frame`.
@@ -475,7 +476,8 @@ class GeometrySearchResult:
         n_iterations: Number of optimizer iterations.
     """
 
-    geometry: PlanarGeometry
+    fault: Fault
+    frame: LocalFrame
     theta: np.ndarray
     free: list[str]
     slip: np.ndarray
@@ -485,12 +487,6 @@ class GeometrySearchResult:
     success: bool
     message: str
     n_iterations: int
-
-    @property
-    def frame(self) -> LocalFrame:
-        """Local frame defining :attr:`geometry` and :attr:`theta`."""
-        return self.geometry.frame
-
 
 @dataclasses.dataclass(frozen=True)
 class ABICCurveResult:
@@ -1565,8 +1561,30 @@ def _vp_kernel():
     return _vp_jitted["kernel"]
 
 
+def _fault_from_planar_vector(
+    theta: np.ndarray,
+    frame: LocalFrame,
+    n_length: int,
+    n_width: int,
+) -> Fault:
+    """Construct a planar fault from the local expert parameter vector."""
+    geographic = frame.to_geographic(east=theta[0], north=theta[1], up=0.0)
+    return Fault.planar(
+        lat=float(geographic[1]),
+        lon=float(geographic[0]),
+        depth=float(theta[2]),
+        strike=float(theta[3]),
+        dip=float(theta[4]),
+        length=float(theta[5]),
+        width=float(theta[6]),
+        n_length=n_length,
+        n_width=n_width,
+        frame=frame,
+    )
+
+
 def geometry_search(
-    theta0: np.ndarray | PlanarGeometry,
+    theta0: np.ndarray | Mapping[str, float],
     datasets: DataSet | list[DataSet],
     *,
     ref_lat: float | None = None,
@@ -1595,9 +1613,9 @@ def geometry_search(
     Requires the JAX backend (``geodef.backend.set_backend('jax')``).
 
     Args:
-        theta0: Named starting :class:`PlanarGeometry`, or expert array
-            ``[e0, n0, depth, strike, dip, length, width]``. Array input
-            requires ``frame`` or ``ref_lat``/``ref_lon``.
+        theta0: Starting parameter mapping, or expert array
+            ``[east, north, depth, strike, dip, length, width]``. Requires
+            ``frame`` or ``ref_lat``/``ref_lon``.
         datasets: One or more displacement datasets (GNSS, InSAR,
             Vertical).
         ref_lat: Latitude anchoring the local Cartesian frame.
@@ -1619,8 +1637,8 @@ def geometry_search(
         nu: Poisson's ratio.
 
     Returns:
-        GeometrySearchResult with named ``geometry``, expert ``theta``, inner
-        slip, misfit, and a Gauss-Newton covariance for the free parameters.
+        GeometrySearchResult with optimal ``fault``, expert ``theta``, frame,
+        inner slip, misfit, and a Gauss-Newton covariance.
 
     Raises:
         RuntimeError: If the JAX backend is not active.
@@ -1649,16 +1667,13 @@ def geometry_search(
             f"'dip', got {components!r}"
         )
 
-    geometry0 = _resolve_planar_geometry(
-        theta0, frame=frame, ref_lat=ref_lat, ref_lon=ref_lon
-    )
-    frame = geometry0.frame
-    theta0 = geometry0.theta
+    frame = _resolve_frame(frame, ref_lat, ref_lon)
+    theta0 = as_planar_vector(theta0)
     free_idx = np.array([_THETA_NAMES.index(name) for name in free])
 
     # Template system provides the stacked data, weights, and (fixed)
     # regularization operator; its Green's matrix is not used.
-    template = Fault.planar(geometry0, n_length=n_length, n_width=n_width)
+    template = _fault_from_planar_vector(theta0, frame, n_length, n_width)
     sys = LinearSystem(template, datasets, smoothing, components)
     n_patches = n_length * n_width
     col_start, col_stop = {
@@ -1735,10 +1750,11 @@ def geometry_search(
 
     theta_opt = theta0.copy()
     theta_opt[free_idx] = np.asarray(opt.x, dtype=float)
-    geometry_opt = PlanarGeometry.from_theta(theta_opt, frame=frame)
+    fault_opt = _fault_from_planar_vector(theta_opt, frame, n_length, n_width)
 
     return GeometrySearchResult(
-        geometry=geometry_opt,
+        fault=fault_opt,
+        frame=frame,
         theta=theta_opt,
         free=list(free),
         slip=backend.to_numpy(m),

@@ -24,7 +24,7 @@ from geodef import (
 )
 from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 from geodef.fault import Fault, magnitude_to_moment, moment_to_magnitude
-from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
+from geodef.geometry import LocalFrame
 from geodef.greens import select_slip_columns, stack_obs, stack_weights
 from geodef.invert import (
     ABICCurveResult,
@@ -74,8 +74,6 @@ __all__ = [
     # Fault geometry, medium, and moment
     "Fault",
     "LocalFrame",
-    "PlanarGeometry",
-    "TriGeometry",
     "ElasticMedium",
     "DEFAULT_MEDIUM",
     "magnitude_to_moment",
