@@ -304,7 +304,7 @@ computations; ordinary transformations and one-shot workflows are functions.
   `geodef.invert(...)`; then free `geodef.invert` for the module so
   `geodef.invert.solve(...)` works after ordinary `import geodef`. Do not use a
   callable module proxy merely to make both meanings coexist.
-- [ ] Represent a slip basis with explicit function keywords (`components`,
+- [x] Represent a slip basis with explicit function keywords (`components`,
   `rake`, `slip_azimuth`, `plate_rake`) and conversion functions. Do not create
   `SlipBasis`, `Regularization`, or `Bounds` configuration classes.
 - [x] Standardize patch ordering utilities and provide `fault.reshape_patches`
@@ -328,7 +328,7 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 ### 1.4 Result records plus assessment functions
 
-- [ ] Keep `InversionResult` a compact, serializable data record. Add direct
+- [x] Keep `InversionResult` a compact, serializable data record. Add direct
   named slip views (`strike_slip`, `dip_slip`, `slip_magnitude`, `slip_rake`)
   where they are unambiguous; keep `slip_vector` as the blocked expert view.
 - [ ] Record dataset names and row slices, solver status, regularization
