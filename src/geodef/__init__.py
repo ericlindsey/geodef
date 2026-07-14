@@ -17,6 +17,7 @@ from geodef import (
     okada85,
     okada92,
     plot,
+    slip,
     transforms,
     tri,
     validation,
@@ -43,6 +44,7 @@ from geodef.invert import (
     model_uncertainty,
 )
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.slip import Displacement, SlipModel
 
 __all__ = [
     # Submodules
@@ -60,6 +62,7 @@ __all__ = [
     "okada85",
     "okada92",
     "plot",
+    "slip",
     "transforms",
     "tri",
     "validation",
@@ -78,6 +81,8 @@ __all__ = [
     "DEFAULT_MEDIUM",
     "magnitude_to_moment",
     "moment_to_magnitude",
+    "SlipModel",
+    "Displacement",
     # Green's matrix assembly
     "select_slip_columns",
     "stack_obs",
