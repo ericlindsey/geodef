@@ -285,22 +285,25 @@ computations; ordinary transformations and one-shot workflows are functions.
 - [x] Replace the draft `SlipModel` and `Displacement` wrappers with `slip`
   conversion functions, ordinary arrays, direct named `InversionResult` views,
   and the existing three-array displacement return.
-- [ ] Keep `LinearSystem` as an expert prepared/cache object for repeated
+- [x] Keep `LinearSystem` as an expert prepared/cache object for repeated
   sweeps and assessment, not as the beginner workflow and not behind a second
   `SlipProblem` facade.
-- [ ] Require an explicit justification in API review for every new public
+- [x] Require an explicit justification in API review for every new public
   class: durable state, enforced cross-call invariant, or measured reuse of an
   expensive preparation. Do not add classes solely to bundle keyword arguments.
 
 ### 1.2 Give the functional namespaces memorable names
 
-- [ ] Make the module path the primary discovery surface:
-  `geodef.invert.solve`, `geodef.invert.select_regularization`, and
-  `geodef.invert.assess`; `geodef.greens.matrix`, `project`, and `laplacian`;
-  `geodef.slip.pack`, `unpack`, `components`, `magnitude`, and `rake`.
-- [ ] Resolve the top-level `geodef.invert` function/module collision with a
-  deprecation shim. Keep a short one-shot alias such as `geodef.solve`, while
-  ensuring `geodef.invert.solve(...)` works after ordinary `import geodef`.
+- [ ] Make the module path the primary discovery surface. Prefer specific names
+  over umbrella verbs: `geodef.invert.solve`, `lcurve`, `abic_curve`,
+  `dataset_diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
+  `project`, and `laplacian`; `geodef.slip.pack`, `unpack`, `from_rake`,
+  `from_azimuth`, `from_plate`, `to_plate`, `magnitude`, and `rake`.
+- [ ] Resolve the top-level `geodef.invert` function/module collision over two
+  minor releases: first add `geodef.solve` and deprecate the callable
+  `geodef.invert(...)`; then free `geodef.invert` for the module so
+  `geodef.invert.solve(...)` works after ordinary `import geodef`. Do not use a
+  callable module proxy merely to make both meanings coexist.
 - [ ] Represent a slip basis with explicit function keywords (`components`,
   `rake`, `slip_azimuth`, `plate_rake`) and conversion functions. Do not create
   `SlipBasis`, `Regularization`, or `Bounds` configuration classes.
@@ -601,7 +604,7 @@ does not multiply special cases in beginner-facing code.
 - [ ] Add layered half-space displacement Green's functions behind an optional
   dependency, beginning with a well-bounded elastic layering use case.
 - [ ] Evaluate viscoelastic and poroelastic engines only after source/engine
-  protocols can represent time and material parameters cleanly.
+  callable contracts can represent time and material parameters cleanly.
 - [ ] For every engine: cite equations, preserve a reference implementation,
   cross-validate published cases, declare capabilities/coordinate conventions,
   and show one end-to-end example through the same high-level workflow.
