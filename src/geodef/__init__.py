@@ -8,6 +8,7 @@ from geodef import (
     cache,
     euler,
     geomap,
+    geometry,
     gradients,
     greens,
     medium,
@@ -22,6 +23,7 @@ from geodef import (
 )
 from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 from geodef.fault import Fault, magnitude_to_moment, moment_to_magnitude
+from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
 from geodef.greens import select_slip_columns, stack_obs, stack_weights
 from geodef.invert import (
     ABICCurveResult,
@@ -49,6 +51,7 @@ __all__ = [
     "cache",
     "euler",
     "geomap",
+    "geometry",
     "gradients",
     "greens",
     "medium",
@@ -68,6 +71,9 @@ __all__ = [
     "spatial_covariance",
     # Fault geometry, medium, and moment
     "Fault",
+    "LocalFrame",
+    "PlanarGeometry",
+    "TriGeometry",
     "ElasticMedium",
     "DEFAULT_MEDIUM",
     "magnitude_to_moment",
