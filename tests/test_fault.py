@@ -19,6 +19,7 @@ from geodef.fault import (
 )
 from geodef.geometry import LocalFrame, PlanarGeometry
 from geodef.medium import ElasticMedium
+from geodef.slip import Displacement, SlipModel
 
 # ======================================================================
 # Fixtures
@@ -334,6 +335,33 @@ class TestForwardModeling:
         assert un.shape == (1,)
         assert uz.shape == (1,)
 
+    def test_displacement_returns_named_object(self, single_patch):
+        result = single_patch.displacement(
+            np.array([0.1]), np.array([100.0]), slip_strike=1.0
+        )
+
+        assert isinstance(result, Displacement)
+        expected = np.ravel(np.column_stack(tuple(result)))
+        np.testing.assert_allclose(result.vector, expected)
+
+    def test_displacement_accepts_slip_model(self, single_patch):
+        model = SlipModel.from_rake([2.0], rake=30.0)
+
+        named = single_patch.displacement(np.array([0.1]), np.array([100.0]), model)
+        legacy = single_patch.displacement(
+            np.array([0.1]),
+            np.array([100.0]),
+            slip_strike=model.strike,
+            slip_dip=model.dip,
+        )
+
+        np.testing.assert_allclose(named.vector, legacy.vector)
+
+    def test_displacement_rejects_wrong_slip_model_size(self, single_patch):
+        model = SlipModel(strike=[1.0, 2.0], dip=[0.0, 0.0])
+        with pytest.raises(ValueError, match="patches"):
+            single_patch.displacement(np.array([0.1]), np.array([100.0]), model)
+
     def test_zero_slip_gives_zero_displacement(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
@@ -389,6 +417,15 @@ class TestMomentMagnitude:
         m0 = single_patch.moment(slip, mu=40e9)
         expected = 40e9 * 10e3 * 10e3 * 1.0
         np.testing.assert_allclose(m0, expected)
+
+    def test_moment_accepts_slip_model(self, single_patch):
+        model = SlipModel(strike=[3.0], dip=[4.0])
+
+        expected_moment = single_patch.moment([5.0])
+        np.testing.assert_allclose(single_patch.moment(model), expected_moment)
+        np.testing.assert_allclose(
+            single_patch.magnitude(model), single_patch.magnitude([5.0])
+        )
 
     def test_magnitude_known_value(self):
         """Mw 7.0 corresponds to M0 ≈ 3.53e19 N-m."""
@@ -492,6 +529,37 @@ class TestPatchIndex:
         )
         with pytest.raises(ValueError, match="structured grid"):
             fault.patch_index(0, 0)
+
+    def test_reshape_and_flatten_patches_roundtrip(self, simple_fault):
+        values = np.arange(simple_fault.n_patches)
+
+        grid = simple_fault.reshape_patches(values)
+
+        assert grid.shape == (5, 10)
+        np.testing.assert_array_equal(grid[0], np.arange(10))
+        np.testing.assert_array_equal(simple_fault.flatten_patches(grid), values)
+
+    def test_reshape_and_flatten_preserve_trailing_dimensions(self, simple_fault):
+        values = np.arange(simple_fault.n_patches * 2).reshape(-1, 2)
+
+        grid = simple_fault.reshape_patches(values)
+
+        assert grid.shape == (5, 10, 2)
+        np.testing.assert_array_equal(simple_fault.flatten_patches(grid), values)
+
+    def test_reshape_patches_rejects_unstructured_fault(self):
+        fault = Fault(
+            np.array([0.0]),
+            np.array([100.0]),
+            np.array([10e3]),
+            np.array([0.0]),
+            np.array([90.0]),
+            np.array([10e3]),
+            np.array([10e3]),
+            grid_shape=None,
+        )
+        with pytest.raises(ValueError, match="structured grid"):
+            fault.reshape_patches([1.0])
 
 
 # ======================================================================

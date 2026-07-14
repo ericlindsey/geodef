@@ -8,11 +8,13 @@ modeling via Green's function matrices and seismic moment calculation.
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 
 from geodef import greens as _greens
 from geodef import transforms
 from geodef.geometry import LocalFrame, PlanarGeometry, TriGeometry
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.slip import Displacement, SlipModel
 from geodef.validation import (
     ValidationReport,
     _ReportBuilder,
@@ -1103,28 +1105,44 @@ class Fault:
         self,
         obs_lat: np.ndarray,
         obs_lon: np.ndarray,
-        slip_strike: float | np.ndarray,
+        slip_strike: float | np.ndarray | SlipModel,
         slip_dip: float | np.ndarray = 0.0,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Displacement:
         """Compute surface displacements from a slip distribution.
 
         Args:
             obs_lat: Observation latitudes, shape (M,).
             obs_lon: Observation longitudes, shape (M,).
-            slip_strike: Strike-slip component per patch. Scalar (broadcast
-                to all patches) or array of shape (N,).
+            slip_strike: A named :class:`~geodef.slip.SlipModel`, or the
+                legacy strike-slip component per patch. Legacy values may be
+                scalar (broadcast to all patches) or shape (N,).
             slip_dip: Dip-slip component per patch. Scalar or array of shape (N,).
+                Do not provide this separately when using ``SlipModel``.
 
         Returns:
-            Tuple (ue, un, uz) of displacement arrays, each shape (M,).
+            Named East, North, Up displacement arrays. The result also supports
+            legacy tuple unpacking as ``ue, un, uz = fault.displacement(...)``.
         """
         obs_lat = np.atleast_1d(np.asarray(obs_lat, dtype=float))
         obs_lon = np.atleast_1d(np.asarray(obs_lon, dtype=float))
 
-        slip_s = np.broadcast_to(
-            np.asarray(slip_strike, dtype=float), (self.n_patches,)
-        )
-        slip_d = np.broadcast_to(np.asarray(slip_dip, dtype=float), (self.n_patches,))
+        if isinstance(slip_strike, SlipModel):
+            if slip_strike.n_patches != self.n_patches:
+                raise ValueError(
+                    f"SlipModel has {slip_strike.n_patches} patches but fault has "
+                    f"{self.n_patches}"
+                )
+            if np.any(np.asarray(slip_dip) != 0.0):
+                raise ValueError("slip_dip cannot be provided with a SlipModel")
+            slip_s = slip_strike.strike
+            slip_d = slip_strike.dip
+        else:
+            slip_s = np.broadcast_to(
+                np.asarray(slip_strike, dtype=float), (self.n_patches,)
+            )
+            slip_d = np.broadcast_to(
+                np.asarray(slip_dip, dtype=float), (self.n_patches,)
+            )
 
         G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
 
@@ -1138,7 +1156,7 @@ class Fault:
         ue = d[0::3]
         un = d[1::3]
         uz = d[2::3]
-        return ue, un, uz
+        return Displacement(ue, un, uz)
 
     # ==================================================================
     # Stress kernel
@@ -1179,11 +1197,12 @@ class Fault:
     # Moment and magnitude
     # ==================================================================
 
-    def moment(self, slip: np.ndarray, mu: float | None = None) -> float:
+    def moment(self, slip: npt.ArrayLike | SlipModel, mu: float | None = None) -> float:
         """Compute scalar seismic moment.
 
         Args:
-            slip: Slip magnitude per patch, shape (N,), in meters.
+            slip: Named slip model or slip magnitude per patch, shape (N,),
+                in meters.
             mu: Shear modulus in Pa. Defaults to this fault's
                 ``medium.shear_modulus``.
 
@@ -1192,14 +1211,18 @@ class Fault:
         """
         if mu is None:
             mu = self._medium.shear_modulus
-        slip = np.asarray(slip, dtype=float)
-        return float(mu * np.sum(slip * self.areas))
+        slip_magnitude = slip.magnitude if isinstance(slip, SlipModel) else slip
+        slip_array = np.asarray(slip_magnitude, dtype=float)
+        return float(mu * np.sum(slip_array * self.areas))
 
-    def magnitude(self, slip: np.ndarray, mu: float | None = None) -> float:
+    def magnitude(
+        self, slip: npt.ArrayLike | SlipModel, mu: float | None = None
+    ) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:
-            slip: Slip magnitude per patch, shape (N,), in meters.
+            slip: Named slip model or slip magnitude per patch, shape (N,),
+                in meters.
             mu: Shear modulus in Pa. Defaults to this fault's
                 ``medium.shear_modulus``.
 
@@ -1232,6 +1255,58 @@ class Fault:
             raise ValueError("patch_index requires a structured grid (grid_shape)")
         nL, _ = self._grid_shape
         return dip_idx * nL + strike_idx
+
+    def reshape_patches(self, values: npt.ArrayLike) -> np.ndarray:
+        """Reshape a patch-first array into ``[dip, strike, ...]`` grid axes.
+
+        The helper makes the storage convention explicit: strike index varies
+        fastest, so a flat vector becomes a grid of shape
+        ``(n_width, n_length)``. Trailing value dimensions are preserved.
+
+        Args:
+            values: Array whose first axis has length ``n_patches``.
+
+        Returns:
+            Array with leading axes ``(n_width, n_length)``.
+
+        Raises:
+            ValueError: If the fault is unstructured or the leading dimension
+                does not match the patch count.
+        """
+        if self._grid_shape is None:
+            raise ValueError("reshape_patches requires a structured grid")
+        array = np.asarray(values)
+        if array.ndim == 0 or array.shape[0] != self.n_patches:
+            raise ValueError(
+                f"values must have leading dimension {self.n_patches}, got "
+                f"shape {array.shape}"
+            )
+        n_length, n_width = self._grid_shape
+        return array.reshape((n_width, n_length, *array.shape[1:]))
+
+    def flatten_patches(self, values: npt.ArrayLike) -> np.ndarray:
+        """Flatten ``[dip, strike, ...]`` grid axes into patch storage order.
+
+        Args:
+            values: Array with leading shape ``(n_width, n_length)``.
+
+        Returns:
+            Patch-first array with leading dimension ``n_patches``.
+
+        Raises:
+            ValueError: If the fault is unstructured or leading grid axes do
+                not match the fault.
+        """
+        if self._grid_shape is None:
+            raise ValueError("flatten_patches requires a structured grid")
+        array = np.asarray(values)
+        n_length, n_width = self._grid_shape
+        expected = (n_width, n_length)
+        if array.ndim < 2 or array.shape[:2] != expected:
+            raise ValueError(
+                f"values must have leading shape {expected}, got shape {array.shape}"
+            )
+        return array.reshape((self.n_patches, *array.shape[2:]))
 
     # ==================================================================
     # File I/O
