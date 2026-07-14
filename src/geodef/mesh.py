@@ -557,7 +557,7 @@ def _trace_grid_boundary(
     boundary_lat = Y[rows, cols]
 
     if subsample > 1 and len(boundary_lon) > subsample:
-        indices = np.arange(0, len(boundary_lon), subsample)
+        indices: np.ndarray = np.arange(0, len(boundary_lon), subsample)
         if indices[-1] != len(boundary_lon) - 1:
             indices = np.append(indices, len(boundary_lon) - 1)
         boundary_lon = boundary_lon[indices]

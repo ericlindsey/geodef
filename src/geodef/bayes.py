@@ -2067,12 +2067,12 @@ def _parse_positive(
             "positive must be None, 'strike', 'dip', 'both', or a bool array, "
             f"got {positive!r}"
         )
-    mask = np.asarray(positive, dtype=bool)
-    if mask.shape != (n_params,):
+    positive_mask = np.asarray(positive, dtype=bool)
+    if positive_mask.shape != (n_params,):
         raise ValueError(
-            f"positive array must have shape ({n_params},), got {mask.shape}"
+            f"positive array must have shape ({n_params},), got {positive_mask.shape}"
         )
-    return mask
+    return positive_mask
 
 
 # ======================================================================

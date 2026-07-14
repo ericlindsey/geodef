@@ -17,12 +17,15 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: "3.10"
+      - name: Sync (JAX + dev tools)
+        run: uv sync --dev --extra jax
       - name: Ruff
         run: |
-          uv run --group dev ruff check src tests
-          uv run --group dev ruff format --check src tests
+          uv run ruff check src tests
+          uv run ruff format --check src tests
       - name: Mypy
-        run: uv run --group dev mypy
+        run: uv run mypy
 
   # The base tier must import and pass with no optional dependency installed;
   # optional-dependency tests are expected to skip, never fail.
@@ -76,8 +79,14 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.10"
-      - name: Sync with lowest direct resolution
-        run: uv sync --dev --resolution lowest-direct
+      - name: Install base floors and test tools
+        run: |
+          uv pip install --resolution lowest-direct -e . \
+            "pytest>=8.0" \
+            "nbclient>=0.9" \
+            "nbformat>=5.9" \
+            "ipykernel>=6.29" \
+            "ipywidgets>=8.1"
       - name: Show resolved versions
         run: uv pip list | grep -Ei 'numpy|scipy|matplotlib'
       - name: Run tests
