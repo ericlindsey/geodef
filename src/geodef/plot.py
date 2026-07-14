@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from geodef.slip import SlipModel
+
 if TYPE_CHECKING:
     import matplotlib.axes
     from mpl_toolkits.mplot3d import Axes3D
@@ -312,7 +314,7 @@ def _draw_updip_edge(
 
 
 def _get_slip_component(
-    slip: np.ndarray,
+    slip: np.ndarray | SlipModel,
     n_patches: int,
     component: str,
 ) -> np.ndarray:
@@ -323,11 +325,12 @@ def _get_slip_component(
     extract.
 
     Args:
-        slip: Either a single-component vector of length N, or a blocked
-            ``[ss_0..ss_N, ds_0..ds_N]`` vector of length 2*N.
+        slip: Named slip model, a single-component vector of length N, or a
+            blocked ``[ss_0..ss_N, ds_0..ds_N]`` vector of length 2*N.
         n_patches: Number of fault patches (N).
-        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``. Only
-            used when *slip* has length 2*N.
+        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``,
+            ``'rake_parallel'``, or ``'rake_perpendicular'``. The rake-basis
+            names require a plate-coordinate ``SlipModel``.
 
     Returns:
         Array of shape (N,).
@@ -335,15 +338,33 @@ def _get_slip_component(
     Raises:
         ValueError: If *component* is invalid or *slip* has wrong length.
     """
-    if slip.shape[0] == n_patches:
-        return slip
-    if slip.shape[0] != 2 * n_patches:
+    if isinstance(slip, SlipModel):
+        if slip.n_patches != n_patches:
+            raise ValueError(
+                f"slip has {slip.n_patches} patches but expected {n_patches}"
+            )
+        if component == "strike":
+            return slip.strike
+        if component == "dip":
+            return slip.dip
+        if component == "magnitude":
+            return slip.magnitude
+        if component == "rake_parallel":
+            return slip.rake_parallel
+        if component == "rake_perpendicular":
+            return slip.rake_perpendicular
+        raise ValueError(f"Unknown component {component!r}")
+
+    slip_array = np.asarray(slip)
+    if slip_array.shape[0] == n_patches:
+        return slip_array
+    if slip_array.shape[0] != 2 * n_patches:
         raise ValueError(
-            f"slip length {slip.shape[0]} does not match "
+            f"slip length {slip_array.shape[0]} does not match "
             f"n_patches = {n_patches} or 2 * n_patches = {2 * n_patches}"
         )
-    ss = slip[:n_patches]
-    ds = slip[n_patches:]
+    ss = slip_array[:n_patches]
+    ds = slip_array[n_patches:]
     if component == "strike":
         return ss
     if component == "dip":
@@ -583,7 +604,7 @@ def patches(
 
 def slip(
     fault: Fault,
-    slip_vector: np.ndarray,
+    slip_vector: np.ndarray | SlipModel,
     *,
     ax: matplotlib.axes.Axes | None = None,
     components: str = "magnitude",
@@ -603,8 +624,8 @@ def slip(
 
     Args:
         fault: Fault geometry (rectangular or triangular).
-        slip_vector: Slip vector, either length N (single component) or
-            length 2*N (blocked ``[ss_0..ss_N, ds_0..ds_N]``).
+        slip_vector: Named slip model, a length-N single component, or a
+            length-2*N blocked ``[ss_0..ss_N, ds_0..ds_N]`` vector.
         ax: Axes to plot on. Creates a new figure if ``None``.
         components: Which component to display when *slip_vector* has length
             2*N. One of ``'strike'``, ``'dip'``, or ``'magnitude'``
@@ -638,6 +659,8 @@ def slip(
             "strike": "Strike-slip (m)",
             "dip": "Dip-slip (m)",
             "magnitude": "Slip magnitude (m)",
+            "rake_parallel": "Rake-parallel slip (m)",
+            "rake_perpendicular": "Rake-perpendicular slip (m)",
         }
         colorbar_label = labels.get(components, "Slip (m)")
     return _plot_patch_scalar(
@@ -668,7 +691,7 @@ def _patch_centroids_km(fault: Fault) -> tuple[np.ndarray, np.ndarray]:
 
 def slip_interpolated(
     fault: Fault,
-    slip_vector: np.ndarray,
+    slip_vector: np.ndarray | SlipModel,
     *,
     ax: matplotlib.axes.Axes | None = None,
     components: str = "magnitude",
@@ -690,7 +713,7 @@ def slip_interpolated(
 
     Args:
         fault: Fault geometry (rectangular or triangular).
-        slip_vector: Slip vector, length N or 2*N (see :func:`slip`).
+        slip_vector: Named slip model or vector (see :func:`slip`).
         ax: Axes to plot on. Creates a new figure if ``None``.
         components: Component to display for a 2*N vector: ``'strike'``,
             ``'dip'``, or ``'magnitude'`` (default).
@@ -712,6 +735,8 @@ def slip_interpolated(
             "strike": "Strike-slip (m)",
             "dip": "Dip-slip (m)",
             "magnitude": "Slip magnitude (m)",
+            "rake_parallel": "Rake-parallel slip (m)",
+            "rake_perpendicular": "Rake-perpendicular slip (m)",
         }
         colorbar_label = labels.get(components, "Slip (m)")
 
@@ -1476,7 +1501,7 @@ def map(
     *,
     datasets: DataSet | list[DataSet] | None = None,
     values: np.ndarray | None = None,
-    slip_vector: np.ndarray | None = None,
+    slip_vector: np.ndarray | SlipModel | None = None,
     components: str = "magnitude",
     ax: matplotlib.axes.Axes | None = None,
     cmap: str = "viridis",
@@ -1504,7 +1529,7 @@ def map(
             overlaid on the map.
         values: Per-patch scalar array (length *n_patches*) to color
             the patches by. Mutually exclusive with ``slip_vector``.
-        slip_vector: Slip vector, either length *n_patches* or blocked
+        slip_vector: Named slip model, length *n_patches* vector, or blocked
             ``[ss | ds]`` length *2 × n_patches*. Decomposed via
             ``components`` when blocked.
         components: Which slip component to extract when using
