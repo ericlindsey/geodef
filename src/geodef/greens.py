@@ -19,6 +19,7 @@ import scipy.sparse
 
 from geodef import backend, okada85, transforms, tri
 from geodef import cache as _cache
+from geodef.geometry import LocalFrame
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -491,6 +492,8 @@ def tri_displacement_greens(
     depth: np.ndarray,
     vertices: np.ndarray,
     nu: float = 0.25,
+    *,
+    frame: LocalFrame | None = None,
 ) -> np.ndarray:
     """Build displacement Green's matrix for triangular fault patches.
 
@@ -506,6 +509,8 @@ def tri_displacement_greens(
         depth: Patch centroid depths (npatch,), positive down.
         vertices: Triangle vertices in local ENU, shape (npatch, 3, 3).
         nu: Poisson's ratio.
+        frame: Local frame defining ``vertices``. Defaults to the legacy
+            mean-centroid frame inferred from ``lat0`` and ``lon0``.
 
     Returns:
         G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
@@ -516,12 +521,13 @@ def tri_displacement_greens(
     alt = np.zeros_like(lon)
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
-    ref_lat = float(np.mean(lat0))
-    ref_lon = float(np.mean(lon0))
-
-    # Convert observation points to local ENU relative to fault centroid
-    obs_e, obs_n, _ = transforms.geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
-    obs = np.column_stack([obs_e, obs_n, np.zeros(nobs)])
+    selected_frame = (
+        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        if frame is None
+        else frame
+    )
+    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
+    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], np.zeros(nobs)])
 
     G = np.zeros((3 * nobs, 2 * npatch))
 
@@ -556,6 +562,8 @@ def tri_strain_greens(
     vertices: np.ndarray,
     nu: float = 0.25,
     obs_depth: np.ndarray | None = None,
+    *,
+    frame: LocalFrame | None = None,
 ) -> np.ndarray:
     """Build strain Green's matrix for triangular fault patches.
 
@@ -575,6 +583,8 @@ def tri_strain_greens(
             observations are at the surface. If provided, the z-coordinate
             of observation points is set to ``-obs_depth`` (negative = below
             surface in the ENU frame used by TDstrainHS).
+        frame: Local frame defining ``vertices``. Defaults to the legacy
+            mean-centroid frame inferred from ``lat0`` and ``lon0``.
 
     Returns:
         G matrix of shape (6*nobs, 2*npatch). Columns ``[:npatch]`` are
@@ -585,15 +595,17 @@ def tri_strain_greens(
     alt = np.zeros_like(lon)
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
-    ref_lat = float(np.mean(lat0))
-    ref_lon = float(np.mean(lon0))
-
-    obs_e, obs_n, _ = transforms.geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
+    selected_frame = (
+        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        if frame is None
+        else frame
+    )
+    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
     if obs_depth is not None:
         obs_z = -np.asarray(obs_depth, dtype=float)
     else:
         obs_z = np.zeros(nobs)
-    obs = np.column_stack([obs_e, obs_n, obs_z])
+    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], obs_z])
 
     G = np.zeros((6 * nobs, 2 * npatch))
 
@@ -641,6 +653,10 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
         key["fault_width"] = fault._width
     if fault._vertices is not None:
         key["fault_vertices"] = fault._vertices
+        key["frame_origin_lat"] = fault.frame.origin_lat
+        key["frame_origin_lon"] = fault.frame.origin_lon
+        key["frame_origin_alt"] = fault.frame.origin_alt
+        key["frame_projection"] = fault.frame.projection
     if isinstance(data, InSAR):
         key["look_e"] = data._look_e
         key["look_n"] = data._look_n

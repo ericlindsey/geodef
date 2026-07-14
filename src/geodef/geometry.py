@@ -544,3 +544,34 @@ def _triangle_strike_dip(vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     )
     strike[dipping] = (updip_azimuth + 90.0) % 360.0
     return strike, dip
+
+
+def _resolve_planar_geometry(
+    value: npt.ArrayLike | PlanarGeometry,
+    *,
+    frame: LocalFrame | None = None,
+    ref_lat: float | None = None,
+    ref_lon: float | None = None,
+) -> PlanarGeometry:
+    """Resolve named or legacy planar geometry with strict frame checks."""
+    if (ref_lat is None) != (ref_lon is None):
+        raise ValueError("ref_lat and ref_lon must be provided together")
+    legacy_frame = (
+        LocalFrame(ref_lat, ref_lon)
+        if ref_lat is not None and ref_lon is not None
+        else None
+    )
+    if frame is not None and legacy_frame is not None:
+        frame.require_compatible(legacy_frame)
+    selected_frame = frame if frame is not None else legacy_frame
+
+    if isinstance(value, PlanarGeometry):
+        if selected_frame is not None:
+            value.frame.require_compatible(selected_frame)
+        return value
+    if selected_frame is None:
+        raise ValueError(
+            "array geometry requires frame or both ref_lat and ref_lon; "
+            "prefer passing PlanarGeometry"
+        )
+    return PlanarGeometry.from_theta(value, frame=selected_frame)

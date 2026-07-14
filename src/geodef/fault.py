@@ -934,6 +934,46 @@ class Fault:
             geometry=self._geometry,
         )
 
+    def to_frame(self, frame: LocalFrame) -> "Fault":
+        """Return this fault explicitly re-expressed in another local frame.
+
+        Geographic rectangular patch coordinates remain unchanged. Triangular
+        vertices are transformed so their physical geographic positions remain
+        unchanged rather than being reinterpreted in the new frame.
+
+        Args:
+            frame: Destination local frame.
+
+        Returns:
+            A fault with the same physical geometry and elastic medium in
+            ``frame``.
+        """
+        if self._frame.is_compatible(frame):
+            return self
+        if isinstance(self._geometry, TriGeometry):
+            return Fault.from_triangles(
+                self._geometry.to_frame(frame), medium=self._medium
+            )
+        geometry = (
+            self._geometry.to_frame(frame)
+            if isinstance(self._geometry, PlanarGeometry)
+            else None
+        )
+        return Fault(
+            self._lat,
+            self._lon,
+            self._depth,
+            self.strike,
+            self.dip,
+            self._length,
+            self._width,
+            grid_shape=self._grid_shape,
+            engine=self._engine,
+            medium=self._medium,
+            frame=frame,
+            geometry=geometry,
+        )
+
     @property
     def vertices(self) -> np.ndarray | None:
         """Triangle vertices in local ENU, shape (N, 3, 3).
@@ -1041,6 +1081,7 @@ class Fault:
                     self._depth,
                     self._vertices,
                     nu=nu,
+                    frame=self._frame,
                 )
             elif kind == "strain":
                 return _greens.tri_strain_greens(
@@ -1052,6 +1093,7 @@ class Fault:
                     self._vertices,
                     nu=nu,
                     obs_depth=obs_depth,
+                    frame=self._frame,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
@@ -1395,16 +1437,14 @@ class Fault:
         n_tri = self.n_patches
         verts_flat = self._vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
 
-        # Convert ENU offsets (relative to fault centroid) back to geographic
-        lat_nodes, lon_nodes, _ = transforms.translate_flat(
-            self._ref_lat,
-            self._ref_lon,
-            0.0,
-            verts_flat[:, 0],
-            verts_flat[:, 1],
-            0.0,
+        geographic = self._frame.to_geographic(
+            east=verts_flat[:, 0],
+            north=verts_flat[:, 1],
+            up=verts_flat[:, 2],
         )
-        depth_nodes = -verts_flat[:, 2]  # up -> positive-down depth
+        lon_nodes = geographic[:, 0]
+        lat_nodes = geographic[:, 1]
+        depth_nodes = -geographic[:, 2]
 
         # Deduplicate nodes with fixed precision to merge shared vertices
         coords = np.column_stack([lon_nodes, lat_nodes, depth_nodes])
@@ -1418,6 +1458,7 @@ class Fault:
             lat=lat_nodes[unique_idx],
             depth=depth_nodes[unique_idx],
             triangles=inverse.reshape(n_tri, 3),
+            frame=self._frame,
         )
         mesh.save(fname)
 
@@ -1456,16 +1497,17 @@ class Fault:
             verts_enu = self._vertices  # (N, 3, 3)
             assert verts_enu is not None
             verts_flat = verts_enu.reshape(-1, 3)
-            lat_v, lon_v, _ = transforms.translate_flat(
-                self._ref_lat,
-                self._ref_lon,
-                0.0,
-                verts_flat[:, 0],
-                verts_flat[:, 1],
-                0.0,
+            geographic = self._frame.to_geographic(
+                east=verts_flat[:, 0],
+                north=verts_flat[:, 1],
+                up=verts_flat[:, 2],
             )
             verts = np.stack(
-                [lon_v.reshape(n, 3), lat_v.reshape(n, 3)], axis=-1
+                [
+                    geographic[:, 0].reshape(n, 3),
+                    geographic[:, 1].reshape(n, 3),
+                ],
+                axis=-1,
             )  # (N, 3, 2)
 
         with open(fname, "w") as fh:

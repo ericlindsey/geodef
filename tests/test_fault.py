@@ -201,6 +201,25 @@ class TestNamedPlanarGeometry:
         assert changed.geometry is geometry
         assert changed.frame is geometry.frame
 
+    def test_to_frame_preserves_geographic_geometry(self):
+        geometry = PlanarGeometry(
+            center=(1000.0, -500.0),
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            frame=LocalFrame(0.0, 100.0),
+        )
+        fault = Fault.planar(geometry, n_length=2, n_width=2)
+        target = LocalFrame(0.1, 100.2)
+
+        transformed = fault.to_frame(target)
+
+        assert transformed.frame is target
+        assert isinstance(transformed.geometry, PlanarGeometry)
+        npt.assert_allclose(transformed.centers_geo, fault.centers_geo)
+
 
 class TestPlanar:
     """Test Fault.planar() factory classmethod."""

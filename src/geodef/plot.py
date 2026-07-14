@@ -108,18 +108,12 @@ def _stations_to_local_km(
 
     Uses the fault's reference point as the local origin.
     """
-    from geodef import transforms
-
-    alt = np.zeros(dataset.n_stations)
-    e, n, _ = transforms.geod2enu(
-        dataset.lat,
-        dataset.lon,
-        alt,
-        fault._ref_lat,
-        fault._ref_lon,
-        0.0,
+    enu = fault.frame.to_enu(
+        lon=dataset.lon,
+        lat=dataset.lat,
+        alt=np.full(dataset.n_stations, fault.frame.origin_alt),
     )
-    return e * 1e-3, n * 1e-3
+    return enu[:, 0] * 1e-3, enu[:, 1] * 1e-3
 
 
 def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
@@ -132,11 +126,6 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
         List of arrays, each (n_corners, 2). Rectangular patches have
         4 corners; triangular patches have 3.
     """
-    from geodef import transforms
-
-    ref_lat = fault._ref_lat
-    ref_lon = fault._ref_lon
-
     if fault.engine == "okada":
         assert fault._length is not None and fault._width is not None
         cos_dip = np.cos(np.radians(fault.dip))
@@ -166,16 +155,8 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
             ]
         )
 
-        # Patch centers in local ENU (meters)
-        alt = np.zeros(fault.n_patches)
-        ce, cn, _ = transforms.geod2enu(
-            fault._lat,
-            fault._lon,
-            alt,
-            ref_lat,
-            ref_lon,
-            0.0,
-        )
+        centers = fault.centers_local
+        ce, cn = centers[:, 0], centers[:, 1]
 
         verts = []
         for i in range(fault.n_patches):
@@ -206,11 +187,6 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
     Returns:
         List of arrays, each (n_corners, 3).
     """
-    from geodef import transforms
-
-    ref_lat = fault._ref_lat
-    ref_lon = fault._ref_lon
-
     if fault.engine == "okada":
         assert fault._length is not None and fault._width is not None
         sin_dip = np.sin(np.radians(fault.dip))
@@ -247,15 +223,8 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
             ]
         )
 
-        alt = np.zeros(fault.n_patches)
-        ce, cn, _ = transforms.geod2enu(
-            fault._lat,
-            fault._lon,
-            alt,
-            ref_lat,
-            ref_lon,
-            0.0,
-        )
+        centers = fault.centers_local
+        ce, cn = centers[:, 0], centers[:, 1]
 
         verts = []
         for i in range(fault.n_patches):

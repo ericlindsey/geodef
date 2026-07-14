@@ -93,6 +93,16 @@ class TestMeshConstruction:
         assert mesh.frame is frame
         npt.assert_allclose(mesh.vertices_enu(), mesh.vertices_enu(frame=frame))
 
+    def test_to_frame_preserves_geographic_nodes(self, simple_mesh):
+        frame = LocalFrame(1.0, 101.0)
+
+        transformed = simple_mesh.to_frame(frame)
+
+        assert transformed.frame is frame
+        npt.assert_array_equal(transformed.lon, simple_mesh.lon)
+        npt.assert_array_equal(transformed.lat, simple_mesh.lat)
+        npt.assert_array_equal(transformed.depth, simple_mesh.depth)
+
     def test_arrays_stored(self, simple_mesh):
         assert simple_mesh.lon.shape == (4,)
         assert simple_mesh.lat.shape == (4,)
@@ -376,6 +386,31 @@ class TestFaultFromTriangles:
 
         with pytest.raises(ValueError, match="incompatible local frames"):
             Fault.from_triangles(geometry, frame=LocalFrame(0.0, 101.0))
+
+    def test_fault_to_frame_transforms_tri_vertices(self):
+        geometry = TriGeometry(
+            np.array(
+                [
+                    [
+                        [0.0, 0.0, -1000.0],
+                        [1000.0, 0.0, -1000.0],
+                        [0.0, 0.0, -2000.0],
+                    ]
+                ]
+            ),
+            LocalFrame(0.0, 100.0),
+        )
+        fault = Fault.from_triangles(geometry)
+
+        transformed = fault.to_frame(LocalFrame(0.1, 100.2))
+
+        assert transformed.frame != fault.frame
+        assert isinstance(transformed.geometry, TriGeometry)
+        npt.assert_allclose(
+            transformed.geometry.to_geographic(),
+            geometry.to_geographic(),
+            atol=1e-6,
+        )
 
     def test_strike_dip_derived(self):
         from geodef.fault import Fault

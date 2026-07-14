@@ -21,6 +21,11 @@ if TYPE_CHECKING:
 from geodef import backend
 from geodef.data import DataSet
 from geodef.fault import Fault, moment_to_magnitude
+from geodef.geometry import (
+    LocalFrame,
+    PlanarGeometry,
+    _resolve_planar_geometry,
+)
 from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
@@ -374,9 +379,11 @@ class GeometrySearchResult:
     """Result of a gradient-based nonlinear geometry search.
 
     Attributes:
+        geometry: Optimal named geometry and its local frame.
+        frame: Convenience view of ``geometry.frame``.
         theta: Optimal geometry, full 7-vector
             ``[e0, n0, depth, strike, dip, length, width]`` in the local
-            Cartesian frame anchored at (ref_lat, ref_lon).
+            Cartesian :attr:`geometry.frame`.
         free: Names of the parameters that were optimized.
         slip: Slip solved linearly at the optimal geometry (inner solve).
         chi2: Weighted misfit ``r^T W r`` at the optimum.
@@ -388,6 +395,7 @@ class GeometrySearchResult:
         n_iterations: Number of optimizer iterations.
     """
 
+    geometry: PlanarGeometry
     theta: np.ndarray
     free: list[str]
     slip: np.ndarray
@@ -397,6 +405,11 @@ class GeometrySearchResult:
     success: bool
     message: str
     n_iterations: int
+
+    @property
+    def frame(self) -> LocalFrame:
+        """Local frame defining :attr:`geometry` and :attr:`theta`."""
+        return self.geometry.frame
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1411,11 +1424,12 @@ def _vp_kernel():
 
 
 def geometry_search(
-    theta0: np.ndarray,
+    theta0: np.ndarray | PlanarGeometry,
     datasets: DataSet | list[DataSet],
     *,
-    ref_lat: float,
-    ref_lon: float,
+    ref_lat: float | None = None,
+    ref_lon: float | None = None,
+    frame: LocalFrame | None = None,
     free: list[str] | None = None,
     bounds: dict[str, tuple[float, float]] | None = None,
     n_length: int = 1,
@@ -1439,13 +1453,15 @@ def geometry_search(
     Requires the JAX backend (``geodef.backend.set_backend('jax')``).
 
     Args:
-        theta0: Starting geometry ``[e0, n0, depth, strike, dip, length,
-            width]``; ``e0``/``n0`` are centroid offsets in meters from
-            (ref_lat, ref_lon).
+        theta0: Named starting :class:`PlanarGeometry`, or expert array
+            ``[e0, n0, depth, strike, dip, length, width]``. Array input
+            requires ``frame`` or ``ref_lat``/``ref_lon``.
         datasets: One or more displacement datasets (GNSS, InSAR,
             Vertical).
         ref_lat: Latitude anchoring the local Cartesian frame.
         ref_lon: Longitude anchoring the local Cartesian frame.
+        frame: Explicit local frame for array ``theta0``. Mutually exclusive
+            with an incompatible legacy ``ref_lat``/``ref_lon`` origin.
         free: Names of parameters to optimize (subset of ``e0, n0,
             depth, strike, dip, length, width``). Default: all seven.
         bounds: Optional per-parameter ``(lower, upper)`` bounds, keyed
@@ -1461,8 +1477,8 @@ def geometry_search(
         nu: Poisson's ratio.
 
     Returns:
-        GeometrySearchResult with the optimal geometry, inner slip,
-        misfit, and a Gauss-Newton covariance for the free parameters.
+        GeometrySearchResult with named ``geometry``, expert ``theta``, inner
+        slip, misfit, and a Gauss-Newton covariance for the free parameters.
 
     Raises:
         RuntimeError: If the JAX backend is not active.
@@ -1475,8 +1491,6 @@ def geometry_search(
             "call geodef.backend.set_backend('jax') first."
         )
     import jax.numpy as jnp
-
-    from geodef import transforms
 
     if isinstance(datasets, DataSet):
         datasets = [datasets]
@@ -1493,22 +1507,16 @@ def geometry_search(
             f"'dip', got {components!r}"
         )
 
-    theta0 = np.asarray(theta0, dtype=float)
+    geometry0 = _resolve_planar_geometry(
+        theta0, frame=frame, ref_lat=ref_lat, ref_lon=ref_lon
+    )
+    frame = geometry0.frame
+    theta0 = geometry0.theta
     free_idx = np.array([_THETA_NAMES.index(name) for name in free])
 
     # Template system provides the stacked data, weights, and (fixed)
     # regularization operator; its Green's matrix is not used.
-    template = Fault.planar(
-        lat=ref_lat,
-        lon=ref_lon,
-        depth=theta0[2],
-        strike=theta0[3],
-        dip=theta0[4],
-        length=theta0[5],
-        width=theta0[6],
-        n_length=n_length,
-        n_width=n_width,
-    )
+    template = Fault.planar(geometry0, n_length=n_length, n_width=n_width)
     sys = LinearSystem(template, datasets, smoothing, components)
     n_patches = n_length * n_width
     col_start, col_stop = {
@@ -1519,11 +1527,13 @@ def geometry_search(
 
     e_parts, n_parts = [], []
     for ds in datasets:
-        e_ds, n_ds, _ = transforms.geod2enu(
-            ds.lat, ds.lon, np.zeros(ds.n_stations), ref_lat, ref_lon, 0.0
+        enu = frame.to_enu(
+            lon=ds.lon,
+            lat=ds.lat,
+            alt=np.full(ds.n_stations, frame.origin_alt),
         )
-        e_parts.append(e_ds)
-        n_parts.append(n_ds)
+        e_parts.append(enu[:, 0])
+        n_parts.append(enu[:, 1])
     e_obs = np.concatenate(e_parts)
     n_obs = np.concatenate(n_parts)
 
@@ -1583,8 +1593,10 @@ def geometry_search(
 
     theta_opt = theta0.copy()
     theta_opt[free_idx] = np.asarray(opt.x, dtype=float)
+    geometry_opt = PlanarGeometry.from_theta(theta_opt, frame=frame)
 
     return GeometrySearchResult(
+        geometry=geometry_opt,
         theta=theta_opt,
         free=list(free),
         slip=backend.to_numpy(m),

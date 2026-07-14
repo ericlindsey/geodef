@@ -11,6 +11,7 @@ import pytest
 from geodef import backend
 from geodef.data import GNSS
 from geodef.fault import Fault
+from geodef.geometry import LocalFrame, PlanarGeometry
 from geodef.invert import geometry_search
 
 jax = pytest.importorskip("jax")
@@ -108,6 +109,38 @@ def _theta_start(**overrides):
 
 
 class TestGeometrySearch:
+    def test_accepts_and_returns_named_geometry(self, gnss_data):
+        frame = LocalFrame(_REF_LAT, _REF_LON)
+        geometry = PlanarGeometry.from_theta(_theta_start(dip=30.0), frame=frame)
+
+        result = geometry_search(
+            geometry,
+            gnss_data,
+            free=["dip"],
+            bounds={"dip": (5.0, 45.0)},
+            **_THETA0_KWARGS,
+        )
+
+        assert isinstance(result.geometry, PlanarGeometry)
+        assert result.geometry.frame is frame
+        assert result.frame is frame
+        np.testing.assert_allclose(result.geometry.theta, result.theta)
+        assert abs(result.geometry.dip - _TRUE["dip"]) < 0.5
+
+    def test_rejects_incompatible_named_geometry_frame(self, gnss_data):
+        geometry = PlanarGeometry.from_theta(
+            _theta_start(), frame=LocalFrame(_REF_LAT, _REF_LON)
+        )
+
+        with pytest.raises(ValueError, match="incompatible local frames"):
+            geometry_search(
+                geometry,
+                gnss_data,
+                frame=LocalFrame(_REF_LAT, _REF_LON + 1.0),
+                free=["dip"],
+                **_THETA0_KWARGS,
+            )
+
     def test_recovers_dip(self, gnss_data):
         result = geometry_search(
             _theta_start(dip=30.0),

@@ -15,8 +15,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from geodef import transforms
-
 if TYPE_CHECKING:
     from geodef.data import GNSS
     from geodef.fault import Fault
@@ -109,15 +107,12 @@ def _patch_outlines_lonlat(fault: Fault) -> np.ndarray:
     verts = fault._vertices  # (N, 3, 3) as [e, n, u]
     assert verts is not None
     n_tri = verts.shape[0]
-    lon, lat, _ = transforms.enu2geod(
-        verts[:, :, 0].ravel(),
-        verts[:, :, 1].ravel(),
-        verts[:, :, 2].ravel(),
-        fault._ref_lat,
-        fault._ref_lon,
-        0.0,
+    geographic = fault.frame.to_geographic(
+        east=verts[:, :, 0].ravel(),
+        north=verts[:, :, 1].ravel(),
+        up=verts[:, :, 2].ravel(),
     )
-    lonlat = np.stack([lon, lat], axis=1).reshape(n_tri, 3, 2)
+    lonlat = geographic[:, :2].reshape(n_tri, 3, 2)
     return np.concatenate([lonlat, lonlat[:, :1, :]], axis=1)
 
 

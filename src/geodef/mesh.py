@@ -115,9 +115,7 @@ class Mesh:
                     f"{tiny.size} degenerate triangle(s) with area < 1 m^2 "
                     f"(first indices {tiny[:5].tolist()})",
                 )
-            ref_lat = float(np.mean(self.lat))
-            ref_lon = float(np.mean(self.lon))
-            verts = self.vertices_enu(ref_lat, ref_lon)
+            verts = self.vertices_enu()
             edges = np.stack(
                 [
                     np.linalg.norm(verts[:, 1] - verts[:, 0], axis=1),
@@ -150,9 +148,7 @@ class Mesh:
     @property
     def areas(self) -> np.ndarray:
         """Triangle areas in m^2, shape (M,)."""
-        ref_lat = float(np.mean(self.lat))
-        ref_lon = float(np.mean(self.lon))
-        verts = self.vertices_enu(ref_lat, ref_lon)
+        verts = self.vertices_enu()
         edge1 = verts[:, 1, :] - verts[:, 0, :]
         edge2 = verts[:, 2, :] - verts[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
@@ -203,6 +199,25 @@ class Mesh:
         for k in range(3):
             verts[:, k, :] = nodes[tri[:, k]]
         return verts
+
+    def to_frame(self, frame: LocalFrame) -> "Mesh":
+        """Return this geographic mesh with a different default local frame.
+
+        Args:
+            frame: Destination frame for :meth:`vertices_enu`.
+
+        Returns:
+            Mesh with unchanged geographic nodes and connectivity.
+        """
+        if self.frame == frame:
+            return self
+        return Mesh(
+            lon=self.lon,
+            lat=self.lat,
+            depth=self.depth,
+            triangles=self.triangles,
+            frame=frame,
+        )
 
     # ------------------------------------------------------------------
     # I/O
