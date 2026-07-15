@@ -6,6 +6,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from geodef.fault import Fault
+from geodef.geometry import LocalFrame
 from geodef.mesh import Mesh, _compute_strike_dip
 
 requires_meshpy = pytest.mark.skipif(
@@ -73,6 +75,34 @@ class TestMeshConstruction:
         assert simple_mesh.n_nodes == 4
         assert simple_mesh.n_triangles == 2
 
+    def test_records_inferred_frame(self, simple_mesh):
+        assert simple_mesh.frame.projection == "wgs84-enu"
+        assert simple_mesh.frame.origin_lat == pytest.approx(np.mean(simple_mesh.lat))
+        assert simple_mesh.frame.origin_lon == pytest.approx(np.mean(simple_mesh.lon))
+
+    def test_accepts_explicit_frame(self):
+        frame = LocalFrame(0.0, 100.0)
+        mesh = Mesh(
+            lon=np.array([100.0, 100.01, 100.0]),
+            lat=np.array([0.0, 0.0, 0.01]),
+            depth=np.array([0.0, 1000.0, 2000.0]),
+            triangles=np.array([[0, 1, 2]]),
+            frame=frame,
+        )
+
+        assert mesh.frame is frame
+        npt.assert_allclose(mesh.vertices_enu(), mesh.vertices_enu(frame=frame))
+
+    def test_to_frame_preserves_geographic_nodes(self, simple_mesh):
+        frame = LocalFrame(1.0, 101.0)
+
+        transformed = simple_mesh.to_frame(frame)
+
+        assert transformed.frame is frame
+        npt.assert_array_equal(transformed.lon, simple_mesh.lon)
+        npt.assert_array_equal(transformed.lat, simple_mesh.lat)
+        npt.assert_array_equal(transformed.depth, simple_mesh.depth)
+
     def test_arrays_stored(self, simple_mesh):
         assert simple_mesh.lon.shape == (4,)
         assert simple_mesh.lat.shape == (4,)
@@ -112,6 +142,14 @@ class TestMeshVerticesENU:
     def test_shape(self, simple_mesh):
         verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
         assert verts.shape == (2, 3, 3)
+
+    def test_rejects_ambiguous_frame_arguments(self, simple_mesh):
+        with pytest.raises(ValueError, match="either frame or ref_lat"):
+            simple_mesh.vertices_enu(
+                ref_lat=0.0,
+                ref_lon=100.0,
+                frame=LocalFrame(0.0, 100.0),
+            )
 
     def test_z_convention(self, simple_mesh):
         """Depth positive down → z negative in ENU (up-positive)."""
@@ -311,6 +349,53 @@ class TestFaultFromTriangles:
         assert fault.n_patches == 2
         assert fault.engine == "tri"
 
+    def test_accepts_explicit_tri_frame(self):
+        frame = LocalFrame(0.0, 100.0)
+        vertices = np.array(
+            [
+                [
+                    [0.0, 0.0, -1000.0],
+                    [1000.0, 0.0, -1000.0],
+                    [0.0, 0.0, -2000.0],
+                ]
+            ]
+        )
+
+        fault = Fault.from_triangles(vertices, frame=frame)
+
+        assert fault.frame is frame
+        npt.assert_allclose(fault.centers_local, np.mean(vertices, axis=1))
+
+    def test_fault_to_frame_transforms_tri_vertices(self):
+        vertices = np.array(
+            [
+                [
+                    [0.0, 0.0, -1000.0],
+                    [1000.0, 0.0, -1000.0],
+                    [0.0, 0.0, -2000.0],
+                ]
+            ]
+        )
+        fault = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 100.0))
+
+        transformed = fault.to_frame(LocalFrame(0.1, 100.2))
+
+        assert transformed.frame != fault.frame
+        assert transformed.vertices is not None
+        original_geo = fault.frame.to_geographic(
+            east=vertices[..., 0], north=vertices[..., 1], up=vertices[..., 2]
+        )
+        transformed_geo = transformed.frame.to_geographic(
+            east=transformed.vertices[..., 0],
+            north=transformed.vertices[..., 1],
+            up=transformed.vertices[..., 2],
+        )
+        npt.assert_allclose(
+            transformed_geo,
+            original_geo,
+            atol=1e-6,
+        )
+
     def test_strike_dip_derived(self):
         from geodef.fault import Fault
 
@@ -428,6 +513,7 @@ class TestFaultFromMesh:
         fault = Fault.from_mesh(simple_mesh)
         assert fault.n_patches == simple_mesh.n_triangles
         assert fault.engine == "tri"
+        assert fault.frame is simple_mesh.frame
 
     def test_vertices_shape(self, simple_mesh):
         from geodef.fault import Fault
@@ -1393,7 +1479,7 @@ class TestIntegration:
             su=np.array([0.001]),
         )
 
-        G = greens_mod.greens(fault, gnss)
+        G = greens_mod.matrix(fault, gnss)
         assert G.shape[0] == 3  # 3 components
         assert G.shape[1] == fault.n_patches * 2  # ss + ds
 

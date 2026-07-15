@@ -25,6 +25,7 @@ DOCUMENTED_MODULES = [
     "euler",
     "fault",
     "geomap",
+    "geometry",
     "gradients",
     "greens",
     "invert",

@@ -10,7 +10,34 @@ from geodef.greens import (
     build_laplacian_2d,
     build_laplacian_2d_simple,
     build_laplacian_knn,
+    laplacian,
+    select_slip_columns,
 )
+
+
+class TestSlipColumnSelection:
+    """Green's matrices rotate into declared model coordinates."""
+
+    def test_plate_rake_keeps_parallel_and_perpendicular_columns(self):
+        n = 2
+        strike = np.array([[1.0, 2.0], [3.0, 4.0]])
+        dip = np.array([[5.0, 6.0], [7.0, 8.0]])
+        full = np.hstack([strike, dip])
+
+        selected = select_slip_columns(
+            full, n, "plate", plate_rake=np.array([0.0, 90.0])
+        )
+
+        expected_parallel = np.array([[1.0, 6.0], [3.0, 8.0]])
+        expected_perpendicular = np.array([[5.0, -2.0], [7.0, -4.0]])
+        np.testing.assert_allclose(
+            selected, np.hstack([expected_parallel, expected_perpendicular])
+        )
+
+    def test_plate_rake_is_required(self):
+        with pytest.raises(ValueError, match="plate_rake"):
+            select_slip_columns(np.ones((3, 4)), 2, "plate")
+
 
 # ---------------------------------------------------------------------------
 # Laplacian (forward/backward difference boundaries)
@@ -19,6 +46,23 @@ from geodef.greens import (
 
 class TestLaplacian2D:
     """Tests for build_laplacian_2d."""
+
+    def test_fault_laplacian_function(self):
+        from geodef.fault import Fault
+
+        fault = Fault.planar(
+            lat=0.0,
+            lon=100.0,
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            n_length=3,
+            n_width=3,
+        )
+
+        np.testing.assert_array_equal(laplacian(fault), fault.laplacian)
 
     def test_matrix_shape(self):
         nL, nW = 5, 4

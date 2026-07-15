@@ -8,9 +8,16 @@ modeling via Green's function matrices and seismic moment calculation.
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 
 from geodef import greens as _greens
 from geodef import transforms
+from geodef.geometry import (
+    LocalFrame,
+    as_planar_vector,
+    triangle_strike_dip,
+    vertices_from_nodes,
+)
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 from geodef.validation import (
     ValidationReport,
@@ -48,6 +55,8 @@ class Fault:
         medium: Elastic half-space parameters used by Green's functions,
             stress kernels, and moment. Defaults to
             ``geodef.medium.DEFAULT_MEDIUM`` (30 GPa Poisson solid).
+        frame: Local frame for local-coordinate views. Inferred from mean patch
+            coordinates for direct legacy construction.
     """
 
     def __init__(
@@ -64,6 +73,7 @@ class Fault:
         grid_shape: tuple[int, int] | None = None,
         engine: str = "okada",
         medium: ElasticMedium | None = None,
+        frame: LocalFrame | None = None,
     ) -> None:
         lat = as_1d_floats("lat", np.atleast_1d(lat), unit="degrees")
         n = lat.shape[0]
@@ -122,6 +132,8 @@ class Fault:
         self._grid_shape = grid_shape
         self._engine = engine
         self._medium = DEFAULT_MEDIUM if medium is None else medium
+        inferred_frame = LocalFrame(float(np.mean(lat)), float(np.mean(lon)))
+        self._frame = inferred_frame if frame is None else frame
 
         # Make arrays read-only
         for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
@@ -135,8 +147,8 @@ class Fault:
         # Lazy caches
         self._centers_local: np.ndarray | None = None
         self._laplacian: np.ndarray | None = None
-        self._ref_lat = float(np.mean(lat))
-        self._ref_lon = float(np.mean(lon))
+        self._ref_lat = self._frame.origin_lat
+        self._ref_lon = self._frame.origin_lon
 
     # ==================================================================
     # Factory classmethods
@@ -156,6 +168,7 @@ class Fault:
         n_length: int = 1,
         n_width: int = 1,
         medium: ElasticMedium | None = None,
+        frame: LocalFrame | None = None,
     ) -> "Fault":
         """Create a discretized planar fault from its center.
 
@@ -171,20 +184,17 @@ class Fault:
             n_width: Number of patches down dip.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
                 Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
+            frame: Local frame for local-coordinate views. Defaults to a frame
+                centered horizontally on the fault.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
-        for pname, val, unit in (
-            ("lat", lat, "degrees"),
-            ("lon", lon, "degrees"),
-            ("depth", depth, "meters"),
-            ("strike", strike, "degrees"),
-            ("dip", dip, "degrees"),
-            ("length", length, "meters"),
-            ("width", width, "meters"),
-        ):
-            check_finite_scalar(pname, val, unit=unit)
+        if n_length < 1 or n_width < 1:
+            raise ValueError("n_length and n_width must be positive integers")
+        selected_frame = LocalFrame(lat, lon) if frame is None else frame
+        center = selected_frame.to_enu(lon=lon, lat=lat, alt=selected_frame.origin_alt)
+        as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
         patch_L = length / n_length
         patch_W = width / n_width
 
@@ -217,14 +227,13 @@ class Fault:
         )
         u_offsets = fault_u0 + (jj + 0.5) * patch_W * sin_dip
 
-        lat_c, lon_c, _ = transforms.translate_flat(
-            lat,
-            lon,
-            0.0,
-            e_offsets,
-            n_offsets,
-            0.0,
+        geographic = selected_frame.to_geographic(
+            east=center[0] + e_offsets,
+            north=center[1] + n_offsets,
+            up=np.zeros_like(e_offsets),
         )
+        lon_c = geographic[:, 0]
+        lat_c = geographic[:, 1]
         depth_c = depth - u_offsets
 
         n_patches = n_length * n_width
@@ -244,6 +253,7 @@ class Fault:
             grid_shape=(n_length, n_width),
             engine="okada",
             medium=medium,
+            frame=selected_frame,
         )
 
     @classmethod
@@ -330,8 +340,9 @@ class Fault:
         cls,
         vertices: np.ndarray,
         *,
-        ref_lat: float = 0.0,
-        ref_lon: float = 0.0,
+        ref_lat: float | None = None,
+        ref_lon: float | None = None,
+        frame: LocalFrame | None = None,
         triangles: np.ndarray | None = None,
         medium: ElasticMedium | None = None,
     ) -> "Fault":
@@ -350,10 +361,13 @@ class Fault:
           mesh and its node sharing.
 
         Args:
-            vertices: Either per-triangle corners, shape (N, 3, 3), or a shared
-                node array, shape (M, 3), each row [east, north, up] in meters.
+            vertices: Per-triangle corners with shape (N, 3, 3), or a shared
+                node array with shape (M, 3). Numeric rows are [east, north,
+                up] in meters.
             ref_lat: Reference latitude for the ENU origin.
             ref_lon: Reference longitude for the ENU origin.
+            frame: Explicit local frame. Mutually exclusive with legacy
+                ``ref_lat``/``ref_lon``.
             triangles: Optional connectivity indices into ``vertices``, shape
                 (N, 3). When given, ``vertices`` is treated as a node array.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
@@ -366,50 +380,48 @@ class Fault:
             ValueError: If the array shapes are inconsistent, or a triangle
                 index is out of range.
         """
-        from geodef.mesh import _compute_strike_dip
+        legacy_frame: LocalFrame | None = None
+        if (ref_lat is None) != (ref_lon is None):
+            raise ValueError("ref_lat and ref_lon must be provided together")
+        if ref_lat is not None and ref_lon is not None:
+            legacy_frame = LocalFrame(ref_lat, ref_lon)
+        if frame is not None and legacy_frame is not None:
+            frame.require_compatible(legacy_frame)
 
-        vertices = np.asarray(vertices, dtype=float)
-        if triangles is not None:
-            triangles = np.asarray(triangles, dtype=int)
-            if vertices.ndim != 2 or vertices.shape[1] != 3:
+        selected_frame = frame if frame is not None else legacy_frame
+        if selected_frame is None:
+            selected_frame = LocalFrame(0.0, 0.0)
+        if triangles is None:
+            vertices_array = np.asarray(vertices, dtype=float)
+            if vertices_array.ndim != 3 or vertices_array.shape[1:] != (3, 3):
                 raise ValueError(
-                    "with triangles, vertices must be a node array of shape (M, 3)"
+                    "without triangles, vertices must have shape (N, 3, 3)"
                 )
-            if triangles.ndim != 2 or triangles.shape[1] != 3:
-                raise ValueError("triangles must have shape (N, 3)")
-            if triangles.size and (
-                triangles.min() < 0 or triangles.max() >= vertices.shape[0]
-            ):
-                raise ValueError("triangles index out of range for the node array")
-            vertices = vertices[triangles]  # (N, 3, 3)
-        elif vertices.ndim != 3 or vertices.shape[1:] != (3, 3):
-            raise ValueError("vertices must have shape (N, 3, 3)")
+            if not np.all(np.isfinite(vertices_array)):
+                raise ValueError("vertices must contain only finite values")
+        else:
+            vertices_array = vertices_from_nodes(vertices, triangles)
 
-        strike, dip = _compute_strike_dip(vertices)
-
-        # Compute centroids in ENU then convert to geographic
-        centroids_enu = np.mean(vertices, axis=1)  # (N, 3)
-        lat, lon, alt = transforms.enu2geod(
-            centroids_enu[:, 0],
-            centroids_enu[:, 1],
-            centroids_enu[:, 2],
-            ref_lat,
-            ref_lon,
-            0.0,
+        centers_enu = np.mean(vertices_array, axis=1)
+        centers_geo = selected_frame.to_geographic(
+            east=centers_enu[:, 0],
+            north=centers_enu[:, 1],
+            up=centers_enu[:, 2],
         )
-        depth = -alt  # ENU up → depth positive down
+        strike, dip = triangle_strike_dip(vertices_array)
 
         return cls(
-            lat,
-            lon,
-            depth,
+            centers_geo[:, 1],
+            centers_geo[:, 0],
+            -centers_geo[:, 2],
             strike,
             dip,
             None,
             None,
-            vertices=vertices,
+            vertices=vertices_array,
             engine="tri",
             medium=medium,
+            frame=selected_frame,
         )
 
     @classmethod
@@ -426,15 +438,25 @@ class Fault:
 
         Args:
             mesh: A ``geodef.mesh.Mesh`` instance.
+            medium: Elastic half-space parameters. Defaults to the 30 GPa
+                Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
             A triangular Fault with ``engine="tri"``.
         """
-        ref_lat = float(np.mean(mesh.lat))
-        ref_lon = float(np.mean(mesh.lon))
-        vertices = mesh.vertices_enu(ref_lat, ref_lon)
+        frame = mesh.frame
+        if frame is None:
+            raise ValueError("mesh must define a local frame")
+        nodes_enu = frame.to_enu(
+            lon=mesh.lon,
+            lat=mesh.lat,
+            alt=-mesh.depth,
+        )
         return cls.from_triangles(
-            vertices, ref_lat=ref_lat, ref_lon=ref_lon, medium=medium
+            nodes_enu,
+            triangles=mesh.triangles,
+            frame=frame,
+            medium=medium,
         )
 
     @classmethod
@@ -733,20 +755,26 @@ class Fault:
     def centers_local(self) -> np.ndarray:
         """Patch centroids in local Cartesian [east, north, up] in meters.
 
-        Computed relative to the fault centroid (mean lat/lon).
+        Coordinates are expressed in :attr:`frame`.
         """
         if self._centers_local is None:
-            alt = np.zeros(self.n_patches)
-            e, n, u = transforms.geod2enu(
-                self._lat,
-                self._lon,
-                alt,
-                self._ref_lat,
-                self._ref_lon,
-                0.0,
-            )
-            self._centers_local = np.column_stack([e, n, -self._depth])
+            if self._vertices is not None:
+                self._centers_local = np.mean(self._vertices, axis=1)
+            else:
+                enu = self._frame.to_enu(
+                    lon=self._lon,
+                    lat=self._lat,
+                    alt=np.full(self.n_patches, self._frame.origin_alt),
+                )
+                self._centers_local = np.column_stack(
+                    [enu[:, 0], enu[:, 1], -self._depth]
+                )
         return self._centers_local
+
+    @property
+    def frame(self) -> LocalFrame:
+        """Local coordinate frame for :attr:`centers_local` and vertices."""
+        return self._frame
 
     @property
     def areas(self) -> np.ndarray:
@@ -852,6 +880,40 @@ class Fault:
             grid_shape=self._grid_shape,
             engine=self._engine,
             medium=medium,
+            frame=self._frame,
+        )
+
+    def to_frame(self, frame: LocalFrame) -> "Fault":
+        """Return this fault explicitly re-expressed in another local frame.
+
+        Geographic rectangular patch coordinates remain unchanged. Triangular
+        vertices are transformed so their physical geographic positions remain
+        unchanged rather than being reinterpreted in the new frame.
+
+        Args:
+            frame: Destination local frame.
+
+        Returns:
+            A fault with the same physical geometry and elastic medium in
+            ``frame``.
+        """
+        if self._frame.is_compatible(frame):
+            return self
+        if self._vertices is not None:
+            vertices = self._frame.transform_enu(self._vertices, target=frame)
+            return Fault.from_triangles(vertices, frame=frame, medium=self._medium)
+        return Fault(
+            self._lat,
+            self._lon,
+            self._depth,
+            self.strike,
+            self.dip,
+            self._length,
+            self._width,
+            grid_shape=self._grid_shape,
+            engine=self._engine,
+            medium=self._medium,
+            frame=frame,
         )
 
     @property
@@ -961,6 +1023,7 @@ class Fault:
                     self._depth,
                     self._vertices,
                     nu=nu,
+                    frame=self._frame,
                 )
             elif kind == "strain":
                 return _greens.tri_strain_greens(
@@ -972,6 +1035,7 @@ class Fault:
                     self._vertices,
                     nu=nu,
                     obs_depth=obs_depth,
+                    frame=self._frame,
                 )
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
@@ -989,12 +1053,12 @@ class Fault:
         Args:
             obs_lat: Observation latitudes, shape (M,).
             obs_lon: Observation longitudes, shape (M,).
-            slip_strike: Strike-slip component per patch. Scalar (broadcast
-                to all patches) or array of shape (N,).
+            slip_strike: Strike-slip component per patch. Values may be scalar
+                (broadcast to all patches) or shape (N,).
             slip_dip: Dip-slip component per patch. Scalar or array of shape (N,).
 
         Returns:
-            Tuple (ue, un, uz) of displacement arrays, each shape (M,).
+            ``(east, north, up)`` displacement arrays, each shape (M,).
         """
         obs_lat = np.atleast_1d(np.asarray(obs_lat, dtype=float))
         obs_lon = np.atleast_1d(np.asarray(obs_lon, dtype=float))
@@ -1057,7 +1121,7 @@ class Fault:
     # Moment and magnitude
     # ==================================================================
 
-    def moment(self, slip: np.ndarray, mu: float | None = None) -> float:
+    def moment(self, slip: npt.ArrayLike, mu: float | None = None) -> float:
         """Compute scalar seismic moment.
 
         Args:
@@ -1070,10 +1134,10 @@ class Fault:
         """
         if mu is None:
             mu = self._medium.shear_modulus
-        slip = np.asarray(slip, dtype=float)
-        return float(mu * np.sum(slip * self.areas))
+        slip_array = np.asarray(slip, dtype=float)
+        return float(mu * np.sum(slip_array * self.areas))
 
-    def magnitude(self, slip: np.ndarray, mu: float | None = None) -> float:
+    def magnitude(self, slip: npt.ArrayLike, mu: float | None = None) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:
@@ -1110,6 +1174,58 @@ class Fault:
             raise ValueError("patch_index requires a structured grid (grid_shape)")
         nL, _ = self._grid_shape
         return dip_idx * nL + strike_idx
+
+    def reshape_patches(self, values: npt.ArrayLike) -> np.ndarray:
+        """Reshape a patch-first array into ``[dip, strike, ...]`` grid axes.
+
+        The helper makes the storage convention explicit: strike index varies
+        fastest, so a flat vector becomes a grid of shape
+        ``(n_width, n_length)``. Trailing value dimensions are preserved.
+
+        Args:
+            values: Array whose first axis has length ``n_patches``.
+
+        Returns:
+            Array with leading axes ``(n_width, n_length)``.
+
+        Raises:
+            ValueError: If the fault is unstructured or the leading dimension
+                does not match the patch count.
+        """
+        if self._grid_shape is None:
+            raise ValueError("reshape_patches requires a structured grid")
+        array = np.asarray(values)
+        if array.ndim == 0 or array.shape[0] != self.n_patches:
+            raise ValueError(
+                f"values must have leading dimension {self.n_patches}, got "
+                f"shape {array.shape}"
+            )
+        n_length, n_width = self._grid_shape
+        return array.reshape((n_width, n_length, *array.shape[1:]))
+
+    def flatten_patches(self, values: npt.ArrayLike) -> np.ndarray:
+        """Flatten ``[dip, strike, ...]`` grid axes into patch storage order.
+
+        Args:
+            values: Array with leading shape ``(n_width, n_length)``.
+
+        Returns:
+            Patch-first array with leading dimension ``n_patches``.
+
+        Raises:
+            ValueError: If the fault is unstructured or leading grid axes do
+                not match the fault.
+        """
+        if self._grid_shape is None:
+            raise ValueError("flatten_patches requires a structured grid")
+        array = np.asarray(values)
+        n_length, n_width = self._grid_shape
+        expected = (n_width, n_length)
+        if array.ndim < 2 or array.shape[:2] != expected:
+            raise ValueError(
+                f"values must have leading shape {expected}, got shape {array.shape}"
+            )
+        return array.reshape((self.n_patches, *array.shape[2:]))
 
     # ==================================================================
     # File I/O
@@ -1315,16 +1431,14 @@ class Fault:
         n_tri = self.n_patches
         verts_flat = self._vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
 
-        # Convert ENU offsets (relative to fault centroid) back to geographic
-        lat_nodes, lon_nodes, _ = transforms.translate_flat(
-            self._ref_lat,
-            self._ref_lon,
-            0.0,
-            verts_flat[:, 0],
-            verts_flat[:, 1],
-            0.0,
+        geographic = self._frame.to_geographic(
+            east=verts_flat[:, 0],
+            north=verts_flat[:, 1],
+            up=verts_flat[:, 2],
         )
-        depth_nodes = -verts_flat[:, 2]  # up -> positive-down depth
+        lon_nodes = geographic[:, 0]
+        lat_nodes = geographic[:, 1]
+        depth_nodes = -geographic[:, 2]
 
         # Deduplicate nodes with fixed precision to merge shared vertices
         coords = np.column_stack([lon_nodes, lat_nodes, depth_nodes])
@@ -1338,6 +1452,7 @@ class Fault:
             lat=lat_nodes[unique_idx],
             depth=depth_nodes[unique_idx],
             triangles=inverse.reshape(n_tri, 3),
+            frame=self._frame,
         )
         mesh.save(fname)
 
@@ -1376,16 +1491,17 @@ class Fault:
             verts_enu = self._vertices  # (N, 3, 3)
             assert verts_enu is not None
             verts_flat = verts_enu.reshape(-1, 3)
-            lat_v, lon_v, _ = transforms.translate_flat(
-                self._ref_lat,
-                self._ref_lon,
-                0.0,
-                verts_flat[:, 0],
-                verts_flat[:, 1],
-                0.0,
+            geographic = self._frame.to_geographic(
+                east=verts_flat[:, 0],
+                north=verts_flat[:, 1],
+                up=verts_flat[:, 2],
             )
             verts = np.stack(
-                [lon_v.reshape(n, 3), lat_v.reshape(n, 3)], axis=-1
+                [
+                    geographic[:, 0].reshape(n, 3),
+                    geographic[:, 1].reshape(n, 3),
+                ],
+                axis=-1,
             )  # (N, 3, 2)
 
         with open(fname, "w") as fh:

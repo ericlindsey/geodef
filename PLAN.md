@@ -2,9 +2,9 @@
 
 GeoDef's next phase is not a choice between a small teaching library and a
 powerful research package. It should be both: a novice should be able to express
-a geophysical problem in a few named objects, while an expert can still reach
-the Green's matrices, covariance operators, autodiff kernels, constrained
-solvers, and Bayesian posteriors underneath.
+a geophysical problem with a few memorable functions and durable domain values,
+while an expert can still reach the Green's matrices, covariance operators,
+autodiff kernels, constrained solvers, and Bayesian posteriors underneath.
 
 This roadmap replaces the implementation diary that previously occupied this
 file. Git history, tests, and the module documentation preserve the details of
@@ -72,6 +72,11 @@ These are acceptance criteria for every roadmap item.
 8. **Array transparency without array traps.** NumPy arrays remain accepted and
    returned where natural, but common shape/order mistakes should be prevented
    by named accessors and precise validation.
+9. **Functions are the default abstraction.** Add a public class only when it
+   owns durable state, preserves an invariant that functions cannot preserve,
+   or amortizes expensive preparation across calls. Parameter bundles and
+   transient array views stay as keyword arguments, arrays, and module
+   functions.
 
 ---
 
@@ -80,10 +85,10 @@ These are acceptance criteria for every roadmap item.
 ### What already serves learners well
 
 - The core relation `d = G m` is visible rather than hidden behind a framework.
-- `Fault.planar(...)`, `fault.displacement(...)`, and `geodef.invert(...)` form
+- `Fault.planar(...)`, `fault.displacement(...)`, and `geodef.solve(...)` form
   a compact path from geometry to a solution.
 - NumPy is the default; advanced compilation and sampling are opt-in.
-- Domain objects are immutable, synthetic tutorials are reproducible, and the
+- Durable domain objects are immutable, synthetic tutorials are reproducible, and the
   teaching sequence follows the concepts of an inverse problem rather than the
   package's module layout.
 - Low-level engines are independently accessible and extensively cross-checked,
@@ -184,7 +189,7 @@ These are acceptance criteria for every roadmap item.
 ## Priority 0 — Consistency and trust (small, high-impact work)
 
 Complete these before adding a new high-level abstraction. They establish the
-semantics that later objects will wrap.
+semantics used by the function-oriented public API.
 
 ### 0.1 Audit and freeze mathematical conventions
 
@@ -262,79 +267,88 @@ semantics that later objects will wrap.
 
 ---
 
-## Priority 1 — A coherent everyday workflow
+## Priority 1 — A small, function-oriented everyday API
 
-The functional API remains supported. This phase adds domain names and context;
-it does not hide the linear algebra or create a mandatory framework.
+The public vocabulary should remain smaller than the set of concepts in the
+implementation. GeoDef keeps objects for durable domain state and prepared
+computations; ordinary transformations and one-shot workflows are functions.
 
-### 1.1 Named geometry and coordinate frames
+### 1.1 Set and enforce the public object budget
 
-- [ ] Add immutable `LocalFrame(origin_lat, origin_lon, origin_alt=0)` and
-  `PlanarGeometry(center, depth, strike, dip, length, width)` value objects.
-  They validate units/conventions and convert explicitly to geographic arrays,
-  ENU arrays, and the autodiff parameter vector.
-- [ ] Let `Fault.planar` and geometry-search/Bayesian constructors accept these
-  objects while preserving keyword-based scalar calls.
-- [ ] Replace unexplained seven-element `theta` arrays in beginner-facing docs
-  and results with named geometry views; keep `.theta` as the expert/JAX view.
-- [ ] Give every local-coordinate-bearing object a `.frame` and reject combining
-  objects with incompatible frames unless the user explicitly transforms them.
+- [x] Keep `Fault`, `GNSS`/`InSAR`/`Vertical`, `Mesh`, `LocalFrame`, and
+  `ElasticMedium`: each carries durable identity or invariants shared by many
+  computations. Keep immutable result records where named fields prevent tuple
+  or ordering mistakes.
+- [x] Remove the draft `PlanarGeometry` and `TriGeometry` public wrappers before
+  release. `Fault` already represents rectangular or triangular geometry;
+  retain the useful validation and conversions as functions.
+- [x] Replace the draft `SlipModel` and `Displacement` wrappers with `slip`
+  conversion functions, ordinary arrays, direct named `InversionResult` views,
+  and the existing three-array displacement return.
+- [x] Keep `LinearSystem` as an expert prepared/cache object for repeated
+  sweeps and assessment, not as the beginner workflow and not behind a second
+  `SlipProblem` facade.
+- [x] Require an explicit justification in API review for every new public
+  class: durable state, enforced cross-call invariant, or measured reuse of an
+  expensive preparation. Do not add classes solely to bundle keyword arguments.
 
-### 1.2 One canonical slip representation
+### 1.2 Give the functional namespaces memorable names
 
-- [ ] Add an immutable `SlipModel` with named per-patch fields/accessors:
-  `strike`, `dip`, `magnitude`, `rake`, and `.vector` for the blocked linear-
-  algebra view. Support one-component rake/azimuth amplitudes without pretending
-  they are already two components.
-- [ ] Accept `SlipModel` anywhere a slip vector is accepted; keep NumPy arrays
-  fully supported for low-level and backwards-compatible code.
-- [ ] Make forward results a small named `Displacement(east, north, up)` object
-  with tuple unpacking and `.vector` so existing idioms remain concise.
-- [ ] Standardize patch ordering utilities and provide `fault.reshape_patches`
+- [x] Make the module path the primary discovery surface. Prefer specific names
+  over umbrella verbs: `geodef.invert.solve`, `lcurve`, `abic_curve`,
+  `dataset_diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
+  `project`, and `laplacian`; `geodef.slip.pack`, `unpack`, `from_rake`,
+  `from_azimuth`, `from_plate`, `to_plate`, `magnitude`, and `rake`.
+- [x] Resolve the top-level `geodef.invert` function/module collision directly
+  before release: `geodef.invert` is the module, `geodef.invert.solve(...)` is
+  the primary call, and `geodef.solve(...)` is the short alias. No deprecation
+  shim or callable-module proxy is needed because the draft API has no users.
+- [x] Represent a slip basis with explicit function keywords (`components`,
+  `rake`, `slip_azimuth`, `plate_rake`) and conversion functions. Do not create
+  `SlipBasis`, `Regularization`, or `Bounds` configuration classes.
+- [x] Standardize patch ordering utilities and provide `fault.reshape_patches`
   / `fault.flatten_patches` rather than requiring learners to know which grid
   axis varies fastest.
 
-### 1.3 Turn `LinearSystem` into the reusable problem object
+### 1.3 Keep coordinates named without duplicating geometry
 
-- [ ] Prototype a beginner-named `SlipProblem` facade over `LinearSystem`, with
-  `fault`, named datasets, slip basis, regularizer, and noise models bound once.
-  Validate the name and call sequence with novice users before freezing it.
-- [ ] Provide the discoverable sequence
-  `problem.solve()`, `problem.select_regularization()`,
-  `problem.greens_matrix`, and `problem.assess(result)`. Keep
-  `geodef.invert(...)` as the shortest one-shot path and `LinearSystem` as a
-  compatible expert alias or implementation detail.
-- [ ] Replace overloaded strings and loosely related keyword groups with small
-  optional specifications (`SlipBasis`, `Regularization`, `Bounds`) while still
-  accepting today's strings/tuples.
-- [ ] Add `.describe()` / rich `repr` output summarizing data counts, parameter
-  counts, units, solver, covariance type, regularization, constraints, backend,
-  and estimated dense-memory cost before a solve.
+- [x] Attach one immutable `LocalFrame` to every `Fault` and `Mesh` that owns
+  local coordinates; reject incompatible frames unless explicitly transformed.
+- [x] Put conversions in `transforms`/`geometry` functions accepting
+  `frame=...`. Keep `Fault.planar(...)` keyword geometry and
+  `Fault.from_triangles(..., frame=...)` as the named construction paths.
+- [x] Replace unexplained seven-element geometry arrays in beginner docs with
+  keyword calls and named result fields. Advanced JAX/Bayesian functions may
+  retain `theta`, but must accept a mapping keyed by `e0`, `n0`, `depth`,
+  `strike`, `dip`, `length`, and `width` in addition to the array view.
+- [x] Return optimized geometry as a `Fault` plus the expert `theta` array and
+  frame on the existing result record, rather than introducing a parallel
+  geometry value hierarchy.
 
-### 1.4 Results that know what they describe
+### 1.4 Result records plus assessment functions
 
-- [ ] Return a context-rich result that records fault identity, dataset names
-  and slices, slip basis, solver status, regularization selection, backend,
-  warnings, and version/provenance needed to reproduce the solve.
-- [ ] Add `result.prediction(dataset_or_name)`, `result.residual(dataset_or_name)`,
-  and `result.diagnostics(dataset_or_name)`; eliminate manual stacked-vector
-  slicing from all beginner documentation.
-- [ ] Add focused conveniences such as `result.plot_slip()`,
-  `result.plot_fit(dataset=...)`, and `result.summary()` by delegating to the
-  existing plotting/assessment functions, not duplicating their logic.
+- [x] Keep `InversionResult` a compact, serializable data record. Add direct
+  named slip views (`strike_slip`, `dip_slip`, `slip_magnitude`, `slip_rake`)
+  where they are unambiguous; keep `slip_vector` as the blocked expert view.
+- [ ] Record dataset names and row slices, solver status, regularization
+  selection, backend, warnings, and minimal provenance needed to interpret and
+  reproduce a solve. Do not retain live `Fault` or dataset objects in results.
+- [ ] Add module functions `invert.prediction`, `invert.residual`,
+  `invert.diagnostics`, and `invert.summary`, plus corresponding `plot`
+  functions. Do not turn the result record into a workflow facade.
 - [ ] Define a versioned, safe result file schema with metadata and migration;
   retain `.npz` portability and add a human-readable manifest.
 
-### 1.5 Friendlier data ingestion
+### 1.5 Friendlier data functions
 
-- [ ] Add named constructors such as `GNSS.from_components(...)`,
-  `GNSS.horizontal(...)`, `InSAR.from_look_vector(...)`, and
-  `InSAR.from_incidence_heading(...)`; make optional vertical components truly
-  optional in the friendly path.
-- [ ] Add table ingestion with explicit column mappings, units, missing-value
-  handling, and station names. Keep dataframe libraries optional and accept the
-  Python dataframe interchange protocol rather than coupling the core to one
-  implementation.
+- [ ] Add `data.gnss`, `data.horizontal_gnss`, `data.insar`, and
+  `data.vertical` functions with keyword-only component names and sensible
+  defaults. They return the existing validated dataset classes; class
+  constructors remain available for compatibility.
+- [ ] Add `data.from_table` with explicit column mappings, units,
+  missing-value handling, and station names. Keep dataframe libraries optional
+  and accept the Python dataframe interchange protocol rather than coupling the
+  core to one implementation.
 - [ ] Separate displacement from velocity semantics in metadata (units and
   epoch/time span) without duplicating all dataset classes.
 - [ ] Introduce dataset names as first-class identifiers so joint results and
@@ -349,8 +363,8 @@ it does not hide the linear algebra or create a mandatory framework.
 - [ ] Create a five-minute, copy-paste quickstart that performs forward
   modeling, adds synthetic noise, solves slip, and plots observations versus
   predictions without manual vector packing or slicing.
-- [ ] Add a visual workflow page linking the four levels of API:
-  domain workflow → reusable problem → matrices/operators → physics kernels.
+- [ ] Add a visual workflow page linking the three levels of API:
+  domain functions → matrices/operators → physics kernels.
 - [ ] Add a glossary of geophysical and inverse-theory terms, with package names
   beside the mathematical symbols.
 - [ ] Provide “which function do I use?” and “which assumption am I making?”
@@ -437,18 +451,19 @@ not reorganize numerical reference ports merely to make their style conventional
   published sources; wrap them with clearer adapters rather than cosmetically
   rewriting formulas.
 
-### 3.3 Replace string dispatch with small protocols
+### 3.3 Replace string dispatch with callable contracts
 
-- [ ] Define minimal protocols for Green's engines, data projection, noise
-  whitening, regularization operators, and solvers. Built-ins use the same
-  protocol third parties can implement.
+- [ ] Define typed function signatures for Green's engines, data projection,
+  noise whitening, regularization operators, and solvers. Accept callables and
+  SciPy-style operators directly; introduce a public protocol type only where
+  static typing materially improves extension safety.
 - [ ] Register engines explicitly instead of expanding `if engine == ...`
   branches across `Fault`, `greens`, gradients, Bayesian code, and plotting.
 - [ ] Require engine capability declarations (surface/internal displacement,
   strain, autodiff, supported source geometry) and produce actionable errors
   when a workflow requests an unsupported capability.
 - [ ] Avoid a plugin framework until at least two external engines demonstrate
-  the protocol; start with ordinary Python objects and registration.
+  the callable contract; start with ordinary functions and registration.
 
 ### 3.4 Strengthen numerical contracts
 
@@ -469,9 +484,9 @@ not reorganize numerical reference ports merely to make their style conventional
 
 ### 4.1 Noise and whitening operators
 
-- [ ] Introduce a `NoiseModel`/whitener interface with diagonal, dense,
-  block-diagonal, sparse, low-rank-plus-diagonal, and user-supplied linear-
-  operator implementations.
+- [ ] Accept a whitening callable or `LinearOperator` and provide constructor
+  functions for diagonal, dense, block-diagonal, sparse, and low-rank-plus-
+  diagonal cases. Do not require users to adopt a `NoiseModel` class hierarchy.
 - [ ] Solve via whitening or factorizations rather than explicitly forming
   `W = C^-1`. Preserve `stack_weights()` as an educational/small-problem helper.
 - [ ] Add parametric spatial covariance fitting, variograms, and honest
@@ -529,15 +544,17 @@ manually re-signing slip vectors.
 - [ ] Make rectangular and triangular strain/stress kernels traceable,
   gradient-safe, jitted, and vmapped; validate derivatives against finite
   differences away from documented singular boundaries.
-- [ ] Remove hidden dependence on global backend state from compiled problem
-  objects while retaining `set_backend(...)` as the simple entry point.
+- [ ] Remove hidden dependence on global backend state from compiled kernels
+  and prepared systems while retaining `set_backend(...)` as the simple entry
+  point.
 - [ ] Add compilation-cache guidance and shape-change diagnostics so users can
   distinguish compilation time from solve time.
 
 ### 5.2 Make advanced geometry inference easier to set up safely
 
-- [ ] Accept named geometry/frame objects and prior specifications with units;
-  generate prior-predictive geometry plots and half-space checks before sampling.
+- [ ] Accept geometry keyword mappings, an explicit `LocalFrame`, and prior
+  mappings with units; generate prior-predictive geometry plots and half-space
+  checks before sampling.
 - [ ] Add multi-start geometry search and an initialization helper that can seed
   NUTS from deterministic fits while clearly separating optimization from
   posterior inference.
@@ -553,8 +570,9 @@ manually re-signing slip vectors.
   posterior output, and log-evidence estimates.
 - [ ] Validate SMC against analytic low-dimensional targets and NUTS on unimodal
   cases, then use it for deliberately multimodal geometry examples.
-- [ ] Define sampler-independent posterior/result protocols so BlackJAX API
-  changes or future samplers do not leak through the GeoDef user interface.
+- [ ] Define sampler-independent result records and sampling functions so
+  BlackJAX API changes or future samplers do not leak through the GeoDef user
+  interface.
 
 ---
 
@@ -567,11 +585,12 @@ does not multiply special cases in beginner-facing code.
 
 - [ ] Write a separate design note defining scope, state variables, sign/unit
   conventions, validation targets, and the boundary between static GeoDef
-  objects and a new optional `geodef.cycle` module.
+  values and a new optional `geodef.cycle` module.
 - [ ] Port and independently validate stress-kernel-driven quasi-dynamic
   rate-and-state evolution from `related/stress-shadows/unicycle/`.
-- [ ] Add friction-law objects, adaptive ODE integration, event detection,
-  restart/checkpoint files, and energy/moment diagnostics.
+- [ ] Add friction-law functions/callables, adaptive ODE integration, event
+  detection, restart/checkpoint files, and energy/moment diagnostics. Use a
+  state record only if checkpointing invariants require one.
 - [ ] Support rectangular and triangular faults, CPU first and differentiable
   JAX integration only after the reference CPU implementation is trusted.
 - [ ] Deliver a small pedagogical spring-slider example before a large fault-
@@ -584,7 +603,7 @@ does not multiply special cases in beginner-facing code.
 - [ ] Add layered half-space displacement Green's functions behind an optional
   dependency, beginning with a well-bounded elastic layering use case.
 - [ ] Evaluate viscoelastic and poroelastic engines only after source/engine
-  protocols can represent time and material parameters cleanly.
+  callable contracts can represent time and material parameters cleanly.
 - [ ] For every engine: cite equations, preserve a reference implementation,
   cross-validate published cases, declare capabilities/coordinate conventions,
   and show one end-to-end example through the same high-level workflow.
@@ -612,10 +631,12 @@ increments rather than becoming a long-lived rewrite.
 1. **v1.1.x consistency releases:** Priority 0, documentation corrections,
    packaging fixes, licensing/CI/typing scaffolding, cache-key completeness,
    validation, and deprecation scaffolding.
-2. **v1.2 beginner workflow:** `LocalFrame`, named geometry/slip/displacement,
-   dataset result views, friendly constructors, and the revised quickstart.
-3. **v1.3 problem and scale layer:** validated `SlipProblem`, noise operators,
-   nuisance parameters, module extractions, and large-problem diagnostics.
+2. **v1.2 beginner workflow:** a small function-oriented `invert`, `greens`,
+   `slip`, and `data` surface; `LocalFrame`; named result views; and the revised
+   quickstart.
+3. **v1.3 scale layer:** callable noise/linear operators, nuisance parameters,
+   module extractions, and large-problem diagnostics. `LinearSystem` remains the
+   optional prepared-system API for repeated analyses.
 4. **Parallel research releases:** remaining JAX work and SMC can proceed in
    small units once their touched public semantics are settled.
 5. **v2 candidates:** only genuinely breaking cleanup that survived a full

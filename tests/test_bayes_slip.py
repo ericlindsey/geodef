@@ -399,7 +399,7 @@ def _rect_style_collapsed_logpdf(post, log10_sigma, log10_lambda):
     comparison isolates the sigma/lambda power convention from an
     unrelated discrepancy: ``RectPosterior`` assembles G with the
     JAX-autodiff-friendly flat-Cartesian ``rect_greens``, while
-    ``SlipPosterior`` uses the full geodetic ``greens()`` pipeline via
+    ``SlipPosterior`` uses the full geodetic ``matrix()`` pipeline via
     ``LinearSystem`` — the two differ at the ~1e-4 relative level (test
     ``test_bayes.py`` sidesteps the same discrepancy by injecting a
     shared G into a ``LinearSystem`` before comparing to ABIC), enough

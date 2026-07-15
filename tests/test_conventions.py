@@ -24,7 +24,8 @@ import scipy.linalg
 
 import geodef
 from geodef import GNSS, Fault
-from geodef.greens import greens, stack_obs, stack_weights
+from geodef.greens import matrix as greens
+from geodef.greens import stack_obs, stack_weights
 
 LAM = 3.0e-2
 SCALE = 7.5  # arbitrary c != 1
@@ -85,7 +86,7 @@ class TestLinearPaths:
     def test_direct_solve_matches_normal_equations(self, problem) -> None:
         """invert() solves (GtWG + lambda LtL) m = GtWd — lambda, not lambda^2."""
         fault, gnss, L = problem
-        result = geodef.invert(fault, gnss, smoothing=L, smoothing_strength=LAM)
+        result = geodef.invert.solve(fault, gnss, smoothing=L, smoothing_strength=LAM)
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         d = stack_obs(gnss)
@@ -94,7 +95,7 @@ class TestLinearPaths:
 
     def test_linear_system_matches_invert(self, problem) -> None:
         fault, gnss, L = problem
-        a = geodef.invert(fault, gnss, smoothing=L, smoothing_strength=LAM)
+        a = geodef.invert.solve(fault, gnss, smoothing=L, smoothing_strength=LAM)
         b = geodef.LinearSystem(fault, gnss, L).invert(smoothing_strength=LAM)
         npt.assert_allclose(a.slip_vector, b.slip_vector, rtol=1e-12)
 
@@ -108,14 +109,14 @@ class TestLinearPaths:
         G_aug = np.vstack([sqrtW @ G, np.sqrt(LAM) * L])
         d_aug = np.concatenate([sqrtW @ d, np.zeros(L.shape[0])])
         m_aug, *_ = np.linalg.lstsq(G_aug, d_aug, rcond=None)
-        result = geodef.invert(fault, gnss, smoothing=L, smoothing_strength=LAM)
+        result = geodef.invert.solve(fault, gnss, smoothing=L, smoothing_strength=LAM)
         npt.assert_allclose(result.slip_vector, m_aug, rtol=1e-6, atol=1e-10)
 
     def test_invert_scaling_invariance(self, problem) -> None:
         """(L, lam) -> (L/sqrt(c), c lam) must not change the solution."""
         fault, gnss, L = problem
-        a = geodef.invert(fault, gnss, smoothing=L, smoothing_strength=LAM)
-        b = geodef.invert(
+        a = geodef.invert.solve(fault, gnss, smoothing=L, smoothing_strength=LAM)
+        b = geodef.invert.solve(
             fault,
             gnss,
             smoothing=L / np.sqrt(SCALE),
@@ -126,7 +127,7 @@ class TestLinearPaths:
     def test_model_covariance_convention(self, problem) -> None:
         """C_m = (GtWG + lambda LtL)^-1 with lambda to the first power."""
         fault, gnss, L = problem
-        result = geodef.invert(fault, gnss, smoothing=L, smoothing_strength=LAM)
+        result = geodef.invert.solve(fault, gnss, smoothing=L, smoothing_strength=LAM)
         C = geodef.model_covariance(result, fault, gnss)
         G = greens(fault, gnss)
         W = stack_weights(gnss)

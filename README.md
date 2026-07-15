@@ -85,18 +85,18 @@ ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=1.0)
 gnss = GNSS.load("stations.dat")
 insar = geodef.InSAR.load("ascending.dat")
 
-result = geodef.invert(fault, [gnss, insar],
-                       smoothing='laplacian',
-                       smoothing_strength=1e3,
-                       bounds=(0, None))
+result = geodef.solve(fault, [gnss, insar],
+                      smoothing='laplacian',
+                      smoothing_strength=1e3,
+                      bounds=(0, None))
 
 print(f"Mw = {result.Mw:.2f}, reduced chi2 = {result.reduced_chi2:.2f}")
 geodef.plot.slip(fault, result.slip_vector)
 
 # Optional fixed slip directions
-fixed_rake = geodef.invert(fault, gnss, components='rake', rake=90.0)
-fixed_azimuth = geodef.invert(fault, gnss,
-                              components='azimuth', slip_azimuth=15.0)
+fixed_rake = geodef.solve(fault, gnss, components='rake', rake=90.0)
+fixed_azimuth = geodef.solve(fault, gnss,
+                             components='azimuth', slip_azimuth=15.0)
 ```
 
 ## Differentiable and Bayesian modeling (JAX)
@@ -164,6 +164,7 @@ Full API docs with examples are in `docs/`:
 | Doc | Module |
 |-----|--------|
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
+| [`docs/slip.md`](docs/slip.md) | Slip-vector functions, plate-motion coordinates, and patch ordering |
 | [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |
 | [`docs/data.md`](docs/data.md) | `GNSS`, `InSAR`, `Vertical` data types |
 | [`docs/greens.md`](docs/greens.md) | Green's matrix assembly and Laplacian operators |

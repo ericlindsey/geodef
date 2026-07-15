@@ -108,18 +108,12 @@ def _stations_to_local_km(
 
     Uses the fault's reference point as the local origin.
     """
-    from geodef import transforms
-
-    alt = np.zeros(dataset.n_stations)
-    e, n, _ = transforms.geod2enu(
-        dataset.lat,
-        dataset.lon,
-        alt,
-        fault._ref_lat,
-        fault._ref_lon,
-        0.0,
+    enu = fault.frame.to_enu(
+        lon=dataset.lon,
+        lat=dataset.lat,
+        alt=np.full(dataset.n_stations, fault.frame.origin_alt),
     )
-    return e * 1e-3, n * 1e-3
+    return enu[:, 0] * 1e-3, enu[:, 1] * 1e-3
 
 
 def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
@@ -132,11 +126,6 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
         List of arrays, each (n_corners, 2). Rectangular patches have
         4 corners; triangular patches have 3.
     """
-    from geodef import transforms
-
-    ref_lat = fault._ref_lat
-    ref_lon = fault._ref_lon
-
     if fault.engine == "okada":
         assert fault._length is not None and fault._width is not None
         cos_dip = np.cos(np.radians(fault.dip))
@@ -166,16 +155,8 @@ def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
             ]
         )
 
-        # Patch centers in local ENU (meters)
-        alt = np.zeros(fault.n_patches)
-        ce, cn, _ = transforms.geod2enu(
-            fault._lat,
-            fault._lon,
-            alt,
-            ref_lat,
-            ref_lon,
-            0.0,
-        )
+        centers = fault.centers_local
+        ce, cn = centers[:, 0], centers[:, 1]
 
         verts = []
         for i in range(fault.n_patches):
@@ -206,11 +187,6 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
     Returns:
         List of arrays, each (n_corners, 3).
     """
-    from geodef import transforms
-
-    ref_lat = fault._ref_lat
-    ref_lon = fault._ref_lon
-
     if fault.engine == "okada":
         assert fault._length is not None and fault._width is not None
         sin_dip = np.sin(np.radians(fault.dip))
@@ -247,15 +223,8 @@ def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
             ]
         )
 
-        alt = np.zeros(fault.n_patches)
-        ce, cn, _ = transforms.geod2enu(
-            fault._lat,
-            fault._lon,
-            alt,
-            ref_lat,
-            ref_lon,
-            0.0,
-        )
+        centers = fault.centers_local
+        ce, cn = centers[:, 0], centers[:, 1]
 
         verts = []
         for i in range(fault.n_patches):
@@ -354,11 +323,11 @@ def _get_slip_component(
     extract.
 
     Args:
-        slip: Either a single-component vector of length N, or a blocked
+        slip: A single-component vector of length N, or a blocked
             ``[ss_0..ss_N, ds_0..ds_N]`` vector of length 2*N.
         n_patches: Number of fault patches (N).
-        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``. Only
-            used when *slip* has length 2*N.
+        component: One of ``'strike'``, ``'dip'``, ``'magnitude'``,
+            or ``'magnitude'``.
 
     Returns:
         Array of shape (N,).
@@ -366,15 +335,16 @@ def _get_slip_component(
     Raises:
         ValueError: If *component* is invalid or *slip* has wrong length.
     """
-    if slip.shape[0] == n_patches:
-        return slip
-    if slip.shape[0] != 2 * n_patches:
+    slip_array = np.asarray(slip)
+    if slip_array.shape[0] == n_patches:
+        return slip_array
+    if slip_array.shape[0] != 2 * n_patches:
         raise ValueError(
-            f"slip length {slip.shape[0]} does not match "
+            f"slip length {slip_array.shape[0]} does not match "
             f"n_patches = {n_patches} or 2 * n_patches = {2 * n_patches}"
         )
-    ss = slip[:n_patches]
-    ds = slip[n_patches:]
+    ss = slip_array[:n_patches]
+    ds = slip_array[n_patches:]
     if component == "strike":
         return ss
     if component == "dip":
@@ -634,8 +604,8 @@ def slip(
 
     Args:
         fault: Fault geometry (rectangular or triangular).
-        slip_vector: Slip vector, either length N (single component) or
-            length 2*N (blocked ``[ss_0..ss_N, ds_0..ds_N]``).
+        slip_vector: A length-N single component or a length-2*N blocked
+            ``[ss_0..ss_N, ds_0..ds_N]`` vector.
         ax: Axes to plot on. Creates a new figure if ``None``.
         components: Which component to display when *slip_vector* has length
             2*N. One of ``'strike'``, ``'dip'``, or ``'magnitude'``
@@ -721,7 +691,7 @@ def slip_interpolated(
 
     Args:
         fault: Fault geometry (rectangular or triangular).
-        slip_vector: Slip vector, length N or 2*N (see :func:`slip`).
+        slip_vector: Slip vector (see :func:`slip`).
         ax: Axes to plot on. Creates a new figure if ``None``.
         components: Component to display for a 2*N vector: ``'strike'``,
             ``'dip'``, or ``'magnitude'`` (default).
@@ -743,6 +713,8 @@ def slip_interpolated(
             "strike": "Strike-slip (m)",
             "dip": "Dip-slip (m)",
             "magnitude": "Slip magnitude (m)",
+            "rake_parallel": "Rake-parallel slip (m)",
+            "rake_perpendicular": "Rake-perpendicular slip (m)",
         }
         colorbar_label = labels.get(components, "Slip (m)")
 
@@ -1535,9 +1507,8 @@ def map(
             overlaid on the map.
         values: Per-patch scalar array (length *n_patches*) to color
             the patches by. Mutually exclusive with ``slip_vector``.
-        slip_vector: Slip vector, either length *n_patches* or blocked
-            ``[ss | ds]`` length *2 × n_patches*. Decomposed via
-            ``components`` when blocked.
+        slip_vector: Length *n_patches* vector or blocked ``[ss | ds]`` length
+            *2 × n_patches*. Decomposed via ``components`` when blocked.
         components: Which slip component to extract when using
             ``slip_vector``. One of ``'magnitude'``, ``'strike'``,
             ``'dip'`` (default ``'magnitude'``). Ignored for

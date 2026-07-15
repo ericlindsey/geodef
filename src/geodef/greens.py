@@ -3,7 +3,7 @@
 Combines displacement/strain Green's matrix construction (from okada_greens)
 with patch grid generation, component Green's functions, and Laplacian
 regularization operators (from okada_utils). Also provides the polymorphic
-``greens()`` function for assembling projected Green's matrices from
+``matrix()`` function for assembling projected Green's matrices from
 ``Fault`` and ``DataSet`` objects.
 """
 
@@ -19,6 +19,7 @@ import scipy.sparse
 
 from geodef import backend, okada85, transforms, tri
 from geodef import cache as _cache
+from geodef.geometry import LocalFrame
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -491,6 +492,8 @@ def tri_displacement_greens(
     depth: np.ndarray,
     vertices: np.ndarray,
     nu: float = 0.25,
+    *,
+    frame: LocalFrame | None = None,
 ) -> np.ndarray:
     """Build displacement Green's matrix for triangular fault patches.
 
@@ -506,6 +509,8 @@ def tri_displacement_greens(
         depth: Patch centroid depths (npatch,), positive down.
         vertices: Triangle vertices in local ENU, shape (npatch, 3, 3).
         nu: Poisson's ratio.
+        frame: Local frame defining ``vertices``. Defaults to the legacy
+            mean-centroid frame inferred from ``lat0`` and ``lon0``.
 
     Returns:
         G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
@@ -516,12 +521,13 @@ def tri_displacement_greens(
     alt = np.zeros_like(lon)
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
-    ref_lat = float(np.mean(lat0))
-    ref_lon = float(np.mean(lon0))
-
-    # Convert observation points to local ENU relative to fault centroid
-    obs_e, obs_n, _ = transforms.geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
-    obs = np.column_stack([obs_e, obs_n, np.zeros(nobs)])
+    selected_frame = (
+        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        if frame is None
+        else frame
+    )
+    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
+    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], np.zeros(nobs)])
 
     G = np.zeros((3 * nobs, 2 * npatch))
 
@@ -556,6 +562,8 @@ def tri_strain_greens(
     vertices: np.ndarray,
     nu: float = 0.25,
     obs_depth: np.ndarray | None = None,
+    *,
+    frame: LocalFrame | None = None,
 ) -> np.ndarray:
     """Build strain Green's matrix for triangular fault patches.
 
@@ -575,6 +583,8 @@ def tri_strain_greens(
             observations are at the surface. If provided, the z-coordinate
             of observation points is set to ``-obs_depth`` (negative = below
             surface in the ENU frame used by TDstrainHS).
+        frame: Local frame defining ``vertices``. Defaults to the legacy
+            mean-centroid frame inferred from ``lat0`` and ``lon0``.
 
     Returns:
         G matrix of shape (6*nobs, 2*npatch). Columns ``[:npatch]`` are
@@ -585,15 +595,17 @@ def tri_strain_greens(
     alt = np.zeros_like(lon)
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
-    ref_lat = float(np.mean(lat0))
-    ref_lon = float(np.mean(lon0))
-
-    obs_e, obs_n, _ = transforms.geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
+    selected_frame = (
+        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        if frame is None
+        else frame
+    )
+    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
     if obs_depth is not None:
         obs_z = -np.asarray(obs_depth, dtype=float)
     else:
         obs_z = np.zeros(nobs)
-    obs = np.column_stack([obs_e, obs_n, obs_z])
+    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], obs_z])
 
     G = np.zeros((6 * nobs, 2 * npatch))
 
@@ -641,6 +653,10 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
         key["fault_width"] = fault._width
     if fault._vertices is not None:
         key["fault_vertices"] = fault._vertices
+        key["frame_origin_lat"] = fault.frame.origin_lat
+        key["frame_origin_lon"] = fault.frame.origin_lon
+        key["frame_origin_alt"] = fault.frame.origin_alt
+        key["frame_projection"] = fault.frame.projection
     if isinstance(data, InSAR):
         key["look_e"] = data._look_e
         key["look_n"] = data._look_n
@@ -657,6 +673,7 @@ def select_slip_columns(
     rake: float | None = None,
     fault_strike: np.ndarray | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> np.ndarray:
     """Project a two-component Green's matrix onto the requested slip basis.
 
@@ -669,15 +686,19 @@ def select_slip_columns(
         n_patches: Number of fault patches N.
         components: ``'both'`` (no reduction), ``'strike'``, ``'dip'``,
             ``'rake'`` (fixed rake, all patches), or ``'azimuth'`` (fixed
-            geographic slip azimuth, per-patch local rake).
+            geographic slip azimuth, per-patch local rake), or ``'plate'``
+            (two components parallel/perpendicular to a per-patch plate rake).
         rake: Fixed rake angle in degrees, required for ``'rake'``.
         fault_strike: Per-patch strike angles in degrees, shape (N,),
             required for ``'azimuth'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``'azimuth'``.
+        plate_rake: Large-scale plate direction expressed as local rake in
+            degrees, scalar or shape (N,), required for ``'plate'``.
 
     Returns:
-        Reduced matrix: shape (M, 2*N) for ``'both'``, else (M, N).
+        Reduced matrix: shape (M, 2*N) for ``'both'`` and ``'plate'``, else
+        (M, N).
 
     Raises:
         ValueError: If required angles for the chosen basis are missing.
@@ -688,26 +709,40 @@ def select_slip_columns(
         return G_full[:, :n_patches]
     if components == "dip":
         return G_full[:, n_patches:]
+    if components == "plate":
+        if plate_rake is None:
+            raise ValueError("components='plate' requires plate_rake")
+        theta = np.deg2rad(np.broadcast_to(plate_rake, (n_patches,)))
+        cosine = np.cos(theta)
+        sine = np.sin(theta)
+        strike = G_full[:, :n_patches]
+        dip = G_full[:, n_patches:]
+        parallel = strike * cosine + dip * sine
+        perpendicular = -strike * sine + dip * cosine
+        return np.hstack([parallel, perpendicular])
     if components == "rake":
         if rake is None:
             raise ValueError("components='rake' requires a rake angle in degrees")
         theta = np.deg2rad(rake)  # scalar
-    else:  # azimuth: per-patch local rake = slip_azimuth - strike_i
+    elif components == "azimuth":
         if fault_strike is None or slip_azimuth is None:
             raise ValueError(
                 "components='azimuth' requires fault_strike and slip_azimuth"
             )
         theta = np.deg2rad(slip_azimuth - fault_strike)  # shape (N,)
+    else:
+        raise ValueError(f"Unknown slip components {components!r}")
     return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
 
 
-def greens(
+def matrix(
     fault: Fault,
     datasets: DataSet | list[DataSet],
     *,
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
+    plate_rake: float | np.ndarray | None = None,
 ) -> np.ndarray:
     """Build a projected Green's matrix for one or more datasets.
 
@@ -720,11 +755,15 @@ def greens(
         datasets: A single ``DataSet`` or a list of them.
         components: Slip basis for the returned columns: ``'both'``
             (default, ``2*N`` columns), ``'strike'``, ``'dip'``, ``'rake'``
-            (fixed rake), or ``'azimuth'`` (fixed geographic slip azimuth).
-            The reduction uses the same semantics as :func:`geodef.invert`.
+            (fixed rake), ``'azimuth'`` (fixed geographic slip azimuth), or
+            ``'plate'`` (plate-rake-parallel/perpendicular coordinates).
+            The reduction uses the same semantics as
+            :func:`geodef.invert.solve`.
         rake: Fixed rake angle in degrees, required for ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``components='azimuth'``.
+        plate_rake: Large-scale direction as local rake, scalar or shape (N,),
+            required for ``components='plate'``.
 
     Returns:
         Projected Green's matrix. For a single dataset with M observations
@@ -742,7 +781,7 @@ def greens(
         key = _build_greens_key(fault, data)
         G_proj = _cache.cached_compute(
             key,
-            lambda: _project_greens(
+            lambda: project(
                 data, fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
             ),
         )
@@ -756,6 +795,7 @@ def greens(
         rake,
         fault_strike=fault.strike,
         slip_azimuth=slip_azimuth,
+        plate_rake=plate_rake,
     )
 
 
@@ -800,7 +840,7 @@ def stack_weights(datasets: DataSet | list[DataSet]) -> np.ndarray:
     return scipy.linalg.block_diag(*blocks)
 
 
-def _project_greens(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
+def project(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
     """Project a raw Green's matrix through a dataset's projection.
 
     For displacement Green's matrices (3 components per station), reshapes
@@ -835,6 +875,18 @@ def _project_greens(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
         G_proj[:, col] = data.project(*[components[:, c] for c in range(n_comp)])
 
     return G_proj
+
+
+def laplacian(fault: Fault) -> np.ndarray:
+    """Return the fault's patch Laplacian regularization matrix.
+
+    Args:
+        fault: Rectangular or triangular fault.
+
+    Returns:
+        Dense Laplacian matrix with shape ``(N, N)``.
+    """
+    return fault.laplacian
 
 
 def resolution(G: np.ndarray) -> np.ndarray:

@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import numpy.testing as npt
 import pytest
 
 from geodef.fault import (
@@ -16,6 +17,8 @@ from geodef.fault import (
     magnitude_to_moment,
     moment_to_magnitude,
 )
+from geodef.geometry import LocalFrame
+from geodef.medium import ElasticMedium
 
 # ======================================================================
 # Fixtures
@@ -117,10 +120,71 @@ class TestConstruction:
         with pytest.raises(ValueError):
             simple_fault._lat[0] = 999.0
 
+    def test_direct_fault_has_explicit_frame(self, single_patch):
+        assert single_patch.frame.projection == "wgs84-enu"
+        assert single_patch.frame.origin_lat == pytest.approx(0.0)
+        assert single_patch.frame.origin_lon == pytest.approx(100.0)
+
 
 # ======================================================================
 # 2. Fault.planar() factory
 # ======================================================================
+
+
+class TestPlanarFrame:
+    """Fault.planar owns its optional local frame without another wrapper."""
+
+    def test_scalar_call_uses_centered_frame_by_default(self):
+        fault = Fault.planar(
+            lat=-2.0,
+            lon=100.0,
+            depth=15_000.0,
+            strike=315.0,
+            dip=25.0,
+            length=80_000.0,
+            width=40_000.0,
+        )
+
+        assert fault.frame.origin_lat == -2.0
+        assert fault.frame.origin_lon == 100.0
+        npt.assert_allclose(np.mean(fault.centers_local, axis=0)[:2], 0.0, atol=1.0)
+
+    def test_explicit_frame_survives_medium_copy(self):
+        frame = LocalFrame(0.0, 100.0)
+        fault = Fault.planar(
+            lat=0.01,
+            lon=100.02,
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            frame=frame,
+        )
+
+        changed = fault.with_medium(ElasticMedium(shear_modulus=40e9))
+
+        assert changed.frame is frame
+        npt.assert_allclose(changed.centers_geo, fault.centers_geo)
+
+    def test_to_frame_preserves_geographic_geometry(self):
+        fault = Fault.planar(
+            lat=0.0,
+            lon=100.0,
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            n_length=2,
+            n_width=2,
+        )
+        target = LocalFrame(0.1, 100.2)
+
+        transformed = fault.to_frame(target)
+
+        assert transformed.frame is target
+        npt.assert_allclose(transformed.centers_geo, fault.centers_geo)
 
 
 class TestPlanar:
@@ -394,6 +458,37 @@ class TestPatchIndex:
         )
         with pytest.raises(ValueError, match="structured grid"):
             fault.patch_index(0, 0)
+
+    def test_reshape_and_flatten_patches_roundtrip(self, simple_fault):
+        values = np.arange(simple_fault.n_patches)
+
+        grid = simple_fault.reshape_patches(values)
+
+        assert grid.shape == (5, 10)
+        np.testing.assert_array_equal(grid[0], np.arange(10))
+        np.testing.assert_array_equal(simple_fault.flatten_patches(grid), values)
+
+    def test_reshape_and_flatten_preserve_trailing_dimensions(self, simple_fault):
+        values = np.arange(simple_fault.n_patches * 2).reshape(-1, 2)
+
+        grid = simple_fault.reshape_patches(values)
+
+        assert grid.shape == (5, 10, 2)
+        np.testing.assert_array_equal(simple_fault.flatten_patches(grid), values)
+
+    def test_reshape_patches_rejects_unstructured_fault(self):
+        fault = Fault(
+            np.array([0.0]),
+            np.array([100.0]),
+            np.array([10e3]),
+            np.array([0.0]),
+            np.array([90.0]),
+            np.array([10e3]),
+            np.array([10e3]),
+            grid_shape=None,
+        )
+        with pytest.raises(ValueError, match="structured grid"):
+            fault.reshape_patches([1.0])
 
 
 # ======================================================================

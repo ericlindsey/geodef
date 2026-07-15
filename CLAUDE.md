@@ -47,6 +47,7 @@ geodef/
 | `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
 | `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
 | `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
+| `slip` | Slip-vector packing and strike/dip, rake, azimuth, and plate-basis conversions |
 | `medium` | `ElasticMedium`: shear modulus and Poisson's ratio, shared by Green's functions, stress kernels, and moment |
 | `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
 | `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |

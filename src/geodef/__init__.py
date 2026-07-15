@@ -8,20 +8,24 @@ from geodef import (
     cache,
     euler,
     geomap,
+    geometry,
     gradients,
     greens,
+    invert,
     medium,
     mesh,
     okada,
     okada85,
     okada92,
     plot,
+    slip,
     transforms,
     tri,
     validation,
 )
 from geodef.data import GNSS, DataSet, InSAR, Vertical, spatial_covariance
 from geodef.fault import Fault, magnitude_to_moment, moment_to_magnitude
+from geodef.geometry import LocalFrame
 from geodef.greens import select_slip_columns, stack_obs, stack_weights
 from geodef.invert import (
     ABICCurveResult,
@@ -34,11 +38,11 @@ from geodef.invert import (
     compute_abic,
     dataset_diagnostics,
     geometry_search,
-    invert,
     lcurve,
     model_covariance,
     model_resolution,
     model_uncertainty,
+    solve,
 )
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 
@@ -49,14 +53,17 @@ __all__ = [
     "cache",
     "euler",
     "geomap",
+    "geometry",
     "gradients",
     "greens",
+    "invert",
     "medium",
     "mesh",
     "okada",
     "okada85",
     "okada92",
     "plot",
+    "slip",
     "transforms",
     "tri",
     "validation",
@@ -68,6 +75,7 @@ __all__ = [
     "spatial_covariance",
     # Fault geometry, medium, and moment
     "Fault",
+    "LocalFrame",
     "ElasticMedium",
     "DEFAULT_MEDIUM",
     "magnitude_to_moment",
@@ -87,7 +95,7 @@ __all__ = [
     "compute_abic",
     "dataset_diagnostics",
     "geometry_search",
-    "invert",
+    "solve",
     "lcurve",
     "model_covariance",
     "model_resolution",

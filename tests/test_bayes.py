@@ -13,6 +13,7 @@ import scipy.stats
 from geodef import backend, bayes, gradients
 from geodef.data import GNSS
 from geodef.fault import Fault
+from geodef.geometry import LocalFrame
 from geodef.invert import LinearSystem, _projection_matrix
 
 jax = pytest.importorskip("jax")
@@ -114,6 +115,25 @@ def _posterior(gnss_data, **overrides):
 
 
 class TestConstruction:
+    def test_accepts_parameter_mapping(self, gnss_data):
+        parameters = dict(
+            zip(
+                ["e0", "n0", "depth", "strike", "dip", "length", "width"],
+                _THETA_TRUE,
+                strict=True,
+            )
+        )
+
+        post = _posterior(gnss_data, theta0=parameters)
+
+        assert post.frame == LocalFrame(_REF_LAT, _REF_LON)
+        assert post.geometry(post.x0) == parameters
+        assert post.fault(post.x0).frame == post.frame
+
+    def test_rejects_incompatible_explicit_and_legacy_frames(self, gnss_data):
+        with pytest.raises(ValueError, match="incompatible local frames"):
+            _posterior(gnss_data, frame=LocalFrame(_REF_LAT, _REF_LON + 1.0))
+
     def test_param_names_hierarchical(self, gnss_data):
         post = _posterior(gnss_data)
         assert post.param_names == ["dip", "depth", "log10_sigma", "log10_lambda"]

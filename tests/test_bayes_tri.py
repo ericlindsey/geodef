@@ -183,6 +183,13 @@ def tri_post_profiled(warp4, gnss_tri):
 
 
 class TestTriWarp:
+    def test_preserves_fault_frame(self, small_mesh_fault):
+        warp = bayes.TriWarp(small_mesh_fault, n_knots=(2, 2))
+
+        assert warp.frame is small_mesh_fault.frame
+        trial = warp.fault(np.zeros(warp.n_knots))
+        assert trial.frame is small_mesh_fault.frame
+
     def test_n_knots_and_shapes(self, small_warp):
         assert small_warp.n_knots == 6
         assert small_warp.knots_uv.shape == (6, 2)
@@ -287,6 +294,9 @@ class TestTriWarpConstruction:
 
 
 class TestFrameAnchor:
+    def test_exposes_warp_frame(self, tri_post_hier, warp4):
+        assert tri_post_hier.frame is warp4.frame
+
     def test_matches_linear_system_g_w_at_theta_zero(
         self, tri_post_hier, mesh_fault, gnss_tri
     ):

@@ -4,6 +4,8 @@ Verifies that the package is importable, modules are accessible,
 the okada dispatcher works correctly, and the top-level API is usable.
 """
 
+from types import ModuleType
+
 import numpy as np
 import pytest
 
@@ -123,6 +125,16 @@ class TestTopLevelAPI:
         assert hasattr(data, "InSAR")
         assert hasattr(data, "Vertical")
         assert hasattr(data, "DataSet")
+
+    def test_function_oriented_module_namespaces(self):
+        import geodef
+
+        assert isinstance(geodef.invert, ModuleType)
+        assert geodef.solve is geodef.invert.solve
+        assert callable(geodef.greens.matrix)
+        assert callable(geodef.greens.project)
+        assert callable(geodef.greens.laplacian)
+        assert not hasattr(geodef.invert, "invert")
 
 
 # ---------------------------------------------------------------------------

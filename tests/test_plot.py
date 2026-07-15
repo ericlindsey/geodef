@@ -310,6 +310,16 @@ class TestPlotSlip:
         ax = geodef.plot.slip(rect_fault, slip_magnitude)
         assert len(ax.collections) >= 1
 
+    def test_blocked_slip_vector(self, rect_fault):
+        vector = np.concatenate(
+            [
+                np.ones(rect_fault.n_patches),
+                np.full(rect_fault.n_patches, 0.5),
+            ]
+        )
+        ax = geodef.plot.slip(rect_fault, vector, components="dip")
+        assert isinstance(ax, plt.Axes)
+
     def test_tri_fault(self, tri_fault, slip_tri):
         ax = geodef.plot.slip(tri_fault, slip_tri)
         assert isinstance(ax, plt.Axes)

@@ -30,8 +30,9 @@ Requires the JAX backend::
 
     import geodef
     geodef.backend.set_backend("jax")
+    frame = geodef.LocalFrame(-2.0, 100.0)
     post = geodef.bayes.RectPosterior(
-        theta0, datasets, ref_lat=..., ref_lon=...,
+        theta0, datasets, frame=frame,
         free=["dip", "depth"],
         theta_prior={"dip": (5.0, 60.0), "depth": (5e3, 40e3)},
         n_length=8, n_width=4, smoothing="laplacian",
@@ -42,20 +43,27 @@ Requires the JAX backend::
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
 import scipy.linalg
 
-from geodef import backend, transforms
+from geodef import backend
 from geodef.data import DataSet
 from geodef.fault import Fault
+from geodef.geometry import (
+    LocalFrame,
+    _resolve_frame,
+    as_planar_vector,
+    planar_parameter_dict,
+)
 from geodef.gradients import rect_greens, tri_greens
 from geodef.invert import (
     _THETA_NAMES,
     LinearSystem,
+    _fault_from_planar_vector,
     _projection_matrix,
     _rank_positive_eigs,
 )
@@ -552,14 +560,16 @@ class RectPosterior(_CollapsedPosterior):
     ``-inf``.
 
     Args:
-        theta0: Template geometry ``[e0, n0, depth, strike, dip,
-            length, width]``; fixed parameters keep these values and
-            free ones are initialized from them. ``e0``/``n0`` are
-            centroid offsets in meters from (ref_lat, ref_lon).
+        theta0: Named parameter mapping, or expert array
+            ``[e0, n0, depth, strike, dip, length, width]``. Fixed parameters
+            keep these values and free ones are initialized from them. Array
+            input requires ``frame`` or ``ref_lat``/``ref_lon``.
         datasets: One or more displacement datasets (GNSS, InSAR,
             Vertical).
         ref_lat: Latitude anchoring the local Cartesian frame.
         ref_lon: Longitude anchoring the local Cartesian frame.
+        frame: Explicit local frame for array ``theta0``. Mutually exclusive
+            with an incompatible legacy ``ref_lat``/``ref_lon`` origin.
         free: Names of geometry parameters to sample. May be empty for
             pure hyperparameter inference.
         theta_prior: Prior for each free geometry parameter, keyed by
@@ -607,11 +617,12 @@ class RectPosterior(_CollapsedPosterior):
 
     def __init__(
         self,
-        theta0: npt.ArrayLike,
+        theta0: npt.ArrayLike | Mapping[str, float],
         datasets: DataSet | list[DataSet],
         *,
-        ref_lat: float,
-        ref_lon: float,
+        ref_lat: float | None = None,
+        ref_lon: float | None = None,
+        frame: LocalFrame | None = None,
         free: Sequence[str] = ("depth", "dip"),
         theta_prior: dict[str, tuple] | None = None,
         n_length: int = 1,
@@ -659,12 +670,15 @@ class RectPosterior(_CollapsedPosterior):
                 "mode='profiled' requires a fixed smoothing_strength (lambda)"
             )
 
-        theta0 = np.asarray(theta0, dtype=float)
+        frame = _resolve_frame(frame, ref_lat, ref_lon)
+        theta0 = as_planar_vector(theta0)
         self.mode = mode
         self.free = list(free)
         self.components = components
         self._components = components
         self.datasets = datasets
+        self.theta0 = np.array(theta0, copy=True)
+        self.frame = frame
         self._theta0 = theta0
         self._free_idx = np.array(
             [_THETA_NAMES.index(name) for name in free], dtype=int
@@ -675,17 +689,7 @@ class RectPosterior(_CollapsedPosterior):
 
         # Template system provides the stacked data, weights, and
         # regularization operator; its Green's matrix is not used.
-        template = Fault.planar(
-            lat=ref_lat,
-            lon=ref_lon,
-            depth=theta0[2],
-            strike=theta0[3],
-            dip=theta0[4],
-            length=theta0[5],
-            width=theta0[6],
-            n_length=n_length,
-            n_width=n_width,
-        )
+        template = _fault_from_planar_vector(theta0, frame, n_length, n_width)
         sys = LinearSystem(template, datasets, smoothing, components)
         n_patches = n_length * n_width
         self._col_start, self._col_stop = {
@@ -699,11 +703,13 @@ class RectPosterior(_CollapsedPosterior):
 
         e_parts, n_parts = [], []
         for ds in datasets:
-            e_ds, n_ds, _ = transforms.geod2enu(
-                ds.lat, ds.lon, np.zeros(ds.n_stations), ref_lat, ref_lon, 0.0
+            enu = frame.to_enu(
+                lon=ds.lon,
+                lat=ds.lat,
+                alt=np.full(ds.n_stations, frame.origin_alt),
             )
-            e_parts.append(e_ds)
-            n_parts.append(n_ds)
+            e_parts.append(enu[:, 0])
+            n_parts.append(enu[:, 1])
         self._e_obs = np.concatenate(e_parts)
         self._n_obs = np.concatenate(n_parts)
 
@@ -786,6 +792,42 @@ class RectPosterior(_CollapsedPosterior):
         else:
             self._mask = np.zeros(n_params, dtype=bool)
             self._logpdf_fn = self._build_logpdf()
+
+    def geometry(self, x: npt.ArrayLike) -> dict[str, float]:
+        """Return named planar parameters represented by one state.
+
+        This is a user-facing, non-JAX view. The likelihood methods continue to
+        consume array states directly for tracing and vectorization.
+
+        Args:
+            x: One posterior parameter state, shape ``(n_params,)``.
+
+        Returns:
+            Parameter dictionary in the posterior's :attr:`frame`.
+
+        Raises:
+            ValueError: If ``x`` is not one complete parameter state.
+        """
+        state = np.asarray(x, dtype=float)
+        if state.shape != (self.n_params,):
+            raise ValueError(f"x must have shape ({self.n_params},), got {state.shape}")
+        theta = np.array(self._theta0, copy=True)
+        theta[self._free_idx] = state[: len(self.free)]
+        return planar_parameter_dict(theta)
+
+    def fault(self, x: npt.ArrayLike) -> Fault:
+        """Return the planar fault represented by one parameter state.
+
+        Args:
+            x: One posterior parameter state, shape ``(n_params,)``.
+
+        Returns:
+            A fault discretized with this posterior's grid shape.
+        """
+        theta = as_planar_vector(self.geometry(x))
+        return _fault_from_planar_vector(
+            theta, self.frame, self._n_length, self._n_width
+        )
 
     def _setup_positive(
         self,
@@ -1104,8 +1146,8 @@ class TriWarp:
     the same interpolated offset, since they share the same (u, v)).
 
     Args:
-        fault: Reference triangular ``Fault`` (``fault.vertices`` must not
-            be None); kept for :meth:`fault` and by :class:`TriPosterior`.
+        fault: Reference triangular :class:`Fault`; kept for :meth:`fault` and
+            by :class:`TriPosterior`.
         knots: Explicit knot locations in the mesh's best-fit-plane (u, v)
             coordinates, shape (nk, 2). Takes precedence over ``n_knots``.
         n_knots: ``(n_u, n_v)`` grid shape spanning the mesh's (u, v)
@@ -1118,9 +1160,8 @@ class TriWarp:
             solving for the interpolation weights (numerical stability).
 
     Raises:
-        ValueError: If ``fault`` is not a triangular fault, ``knots`` has
-            the wrong shape, or no default ``length_scale`` can be
-            inferred.
+        ValueError: If ``fault`` is not triangular, ``knots`` has the wrong
+            shape, or no default ``length_scale`` can be inferred.
     """
 
     def __init__(
@@ -1137,8 +1178,9 @@ class TriWarp:
                 "TriWarp requires a triangular Fault (fault.vertices is None)"
             )
         self._ref_fault = fault
-        self._ref_lat = float(np.mean(fault.centers[:, 0]))
-        self._ref_lon = float(np.mean(fault.centers[:, 1]))
+        self.frame = fault.frame
+        self._ref_lat = self.frame.origin_lat
+        self._ref_lon = self.frame.origin_lon
 
         v0 = np.asarray(fault.vertices, dtype=float)
         self._shape = v0.shape
@@ -1279,7 +1321,9 @@ class TriWarp:
         """
         verts = backend.to_numpy(self.vertices(np.asarray(theta, dtype=float)))
         return Fault.from_triangles(
-            verts.astype(float), ref_lat=self._ref_lat, ref_lon=self._ref_lon
+            verts.astype(float),
+            frame=self.frame,
+            medium=self._ref_fault.medium,
         )
 
     def plot(self, theta: npt.ArrayLike | None = None, ax: Any = None) -> tuple:
@@ -1494,14 +1538,17 @@ class TriPosterior(_CollapsedPosterior):
         self._n_slip = n_slip
         self._n_patches = n_patches
 
-        ref_lat, ref_lon = warp._ref_lat, warp._ref_lon
+        frame = warp.frame
+        self.frame = frame
         e_parts, n_parts = [], []
         for ds in datasets:
-            e_ds, n_ds, _ = transforms.geod2enu(
-                ds.lat, ds.lon, np.zeros(ds.n_stations), ref_lat, ref_lon, 0.0
+            enu = frame.to_enu(
+                lon=ds.lon,
+                lat=ds.lat,
+                alt=np.full(ds.n_stations, frame.origin_alt),
             )
-            e_parts.append(e_ds)
-            n_parts.append(n_ds)
+            e_parts.append(enu[:, 0])
+            n_parts.append(enu[:, 1])
         e_obs = np.concatenate(e_parts)
         n_obs = np.concatenate(n_parts)
         self._obs = np.column_stack([e_obs, n_obs, np.zeros_like(e_obs)])

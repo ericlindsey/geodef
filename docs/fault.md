@@ -21,12 +21,9 @@ Up and uses depth positive downward.
 
 ## Factory classmethods
 
-### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None)`
+### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
 
-All arguments are keyword-only so latitude/longitude order can never be
-confused (see [`conventions.md`](conventions.md)).
-
-Create a discretized planar fault from its centroid.
+Create a discretized planar fault directly from named geographic parameters:
 
 ```python
 fault = Fault.planar(
@@ -36,6 +33,15 @@ fault = Fault.planar(
     n_length=10, n_width=5,
 )
 # → Fault with 50 rectangular patches, engine='okada'
+```
+
+Geographic arguments are keyword-only so latitude/longitude order cannot be
+confused. Pass an explicit frame when the fault must share local coordinates
+with another object:
+
+```python
+frame = geodef.LocalFrame(-2.0, 100.0)
+fault = Fault.planar(..., frame=frame)
 ```
 
 ### `Fault.planar_from_corner(lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1)`
@@ -52,9 +58,9 @@ mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6))
 fault = Fault.from_mesh(mesh)
 ```
 
-### `Fault.from_triangles(vertices, ref_lat=0.0, ref_lon=0.0, *, triangles=None)`
+### `Fault.from_triangles(vertices, *, frame=None, ref_lat=None, ref_lon=None, triangles=None)`
 
-Create a triangular fault directly from ENU vertex coordinates. Two forms:
+Create a triangular fault from ENU arrays in either of two forms:
 
 - Explicit corners: `vertices` has shape `(N, 3, 3)` (leave `triangles=None`).
 - Node array + connectivity: pass a shared `(M, 3)` node array as `vertices`
@@ -62,7 +68,9 @@ Create a triangular fault directly from ENU vertex coordinates. Two forms:
   order and node sharing of an imported mesh.
 
 ```python
-fault = Fault.from_triangles(nodes, ref_lat, ref_lon, triangles=tris)
+fault = Fault.from_triangles(
+    nodes, frame=frame, triangles=tris
+)
 ```
 
 ### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0)`
@@ -90,6 +98,7 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 |----------|-------|-------------|
 | `n_patches` | scalar | Number of patches |
 | `engine` | `str` | `"okada"` or `"tri"` |
+| `frame` | `LocalFrame` | Frame defining every local-coordinate view and triangular vertex |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
 | `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` (legacy latitude-first order) |
 | `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |
@@ -104,18 +113,27 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 
 All geometry arrays are read-only after construction.
 
+Use `fault.to_frame(target_frame)` to explicitly re-express local views. For
+triangular faults it transforms every vertex while preserving its geographic
+position; incompatible frames are never silently substituted.
+
 ---
 
 ## Forward modeling
 
 ### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
 
-Compute surface displacements for a slip distribution. `slip_strike` and
-`slip_dip` may be scalars broadcast to every patch or arrays with shape `(N,)`.
+Compute surface displacements from strike-slip and dip-slip scalars or arrays.
 
 ```python
-ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=1.0)
-# ue, un, uz each have shape (n_obs,)
+strike_slip = np.zeros(fault.n_patches)
+dip_slip = np.ones(fault.n_patches)
+east, north, up = fault.displacement(
+    obs_lat,
+    obs_lon,
+    slip_strike=strike_slip,
+    slip_dip=dip_slip,
+)
 ```
 
 ### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
@@ -142,8 +160,9 @@ well the spatial slip distribution is resolved. `slip` here is slip magnitude,
 not a signed strike- or dip-slip component.
 
 ```python
-M0 = fault.moment(slip, mu=30e9)      # slip magnitude shape (N,); returns N·m
-Mw = fault.magnitude(slip, mu=30e9)  # moment magnitude
+slip_magnitude = np.hypot(strike_slip, dip_slip)
+M0 = fault.moment(slip_magnitude, mu=30e9)     # returns N·m
+Mw = fault.magnitude(slip_magnitude, mu=30e9) # moment magnitude
 
 # Module-level utilities
 from geodef import moment_to_magnitude, magnitude_to_moment
@@ -175,6 +194,9 @@ friction convention, and normal-stress sign convention.
 ```python
 idx = fault.patch_index(strike_idx=3, dip_idx=1)
 # Only valid for structured grids (Fault.planar or Fault.load with grid)
+
+grid = fault.reshape_patches(values)  # (N, ...) -> (n_width, n_length, ...)
+values = fault.flatten_patches(grid)  # inverse conversion
 ```
 
 ---

@@ -15,10 +15,13 @@ mapping is given here.
   (`Fault.centers` predates this policy and stores `[lat, lon, depth]`;
   use `Fault.centers_geo` for the documented `[lon, lat, depth]` order.)
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
-  to an explicit reference origin (`ref_lat`, `ref_lon`). Anything named
-  `*_enu` or `*_local` uses this frame; `z`/`up` is negative below the
-  surface, while `depth` is positive down. Convert with
-  `geodef.transforms`.
+  to a `LocalFrame` that records origin latitude, longitude, altitude, and
+  projection. The current projection identifier is `"wgs84-enu"` (WGS84
+  geographic → ECEF → tangent ENU); it is explicit so later projections do
+  not make saved or combined local arrays ambiguous. Anything named `*_enu`
+  or `*_local` uses its object's `.frame`; `z`/`up` is negative below the
+  surface, while `depth` is positive down. Use `LocalFrame.to_enu`,
+  `to_geographic`, and explicit `transform_enu`/`geometry.to_frame` methods.
 - Kernel-native frames (Okada's fault-aligned x/y, DC3D internals,
   triangular dislocation coordinates) never appear in public signatures;
   they are converted at the adapter layer inside `geodef.greens`.
@@ -38,6 +41,10 @@ All angles are degrees.
 - **Slip azimuth:** geographic azimuth of horizontal slip, clockwise from
   North. `components='azimuth'` converts to each patch's local rake as
   `slip_azimuth - strike_i`, so it remains meaningful on curved meshes.
+- **Plate rake:** a large-scale kinematic direction expressed in each patch's
+  local strike/dip plane. Plate coordinates are rake-parallel and
+  rake-perpendicular; unlike raw triangle-local components, they can remain a
+  smooth basis across a variable-orientation mesh.
 
 ## Units
 
@@ -53,8 +60,11 @@ All angles are degrees.
 
 - **Slip vectors** are blocked: for `N` patches and both components, the
   first `N` entries are strike-slip, the last `N` dip-slip
-  (`m[:N]`, `m[N:]`). Single-component bases (`'strike'`, `'dip'`,
-  `'rake'`, `'azimuth'`) have length `N`.
+  (`m[:N]`, `m[N:]`). Plate coordinates are likewise blocked
+  `[rake_parallel | rake_perpendicular]`. Single-component bases (`'strike'`,
+  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. Use `geodef.slip` conversion
+  functions or the named arrays on `InversionResult` to recover physical
+  strike/dip components.
 - **Green's matrix rows** follow each dataset's observation vector:
   GNSS with 3 components interleaves `[E, N, U]` per station (`[E, N]` for
   2-component data); InSAR contributes one LOS row per pixel; `Vertical`
@@ -66,6 +76,8 @@ All angles are degrees.
 - **Patch order** for structured rectangular grids varies along strike
   fastest: patch `k = i_strike + n_length * j_dip`; use
   `Fault.patch_index(strike_idx, dip_idx)` instead of hand-computing this.
+  `Fault.reshape_patches` converts patch-first arrays to
+  `[dip_index, strike_index, ...]`; `Fault.flatten_patches` reverses it.
 
 ## Regularization
 

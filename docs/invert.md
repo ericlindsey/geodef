@@ -28,24 +28,31 @@ for general background.
 
 ---
 
-## `invert(fault, datasets, **kwargs) → InversionResult`
+## `solve(fault, datasets, **kwargs) → InversionResult`
 
 ```python
 import geodef
 
 # Unregularized WLS
-result = geodef.invert(fault, [gnss, insar])
+result = geodef.invert.solve(fault, [gnss, insar])
 
 # Laplacian smoothing, non-negative
-result = geodef.invert(fault, [gnss, insar],
-                       smoothing='laplacian',
-                       smoothing_strength=1e3,
-                       bounds=(0, None))
+result = geodef.invert.solve(fault, [gnss, insar],
+                             smoothing='laplacian',
+                             smoothing_strength=1e3,
+                             bounds=(0, None))
 
 # One-parameter slip bases
-result = geodef.invert(fault, gnss, components='rake', rake=90.0)
-result = geodef.invert(fault, gnss,
-                       components='azimuth', slip_azimuth=15.0)
+result = geodef.invert.solve(fault, gnss, components='rake', rake=90.0)
+result = geodef.invert.solve(fault, gnss,
+                             components='azimuth', slip_azimuth=15.0)
+
+# Two plate-motion coordinates, suitable for variable-orientation meshes
+plate_rake = geodef.slip.plate_rake_from_euler(
+    fault, (pole_lat, pole_lon, rate)
+)
+result = geodef.invert.solve(fault, gnss,
+                             components='plate', plate_rake=plate_rake)
 ```
 
 ### Key parameters
@@ -55,11 +62,12 @@ result = geodef.invert(fault, gnss,
 | `method` | auto | `'wls'`, `'nnls'`, `'bounded_ls'`, `'constrained'` |
 | `smoothing` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
 | `smoothing_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
-| `smoothing_target` | `None` | Reference model for `(m - m_ref)` regularization |
+| `smoothing_target` | `None` | Vector reference for `(m - m_ref)` regularization |
 | `bounds` | `None` | `(lower, upper)` slip bounds; each side is a scalar, a per-component array, a per-parameter array, or `None` |
-| `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, or `'azimuth'` |
+| `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, `'azimuth'`, or `'plate'` |
 | `rake` | `None` | Fixed local rake angle in degrees; required for `components='rake'` |
 | `slip_azimuth` | `None` | Fixed geographic slip azimuth in degrees clockwise from north; required for `components='azimuth'` |
+| `plate_rake` | `None` | Scalar or per-patch large-scale direction in local rake coordinates; required for `components='plate'` |
 | `cv_folds` | `5` | Number of folds for cross-validation |
 | `constraints` | `None` | `(C, d)` for `C @ m <= d` (constrained solver only) |
 
@@ -86,14 +94,27 @@ using each patch's strike, so it is better for curved or variable-strike meshes.
 The Green's matrix and stress-kernel regularization are projected into the
 chosen slip basis automatically.
 
+`components='plate'` retains two parameters per patch but rotates them into
+large-scale rake-parallel/rake-perpendicular coordinates. Laplacian smoothing,
+targets, component bounds, covariance, and resolution all operate in that
+basis. This prevents abrupt triangle-local strike/dip changes from defining
+the regularization coordinates. The physical strike/dip slip remains available
+through `result.strike_slip` and `result.dip_slip`.
+
 ---
 
 ## `InversionResult`
 
 | Attribute | Shape | Description |
 |-----------|-------|-------------|
-| `slip` | `(N, 2)` or `(N, 1)` | Per-patch strike/dip slip for `components='both'`, or one active amplitude per patch |
-| `slip_vector` | `(2N,)` or `(N,)` | Blocked `[ss_0..ss_N, ds_0..ds_N]`, or one amplitude per patch |
+| `slip` | `(N, 2)` or `(N, 1)` | Backwards-compatible per-patch array in the solved coordinates |
+| `slip_vector` | `(2N,)` or `(N,)` | Backwards-compatible blocked vector in the solved coordinates |
+| `strike_slip` | `(N,)` | Physical strike-slip component |
+| `dip_slip` | `(N,)` | Physical dip-slip component |
+| `slip_magnitude` | `(N,)` | Unsigned physical slip magnitude |
+| `slip_rake` | `(N,)` | Physical local rake in degrees |
+| `rake_parallel` | `(N,)` | Plate-parallel solution block (`components='plate'` only) |
+| `rake_perpendicular` | `(N,)` | Plate-perpendicular solution block (`components='plate'` only) |
 | `predicted` | `(M,)` | Forward-modeled observations |
 | `residuals` | `(M,)` | `obs - predicted` |
 | `reduced_chi2` | scalar | Reduced chi-squared, `r^T W r / (M - P)` |
@@ -105,6 +126,10 @@ chosen slip basis automatically.
 | `components` | str | Slip basis used in the inversion |
 | `rake` | float or `None` | Fixed rake angle for `components='rake'` |
 | `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
+| `plate_rake` | `(N,)` or `None` | Per-patch large-scale direction for `components='plate'` |
+
+Use the named physical arrays for interpretation and plotting. Use
+`slip_vector` when assembling linear algebra in the solved basis.
 
 ```python
 result.save("result.npz")                   # save to disk
@@ -165,8 +190,8 @@ ac.optimal       # λ at minimum ABIC
 ### Auto-tuning via `smoothing_strength`
 
 ```python
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='abic')
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='cv')
+result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='abic')
+result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='cv')
 ```
 
 On the JAX backend (`geodef.backend.set_backend('jax')`), `abic_curve`
@@ -177,7 +202,7 @@ results, one fused sweep instead of a Python loop.
 
 ## Nonlinear geometry search (JAX)
 
-### `geometry_search(theta0, datasets, *, ref_lat, ref_lon, ...) → GeometrySearchResult`
+### `geometry_search(theta0, datasets, *, ...) → GeometrySearchResult`
 
 Gradient-based inversion for planar fault geometry: the slip is solved
 linearly inside a nonlinear search over selected geometry parameters
@@ -203,12 +228,15 @@ and `lambda` describe the chosen slip regularization.
 ```python
 geodef.backend.set_backend('jax')
 
-theta0 = [0.0, 0.0, 25e3, 315.0, 30.0, 180e3, 90e3]
-#         e0   n0   depth strike dip   length width  (start; true dip 15)
+frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+geometry0 = {
+    'e0': 0.0, 'n0': 0.0,
+    'depth': 25e3, 'strike': 315.0, 'dip': 30.0,
+    'length': 180e3, 'width': 90e3,
+}
 
 result = geodef.geometry_search(
-    theta0, gnss,
-    ref_lat=-2.0, ref_lon=100.0,     # anchors the local frame
+    geometry0, gnss, frame=frame,
     free=['dip', 'depth'],           # parameters to optimize; rest fixed
     bounds={'dip': (5.0, 45.0)},
     n_length=12, n_width=6,
@@ -216,7 +244,9 @@ result = geodef.geometry_search(
     smoothing='laplacian', smoothing_strength=1.0,
 )
 
-result.theta          # full 7-vector at the optimum
+result.fault          # concrete optimal Fault
+result.frame          # frame defining the local parameter vector
+result.theta          # expert/JAX seven-vector for the same geometry
 result.slip           # inner-solve slip at the optimal geometry
 result.theta_cov      # Gauss-Newton covariance of the free parameters
 result.reduced_chi2
@@ -224,8 +254,10 @@ result.reduced_chi2
 
 Notes:
 
-- `theta0` is in the local Cartesian frame anchored at
-  `(ref_lat, ref_lon)`; `e0`/`n0` are centroid offsets in meters.
+- For expert/JAX workflows, the seven-element `theta0` array remains
+  supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
+- `result.fault` is the ordinary domain view. `result.theta` is the exact
+  `[e0, n0, depth, strike, dip, length, width]` array view.
 - The inner solve is unconstrained WLS with fixed `smoothing_strength`;
   choose λ first (e.g. with `abic_curve` at a reasonable starting
   geometry).

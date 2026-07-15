@@ -118,7 +118,7 @@ So notebooks stay consistent and composable:
   `np.allclose(...)`. This demystifies the API without hiding it. Reserve it for
   the rare spots where the manual version is itself instructive — e.g. `d = G @ m`
   vs. `fault.displacement()` in Tutorial 01, or building `G` column by column vs.
-  `greens.greens()` in Tutorial 02. Skip it everywhere else: the default remains
+  `greens.matrix()` in Tutorial 02. Skip it everywhere else: the default remains
   one clear `geodef.*` call plus a labeled plot.
 
 ---
@@ -214,7 +214,7 @@ structure as the discrete forward operator.
 - How dataset projection turns the raw 3-component response into observed rows
   (interleaved E/N/U for GNSS; foreshadow LOS for InSAR in Tut 06).
 - **Double-demo:** build `G` column by column (unit slip per patch) and confirm
-  it equals `fault.greens_matrix(...)` / `geodef.greens.greens(...)`.
+  it equals `fault.greens_matrix(...)` / `geodef.greens.matrix(...)`.
 - **Sidebar (absorbs old caching notebook):** assembling `G` is expensive and
   often repeated, so GeoDef hashes its inputs and caches `G` to disk; one short
   timing demo (first call computes, second loads).
@@ -222,7 +222,7 @@ structure as the discrete forward operator.
   teaser for Tutorials 03–04.
 
 **Key calls.** `Fault.planar(...)` with multiple patches, `fault.greens_matrix`
-and `geodef.greens.greens(fault, dataset)` (shown to agree with a hand-built
+and `geodef.greens.matrix(fault, dataset)` (shown to agree with a hand-built
 `G`), `np.linalg.lstsq` for the warm-up, `fault.patch_index`, the
 `geodef.cache.info()` / `set_dir()` sidebar, `plot.slip`, `plot.vectors`.
 
@@ -255,7 +255,7 @@ inversion overfit noise.
   watch the recovered slip oscillate wildly while fitting the data "too well."
   Motivates Tutorial 04.
 
-**Key calls.** `geodef.invert(fault, dataset)` (default WLS),
+**Key calls.** `geodef.invert.solve(fault, dataset)` (default WLS),
 `InversionResult` (`.slip_vector`, `.predicted`, misfit fields), `plot.fit`,
 `plot.slip`.
 
@@ -287,7 +287,7 @@ common regularization operators.
   "equations" with weight `√λ`.
 - Qualitative effect of `λ`: under- vs. over-smoothing (sets up Tutorial 05).
 
-**Key calls.** `geodef.invert(..., smoothing='laplacian'|'damping'|'stresskernel',
+**Key calls.** `geodef.invert.solve(..., smoothing='laplacian'|'damping'|'stresskernel',
 smoothing_strength=λ, smoothing_target=m_ref)`; `greens` Laplacian builder
 referenced conceptually.
 
@@ -316,7 +316,7 @@ guess a good value (then check it in Tutorial 05).
 - When the methods agree/disagree and how to choose between them.
 
 **Key calls.** `geodef.lcurve(...)`, `geodef.abic_curve(...)`,
-`geodef.compute_abic(...)`, and `geodef.invert(..., smoothing_strength='abic'`
+`geodef.compute_abic(...)`, and `geodef.invert.solve(..., smoothing_strength='abic'`
 `|'cv', cv_folds=...)`; their built-in curve plots.
 
 **Plots.** L-curve with marked corner; ABIC vs. `λ`; CV error vs. `λ`; the
@@ -344,7 +344,7 @@ relative weighting.
   connection to the regularization hyperparameter (foreshadow multi-λ).
 
 **Key calls.** `geodef.GNSS(...)`, `geodef.InSAR(...)` with look vectors,
-`geodef.invert(fault, [gnss, insar], ...)`, `plot.insar`, `plot.vectors`.
+`geodef.invert.solve(fault, [gnss, insar], ...)`, `plot.insar`, `plot.vectors`.
 
 **Plots.** GNSS vectors and InSAR LOS for the same scenario; joint-inversion
 slip vs. single-dataset slip; per-dataset fit panels.
@@ -375,7 +375,7 @@ InSAR.
 - Practical down-sampling of dense InSAR as a related concern (brief).
 
 **Key calls.** `geodef.InSAR(...)` with a full covariance / covariance-function
-specification; `geodef.invert(...)` with the resulting `C_d`.
+specification; `geodef.invert.solve(...)` with the resulting `C_d`.
 
 **Plots.** A covariance matrix / covariance function; inversion with diagonal
 vs. full `C_d` and the difference in recovered slip and uncertainty.
@@ -402,7 +402,7 @@ slip direction.
   (`components='azimuth'`), which also encodes a sign/sense prior cleanly.
 - Trade-offs: constraints vs. smoothing; bias vs. admissibility.
 
-**Key calls.** `geodef.invert(..., bounds=(0, None))` (auto-NNLS),
+**Key calls.** `geodef.invert.solve(..., bounds=(0, None))` (auto-NNLS),
 `bounds=(lb, ub)` (bounded LS), `method='constrained', constraints=(C, d)`,
 `components='rake', rake=...`, `components='azimuth', slip_azimuth=...`.
 
@@ -465,7 +465,7 @@ on top of the linear slip inversion.
   (`emcee`) for posterior uncertainty on geometry — pointer to a future
   `examples/` study.
 
-**Key calls.** A small Python objective wrapping `geodef.invert(...)` inside
+**Key calls.** A small Python objective wrapping `geodef.invert.solve(...)` inside
 `scipy.optimize.minimize` / a grid loop; reuse of earlier inversion calls.
 
 **Plots.** Misfit vs. a scanned geometry parameter (e.g. dip); recovered vs.
