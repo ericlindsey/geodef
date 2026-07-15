@@ -341,7 +341,7 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 ### 1.5 Friendlier data functions
 
-- [ ] Add `data.gnss`, `data.horizontal_gnss`, `data.insar`, and
+- [x] Add `data.gnss`, `data.horizontal_gnss`, `data.insar`, and
   `data.vertical` functions with keyword-only component names and sensible
   defaults. They return the existing validated dataset classes; class
   constructors remain available for compatibility.
@@ -349,9 +349,9 @@ computations; ordinary transformations and one-shot workflows are functions.
   missing-value handling, and station names. Keep dataframe libraries optional
   and accept the Python dataframe interchange protocol rather than coupling the
   core to one implementation.
-- [ ] Separate displacement from velocity semantics in metadata (units and
+- [x] Separate displacement from velocity semantics in metadata (units and
   epoch/time span) without duplicating all dataset classes.
-- [ ] Introduce dataset names as first-class identifiers so joint results and
+- [x] Introduce dataset names as first-class identifiers so joint results and
   plots are stable and readable.
 
 ---
