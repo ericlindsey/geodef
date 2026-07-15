@@ -119,7 +119,7 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 - Golden okada92 comparisons use `rtol=1e-9` so platform/NumPy roundoff
   drift does not produce false failures.
 
-## [0.0.1] - 2026-07-12
+## [0.1.0] - 2026-07-12
 
 Baseline for this changelog; see `git log` for prior detail.
 
