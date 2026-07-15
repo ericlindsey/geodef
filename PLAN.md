@@ -296,7 +296,7 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 - [x] Make the module path the primary discovery surface. Prefer specific names
   over umbrella verbs: `geodef.invert.solve`, `lcurve`, `abic_curve`,
-  `dataset_diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
+  `diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
   `project`, and `laplacian`; `geodef.slip.pack`, `unpack`, `from_rake`,
   `from_azimuth`, `from_plate`, `to_plate`, `magnitude`, and `rake`.
 - [x] Resolve the top-level `geodef.invert` function/module collision directly
