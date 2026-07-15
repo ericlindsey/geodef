@@ -9,8 +9,8 @@ authors:
     email: eric.o.lindsey@gmail.com
 repository-code: "https://github.com/ericlindsey/geodef"
 license: MIT
-version: 1.1.0
-date-released: 2026-07-12
+version: 0.1.0
+date-released: 2026-07-15
 keywords:
   - geodesy
   - earthquake

@@ -1,6 +1,6 @@
 """GeoDef: forward and inverse modeling of fault slip in elastic half-spaces."""
 
-__version__ = "1.1.0"
+__version__ = "0.1.0"
 
 from geodef import (
     backend,
@@ -36,7 +36,6 @@ from geodef.invert import (
     LinearSystem,
     abic_curve,
     compute_abic,
-    dataset_diagnostics,
     geometry_search,
     lcurve,
     model_covariance,
@@ -93,7 +92,6 @@ __all__ = [
     "LinearSystem",
     "abic_curve",
     "compute_abic",
-    "dataset_diagnostics",
     "geometry_search",
     "solve",
     "lcurve",

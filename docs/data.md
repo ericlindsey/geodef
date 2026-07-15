@@ -2,10 +2,11 @@
 
 > Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
 
-Three concrete data classes (`GNSS`, `InSAR`, `Vertical`) all inherit from
-`DataSet`. They define how displacements are projected into observation space
-and provide common infrastructure for coordinates, uncertainties, and
-covariance.
+Use `data.gnss`, `data.horizontal_gnss`, `data.insar`, or `data.vertical` for
+ordinary construction. These functions return the existing validated `GNSS`,
+`InSAR`, and `Vertical` classes; no parallel data representation is involved.
+The class constructors remain useful when adapting older code or implementing
+specialized readers.
 
 Constructor and file column order is consistently longitude, then latitude.
 
@@ -33,12 +34,44 @@ include realistic measurement and model-error contributions when possible.
 Three-component (E, N, U) or horizontal-only (E, N) displacement/velocity data.
 
 ```python
-from geodef import GNSS
+from geodef import data
 
-# Construct directly
-gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu,
-            se=se, sn=sn, su=su)               # full 3-component
-gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, se=se, sn=sn)  # horizontal-only
+# Three-component observations; scalar uncertainties broadcast over stations.
+gnss = data.gnss(
+    lon=lon, lat=lat,
+    east=east, north=north, up=up,
+    sigma_east=0.001, sigma_north=0.001, sigma_up=0.002,
+    name="campaign_gnss", station_names=station_names,
+)
+
+horizontal = data.horizontal_gnss(
+    lon=lon, lat=lat,
+    east=east, north=north,
+    sigma_east=sigma_east, sigma_north=sigma_north,
+)
+```
+
+For a velocity field, declare the semantics rather than relying on context:
+
+```python
+velocity = data.horizontal_gnss(
+    lon=lon, lat=lat,
+    east=east, north=north,
+    sigma_east=sigma_east, sigma_north=sigma_north,
+    quantity="velocity", units="mm/yr",
+    epoch="2025.0", time_span=("2020.0", "2025.0"),
+)
+```
+
+The corresponding displacement units are `m`, `cm`, and `mm`; supported
+velocity units are `m/s`, `m/yr`, `cm/yr`, and `mm/yr`. GeoDef records but does
+not silently convert these values. Joint inversions require consistent
+quantity and units.
+
+The lower-level constructors and text readers remain available:
+
+```python
+from geodef import GNSS
 
 # Optional per-station East-North correlation (scalar or per-station array)
 gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu,
@@ -58,15 +91,9 @@ off-diagonal `rho * se * sn` (the Up component stays uncorrelated). `rho` may be
 a scalar or a `(n_stations,)` array and is mutually exclusive with an explicit
 `covariance=`.
 
-GNSS fields are often velocities in mm/yr or displacements in meters. GeoDef
-does not attach units, so either is valid provided observations and
-uncertainties are consistent. Because the elastic Green's coefficients are
-displacement per unit slip, displacement data produce slip and velocity data
-produce slip rate in the corresponding units (for example, mm/yr). In the
-standard coseismic examples, displacement and slip are both meters.
-
 **Properties:** `lat`, `lon`, `obs`, `sigma`, `covariance`, `n_stations`,
-`n_obs`, `components` (`'enu'` or `'en'`)
+`n_obs`, `components` (`'enu'` or `'en'`), `east`, `north`, `up`,
+`sigma_east`, `sigma_north`, `sigma_up`
 
 ---
 
@@ -75,13 +102,16 @@ standard coseismic examples, displacement and slip are both meters.
 Line-of-sight displacement with per-pixel look vectors.
 
 ```python
-from geodef import InSAR
+from geodef import data
 
-insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma,
-              look_e=look_e, look_n=look_n, look_u=look_u)
+insar = data.insar(
+    lon=lon, lat=lat, los=los, sigma=sigma,
+    look_e=look_e, look_n=look_n, look_u=look_u,
+    name="ascending",
+)
 
 # Load from file (columns: lon lat uLOS sigLOS losE losN losU)
-insar = InSAR.load("ascending.dat")
+insar = data.InSAR.load("ascending.dat")
 
 insar.save("out.dat")
 insar.to_gmt("out_gmt.dat")   # lon lat uLOS
@@ -101,12 +131,16 @@ eastward displacement before interpreting positive LOS motion.
 Single-component vertical displacement (coral uplift, tide gauges, etc.).
 
 ```python
-from geodef import Vertical
+from geodef import data
 
-vert = Vertical(lon=lon, lat=lat, displacement=displacement, sigma=sigma)
+vert = data.vertical(
+    lon=lon, lat=lat,
+    displacement=displacement, sigma=sigma,
+    name="leveling", station_names=benchmark_names,
+)
 
 # Load from file (columns: lon lat uZ sigZ)
-vert = Vertical.load("coral.dat")
+vert = data.Vertical.load("coral.dat")
 
 vert.save("out.dat")
 vert.to_gmt("out_gmt.dat")   # lon lat uZ
@@ -128,19 +162,56 @@ All data classes share:
 | `data.project(ue, un, uz)` | Maps displacement components to observation space |
 | `data.n_stations` | Number of physical observation locations |
 | `data.n_obs` | Length of the observation vector |
-| `data.name` | Optional per-station site names, shape `(n_stations,)`, or `None` |
+| `data.dataset_name` | Stable dataset identifier used in joint results and plots |
+| `data.station_names` | Optional per-station labels, shape `(n_stations,)` |
+| `data.quantity` | `"displacement"` or `"velocity"` |
+| `data.units` | Declared observation and uncertainty units |
+| `data.epoch` | Optional representative epoch label |
+| `data.time_span` | Optional `(start, end)` epoch labels |
+
+### Constructing from a table
+
+`data.from_table` accepts a plain column mapping, a structured NumPy array, or
+an object implementing the Python dataframe interchange protocol. This keeps
+Pandas, Polars, and other dataframe libraries optional. Column mappings are
+always explicit, so a source's abbreviations and unit-bearing names cannot be
+silently misinterpreted.
+
+```python
+vertical = data.from_table(
+    table,
+    kind="vertical",
+    columns={
+        "lon": "longitude",
+        "lat": "latitude",
+        "displacement": "uplift_mm",
+        "sigma": "uplift_sigma_mm",
+        "station_names": "benchmark",
+    },
+    units="mm",
+    name="leveling",
+)
+```
+
+Choose `kind="gnss"`, `"horizontal_gnss"`, `"insar"`, or `"vertical"`.
+By default, a missing value raises an error naming both the GeoDef field and
+source column. Pass `missing="drop"` to discard every incomplete row before
+the normal dataset validation runs.
 
 ### Site names
 
-`GNSS` and `Vertical` accept an optional `name=` array of per-station labels.
+The construction functions accept `station_names=` for per-station labels and
+`name=` for the dataset identifier. The class constructors retain their older
+`name=` station-array keyword. Dataset identity, station labels, quantity,
+units, epoch, and time span round-trip through the built-in text files.
 When present, names round-trip through `save()`/`load()` as a leading
 `# names:` comment line, so the numeric data block stays unchanged:
 
 ```python
 gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su,
-            name=["P001", "P002", "P003"])
+            name=["P001", "P002", "P003"], dataset_name="campaign_gnss")
 gnss.save("stations.dat")
-GNSS.load("stations.dat").name   # array(['P001', 'P002', 'P003'])
+GNSS.load("stations.dat").station_names  # array(['P001', 'P002', 'P003'])
 ```
 
 ### Setting a full covariance matrix

@@ -17,7 +17,7 @@ request or major change is wrapping up.
 
 ---
 
-## Shipped baseline (v1.1)
+## Current foundation (v0.1)
 
 The following capabilities are complete and are foundations, not open roadmap
 items:
@@ -296,7 +296,7 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 - [x] Make the module path the primary discovery surface. Prefer specific names
   over umbrella verbs: `geodef.invert.solve`, `lcurve`, `abic_curve`,
-  `dataset_diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
+  `diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
   `project`, and `laplacian`; `geodef.slip.pack`, `unpack`, `from_rake`,
   `from_azimuth`, `from_plate`, `to_plate`, `magnitude`, and `rake`.
 - [x] Resolve the top-level `geodef.invert` function/module collision directly
@@ -330,28 +330,28 @@ computations; ordinary transformations and one-shot workflows are functions.
 - [x] Keep `InversionResult` a compact, serializable data record. Add direct
   named slip views (`strike_slip`, `dip_slip`, `slip_magnitude`, `slip_rake`)
   where they are unambiguous; keep `slip_vector` as the blocked expert view.
-- [ ] Record dataset names and row slices, solver status, regularization
+- [x] Record dataset names and row slices, solver status, regularization
   selection, backend, warnings, and minimal provenance needed to interpret and
   reproduce a solve. Do not retain live `Fault` or dataset objects in results.
-- [ ] Add module functions `invert.prediction`, `invert.residual`,
+- [x] Add module functions `invert.prediction`, `invert.residual`,
   `invert.diagnostics`, and `invert.summary`, plus corresponding `plot`
   functions. Do not turn the result record into a workflow facade.
-- [ ] Define a versioned, safe result file schema with metadata and migration;
+- [x] Define a versioned, safe result file schema with metadata and migration;
   retain `.npz` portability and add a human-readable manifest.
 
 ### 1.5 Friendlier data functions
 
-- [ ] Add `data.gnss`, `data.horizontal_gnss`, `data.insar`, and
+- [x] Add `data.gnss`, `data.horizontal_gnss`, `data.insar`, and
   `data.vertical` functions with keyword-only component names and sensible
   defaults. They return the existing validated dataset classes; class
   constructors remain available for compatibility.
-- [ ] Add `data.from_table` with explicit column mappings, units,
+- [x] Add `data.from_table` with explicit column mappings, units,
   missing-value handling, and station names. Keep dataframe libraries optional
   and accept the Python dataframe interchange protocol rather than coupling the
   core to one implementation.
-- [ ] Separate displacement from velocity semantics in metadata (units and
+- [x] Separate displacement from velocity semantics in metadata (units and
   epoch/time span) without duplicating all dataset classes.
-- [ ] Introduce dataset names as first-class identifiers so joint results and
+- [x] Introduce dataset names as first-class identifiers so joint results and
   plots are stable and readable.
 
 ---
@@ -628,20 +628,18 @@ does not multiply special cases in beginner-facing code.
 The priorities are ordered deliberately, but each phase should deliver useful
 increments rather than becoming a long-lived rewrite.
 
-1. **v1.1.x consistency releases:** Priority 0, documentation corrections,
-   packaging fixes, licensing/CI/typing scaffolding, cache-key completeness,
-   validation, and deprecation scaffolding.
-2. **v1.2 beginner workflow:** a small function-oriented `invert`, `greens`,
-   `slip`, and `data` surface; `LocalFrame`; named result views; and the revised
-   quickstart.
-3. **v1.3 scale layer:** callable noise/linear operators, nuisance parameters,
-   module extractions, and large-problem diagnostics. `LinearSystem` remains the
-   optional prepared-system API for repeated analyses.
-4. **Parallel research releases:** remaining JAX work and SMC can proceed in
-   small units once their touched public semantics are settled.
-5. **v2 candidates:** only genuinely breaking cleanup that survived a full
-   deprecation cycle; new engines and cycle modeling do not by themselves
-   justify a major-version break.
+1. **v0.1 foundation:** Priorities 0 and 1 — consistency, validation,
+   packaging/licensing/CI, safe caching, explicit material parameters, and the
+   small function-oriented everyday API.
+2. **v0.2 learning release:** Priority 2's quickstart, revised course,
+   reproducible examples, and usability tests.
+3. **Later 0.x releases:** implementation boundaries, callable operators,
+   nuisance parameters, large-problem diagnostics, and the remaining JAX and
+   Bayesian work. `LinearSystem` remains the optional prepared-system API for
+   repeated analyses.
+4. **v1.0:** only after this roadmap is complete and the resulting public
+   workflows have gone through human testing. New engines or a large feature
+   count do not by themselves justify 1.0.
 
 For each user-facing phase, require:
 

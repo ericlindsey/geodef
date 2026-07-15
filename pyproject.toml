@@ -18,7 +18,7 @@ keywords = [
     "okada",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Education",
     "Programming Language :: Python :: 3",
@@ -31,6 +31,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.24",
+    "orjson>=3.10",
     "scipy>=1.10",
     "matplotlib>=3.7",
 ]

@@ -16,10 +16,11 @@ inversion (`geodef.gradients`, `invert.geometry_search`) and a collapsed
 the default everywhere; nothing changes for existing users unless a backend is
 explicitly selected.
 
-Status: **v1.1** — the runtime library, the eleven-part tutorial course, the
+Status: **v0.1** — the runtime library, the eleven-part tutorial course, the
 per-module documentation, and the optional JAX accelerator (differentiable
 forward models, gradient-based and Bayesian geometry inference) are complete.
-`ruff` and `mypy` pass cleanly and the test suite runs warning-free.
+`ruff` and `mypy` pass cleanly and the test suite runs warning-free. Version
+1.0 is reserved for completion of the roadmap followed by human testing.
 
 ## Install
 

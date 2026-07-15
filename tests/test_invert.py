@@ -16,10 +16,13 @@ from geodef.greens import stack_obs, stack_weights
 from geodef.invert import (
     DatasetDiagnostics,
     InversionResult,
-    dataset_diagnostics,
+    diagnostics,
+    load,
     model_covariance,
     model_resolution,
     model_uncertainty,
+    save,
+    save_table,
 )
 from geodef.invert import (
     solve as invert,
@@ -1258,7 +1261,7 @@ class TestDatasetDiagnostics:
     def test_single_dataset_returns_list(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert isinstance(diags, list)
         assert len(diags) == 1
         assert isinstance(diags[0], DatasetDiagnostics)
@@ -1268,7 +1271,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert len(diags) == 2
 
     def test_n_obs_matches_datasets(self, fault_4x3, obs_points):
@@ -1276,7 +1279,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert diags[0].n_obs == gnss.n_obs
         assert diags[1].n_obs == insar.n_obs
 
@@ -1285,7 +1288,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert sum(d.n_obs for d in diags) == len(result.residuals)
 
     def test_dof_sums_to_total(self, fault_4x3, obs_points):
@@ -1293,7 +1296,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         insar = _make_insar(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         total_n = gnss.n_obs + insar.n_obs
         total_dof = sum(d.dof for d in diags)
@@ -1304,7 +1307,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         insar = _make_insar(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         total_leverage = sum(d.leverage for d in diags)
         np.testing.assert_allclose(total_leverage, n_params, atol=1e-8)
@@ -1312,33 +1315,33 @@ class TestDatasetDiagnostics:
     def test_chi2_positive(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].chi2 >= 0
 
     def test_reduced_chi2_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         """Noise-free data should give near-zero chi2."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].reduced_chi2 < 1e-6
 
     def test_wrms_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].wrms < 1e-6
 
     def test_rms_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].rms < 1e-10
 
     def test_with_regularization(self, fault_4x3, obs_points):
         """Regularized hat matrix should have trace < n_params."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         assert diags[0].leverage < n_params
 
@@ -1349,14 +1352,14 @@ class TestDatasetDiagnostics:
         result_reg = invert(
             fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3
         )
-        diags_unreg = dataset_diagnostics(result_unreg, fault_4x3, gnss)
-        diags_reg = dataset_diagnostics(result_reg, fault_4x3, gnss)
+        diags_unreg = list(diagnostics(result_unreg).values())
+        diags_reg = list(diagnostics(result_reg).values())
         assert diags_reg[0].dof > diags_unreg[0].dof
 
     def test_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, components="strike")
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].n_obs == gnss.n_obs
         assert diags[0].leverage < fault_4x3.n_patches + 1
 
@@ -1364,7 +1367,7 @@ class TestDatasetDiagnostics:
         """Should accept a single DataSet (not wrapped in list)."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert len(diags) == 1
 
     def test_three_datasets(self, fault_4x3, obs_points):
@@ -1373,7 +1376,7 @@ class TestDatasetDiagnostics:
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         vert = _make_vertical(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar, vert])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar, vert])
+        diags = list(diagnostics(result).values())
         assert len(diags) == 3
         assert diags[0].n_obs == gnss.n_obs
         assert diags[1].n_obs == insar.n_obs
@@ -1520,7 +1523,7 @@ class TestModelUncertainty:
 
 
 class TestInversionResultIO:
-    """Test InversionResult.save(), .load(), and .save_table()."""
+    """Test functional result archive and table I/O."""
 
     def _make_result(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -1534,21 +1537,21 @@ class TestInversionResultIO:
     def test_save_creates_npz(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
+        save(result, fpath)
         assert fpath.exists()
 
     def test_save_load_roundtrip_slip(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.slip, result.slip)
 
     def test_save_load_roundtrip_predicted(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.predicted, result.predicted)
 
     def test_chi2_has_no_compatibility_alias(self):
@@ -1557,8 +1560,8 @@ class TestInversionResultIO:
     def test_save_load_roundtrip_scalars(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.reduced_chi2, result.reduced_chi2)
         np.testing.assert_allclose(loaded.rms, result.rms)
         np.testing.assert_allclose(loaded.moment, result.moment)
@@ -1570,29 +1573,29 @@ class TestInversionResultIO:
         result = self._make_result(fault_4x3, obs_points)
         assert isinstance(result.smoothing, str)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.smoothing == result.smoothing
 
     def test_save_load_no_smoothing(self, fault_4x3, obs_points, tmp_path):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.smoothing is None
         assert loaded.smoothing_strength is None
 
     def test_save_table_creates_file(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         assert fpath.exists()
 
     def test_save_table_has_header_stats(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "chi2" in text.lower() or "rms" in text.lower()
         assert "Mw" in text or "mw" in text.lower()
@@ -1600,7 +1603,7 @@ class TestInversionResultIO:
     def test_save_table_rect_fault_columns(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         # Data lines (non-comment) should have at least 9 columns
         data_lines = [
             ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
@@ -1622,7 +1625,7 @@ class TestInversionResultIO:
         gnss = _make_gnss(fault, (lat_pts, lon_pts), 1.0, 0.0)
         result = invert(fault, gnss)
         fpath = tmp_path / "tri_result.dat"
-        result.save_table(fpath, fault)
+        save_table(result, fpath, fault)
         data_lines = [
             ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
         ]
@@ -1773,8 +1776,8 @@ class TestComponentsRake:
         )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.components == "rake"
         assert loaded.rake == pytest.approx(rake)
         np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
@@ -1787,7 +1790,7 @@ class TestComponentsRake:
         )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_amplitude_m" in text
 
@@ -1796,7 +1799,7 @@ class TestComponentsRake:
         gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
         result = invert(fault_4x3, gnss, components="dip")
         fpath = tmp_path / "dip_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_dip_m" in text
         assert "slip_strike_m" not in text
@@ -1875,8 +1878,8 @@ class TestComponentsPlate:
         result = invert(fault_4x3, gnss, components="plate", plate_rake=plate_rake)
 
         path = tmp_path / "plate_result.npz"
-        result.save(path)
-        loaded = InversionResult.load(path)
+        save(result, path)
+        loaded = load(path)
 
         np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
         np.testing.assert_allclose(loaded.plate_rake, plate_rake)
@@ -2000,8 +2003,8 @@ class TestComponentsAzimuth:
         )
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         fpath = tmp_path / "az_result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.components == "azimuth"
         assert loaded.slip_azimuth == pytest.approx(az)
         assert loaded.rake is None
@@ -2012,6 +2015,6 @@ class TestComponentsAzimuth:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         fpath = tmp_path / "az_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_amplitude_m" in text

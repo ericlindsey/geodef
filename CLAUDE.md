@@ -4,13 +4,14 @@
 
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
-(locked fault / coupling) applications. As of **v1.1** the runtime library, the
+(locked fault / coupling) applications. As of **v0.1** the runtime library, the
 eleven-part tutorial course, the per-module documentation, and the optional JAX
 accelerator (differentiable forward models, gradient-based `geometry_search`, and
 the collapsed Bayesian sampler `geodef.bayes`) are complete; `ruff` and `mypy`
 pass cleanly and the suite runs warning-free. Remaining forward-looking work
 (earthquake-cycle modeling, more Green's engines, batched L-curve/CV sweeps,
 triangular-mesh geometry sampling) is tracked in `PLAN.md`.
+Version 1.0 is reserved for completion of that roadmap and human testing.
 
 **Read `PYTHON.md` before editing any code.**
 

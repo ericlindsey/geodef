@@ -8,11 +8,14 @@ Automatic hyperparameter tuning via ABIC or cross-validation.
 
 import dataclasses
 import functools
+import hashlib
+import importlib.metadata
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
+import orjson
 import scipy.linalg
 import scipy.optimize
 
@@ -35,6 +38,8 @@ _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
 _VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
 _VALID_STRENGTH_STRINGS = {"abic", "cv"}
 _VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth", "plate"}
+RESULT_SCHEMA_VERSION = 2
+_RESULT_SCHEMA = "geodef.inversion_result"
 
 # A bound may be a scalar (all parameters), an array of length n_components
 # (one value per slip component, broadcast over patches), or an array of
@@ -77,6 +82,26 @@ class InversionResult:
         plate_rake: Large-scale plate direction expressed as local rake per
             patch when ``components='plate'``. The two solution blocks are
             rake-parallel and rake-perpendicular.
+        dataset_names: Stable dataset identifiers in stacked-row order.
+        dataset_slices: Corresponding slices into ``predicted`` and
+            ``residuals``.
+        solver: Solver selected for the completed inversion.
+        success: Whether the solver completed successfully.
+        message: Solver completion message.
+        smoothing_selection: ``'abic'`` or ``'cv'`` when selected
+            automatically, otherwise ``None``.
+        backend: Array backend active during the solve.
+        precision: Floating-point precision active during the solve.
+        warnings: Interpretation warnings retained with the result.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units inherited from the input datasets.
+        system_hash: SHA-256 fingerprint of G, d, W, and L.
+        lower_bounds: Expanded lower parameter bounds, if any.
+        upper_bounds: Expanded upper parameter bounds, if any.
+        smoothing_target: Reference model used by regularization, if any.
+        constraint_matrix: Linear inequality matrix, if any.
+        constraint_bounds: Linear inequality right-hand side, if any.
+        dataset_diagnostics: Solve-time diagnostics in dataset order.
     """
 
     slip: np.ndarray
@@ -94,6 +119,24 @@ class InversionResult:
     slip_azimuth: float | None = None
     plate_rake: np.ndarray | None = None
     local_rake: np.ndarray | None = None
+    dataset_names: tuple[str, ...] = ()
+    dataset_slices: tuple[slice, ...] = ()
+    solver: str = "unknown"
+    success: bool = True
+    message: str = ""
+    smoothing_selection: str | None = None
+    backend: str = "numpy"
+    precision: str = "float64"
+    warnings: tuple[str, ...] = ()
+    quantity: str = "displacement"
+    units: str = "m"
+    system_hash: str = ""
+    lower_bounds: np.ndarray | None = None
+    upper_bounds: np.ndarray | None = None
+    smoothing_target: np.ndarray | None = None
+    constraint_matrix: np.ndarray | None = None
+    constraint_bounds: np.ndarray | None = None
+    dataset_diagnostics: tuple["DatasetDiagnostics", ...] = ()
 
     @property
     def n_patches(self) -> int:
@@ -148,216 +191,6 @@ class InversionResult:
             angle = None
         return _physical_components(self.slip_vector, self.components, angle)
 
-    # ------------------------------------------------------------------
-    # I/O
-    # ------------------------------------------------------------------
-
-    def save(self, fname: str | Path) -> None:
-        """Save inversion result to a NumPy ``.npz`` archive.
-
-        All numeric arrays and scalar fields are preserved.  String fields
-        (``smoothing``, ``components``) are stored as object arrays.
-        Custom ``smoothing`` matrices are saved as arrays; named strings are
-        saved as-is.
-
-        Args:
-            fname: Output file path.  ``.npz`` extension is recommended.
-        """
-        smoothing_str: str
-        smoothing_arr: np.ndarray | None
-        if self.smoothing is None:
-            smoothing_str = "__none__"
-            smoothing_arr = None
-        elif isinstance(self.smoothing, str):
-            smoothing_str = self.smoothing
-            smoothing_arr = None
-        else:
-            smoothing_str = "__array__"
-            smoothing_arr = np.asarray(self.smoothing)
-
-        strength = (
-            np.array([float("nan")])
-            if self.smoothing_strength is None
-            else np.array([self.smoothing_strength])
-        )
-        rake_arr = (
-            np.array([float("nan")]) if self.rake is None else np.array([self.rake])
-        )
-        slip_azimuth_arr = (
-            np.array([float("nan")])
-            if self.slip_azimuth is None
-            else np.array([self.slip_azimuth])
-        )
-        plate_rake_arr = (
-            np.array([], dtype=float)
-            if self.plate_rake is None
-            else np.asarray(self.plate_rake, dtype=float)
-        )
-        local_rake_arr = (
-            np.array([], dtype=float)
-            if self.local_rake is None
-            else np.asarray(self.local_rake, dtype=float)
-        )
-
-        arrays: dict = {
-            "slip": self.slip,
-            "slip_vector": self.slip_vector,
-            "residuals": self.residuals,
-            "predicted": self.predicted,
-            "reduced_chi2": np.array([self.reduced_chi2]),
-            "rms": np.array([self.rms]),
-            "moment": np.array([self.moment]),
-            "Mw": np.array([self.Mw]),
-            "smoothing_str": np.array([smoothing_str]),
-            "smoothing_strength": strength,
-            "components": np.array([self.components]),
-            "rake": rake_arr,
-            "slip_azimuth": slip_azimuth_arr,
-            "plate_rake": plate_rake_arr,
-            "local_rake": local_rake_arr,
-        }
-        if smoothing_arr is not None:
-            arrays["smoothing_arr"] = smoothing_arr
-
-        np.savez_compressed(fname, **arrays)
-
-    @classmethod
-    def load(cls, fname: str | Path) -> "InversionResult":
-        """Load an inversion result from a ``.npz`` archive.
-
-        Args:
-            fname: Path to a ``.npz`` file previously written by ``save()``.
-
-        Returns:
-            Reconstructed ``InversionResult`` instance.
-        """
-        data = np.load(fname, allow_pickle=False)
-
-        smoothing_str = str(data["smoothing_str"][0])
-        if smoothing_str == "__none__":
-            smoothing: str | np.ndarray | None = None
-        elif smoothing_str == "__array__":
-            smoothing = data["smoothing_arr"]
-        else:
-            smoothing = smoothing_str
-
-        raw_strength = float(data["smoothing_strength"][0])
-        strength: float | None = None if np.isnan(raw_strength) else raw_strength
-
-        raw_rake = float(data["rake"][0]) if "rake" in data else float("nan")
-        rake: float | None = None if np.isnan(raw_rake) else raw_rake
-
-        raw_az = (
-            float(data["slip_azimuth"][0]) if "slip_azimuth" in data else float("nan")
-        )
-        slip_azimuth: float | None = None if np.isnan(raw_az) else raw_az
-        plate_rake = data["plate_rake"] if "plate_rake" in data else np.array([])
-        plate_rake_value = None if plate_rake.size == 0 else plate_rake
-        local_rake = data["local_rake"] if "local_rake" in data else np.array([])
-        local_rake_value = None if local_rake.size == 0 else local_rake
-
-        return cls(
-            slip=data["slip"],
-            slip_vector=data["slip_vector"],
-            residuals=data["residuals"],
-            predicted=data["predicted"],
-            reduced_chi2=float(data["reduced_chi2"][0]),
-            rms=float(data["rms"][0]),
-            moment=float(data["moment"][0]),
-            Mw=float(data["Mw"][0]),
-            smoothing=smoothing,
-            smoothing_strength=strength,
-            components=str(data["components"][0]),
-            rake=rake,
-            slip_azimuth=slip_azimuth,
-            plate_rake=plate_rake_value,
-            local_rake=local_rake_value,
-        )
-
-    def save_table(self, fname: str | Path, fault: "Fault") -> None:
-        """Save slip distribution as a human-readable text table.
-
-        Writes a ``#``-prefixed header with summary statistics followed by
-        one data row per fault patch.  For rectangular faults the columns
-        are ``lon lat depth_m strike dip length_m width_m slip_strike_m
-        slip_dip_m``; for triangular faults ``length_m`` and ``width_m`` are
-        replaced by ``area_m2``.
-
-        Args:
-            fault: Fault geometry matching this result.
-            fname: Output file path.
-        """
-        slip_2d = self.slip if self.slip.ndim == 2 else self.slip[:, np.newaxis]
-
-        smoothing_desc = (
-            "none"
-            if self.smoothing is None
-            else (self.smoothing if isinstance(self.smoothing, str) else "custom")
-        )
-        strength_desc = (
-            "N/A"
-            if self.smoothing_strength is None
-            else f"{self.smoothing_strength:.6g}"
-        )
-
-        header_lines = [
-            "geodef InversionResult",
-            f"components: {self.components}",
-            f"smoothing: {smoothing_desc}, strength: {strength_desc}",
-            f"reduced_chi2: {self.reduced_chi2:.6g}",
-            f"rms: {self.rms:.6g} m",
-            f"moment: {self.moment:.6g} N-m",
-            f"Mw: {self.Mw:.4f}",
-        ]
-        if self.rake is not None:
-            header_lines.append(f"rake_deg: {self.rake:.6g}")
-        if self.slip_azimuth is not None:
-            header_lines.append(f"slip_azimuth_deg: {self.slip_azimuth:.6g}")
-
-        if fault.engine == "okada":
-            assert fault._length is not None and fault._width is not None
-            col_names = "lon lat depth_m strike dip length_m width_m"
-            geom = np.column_stack(
-                [
-                    fault._lon,
-                    fault._lat,
-                    fault._depth,
-                    fault.strike,
-                    fault.dip,
-                    fault._length,
-                    fault._width,
-                ]
-            )
-        else:
-            col_names = "lon lat depth_m strike dip area_m2"
-            geom = np.column_stack(
-                [
-                    fault._lon,
-                    fault._lat,
-                    fault._depth,
-                    fault.strike,
-                    fault.dip,
-                    fault.areas,
-                ]
-            )
-
-        if self.components == "both":
-            slip_col_names = ["slip_strike_m", "slip_dip_m"]
-        elif self.components == "strike":
-            slip_col_names = ["slip_strike_m"]
-        elif self.components == "dip":
-            slip_col_names = ["slip_dip_m"]
-        elif self.components in {"rake", "azimuth"}:
-            slip_col_names = ["slip_amplitude_m"]
-        else:  # plate
-            slip_col_names = ["slip_rake_parallel_m", "slip_rake_perpendicular_m"]
-        slip_cols = "  ".join(slip_col_names)
-        header_lines.append(f"{col_names}  {slip_cols}")
-
-        data = np.column_stack([geom, slip_2d])
-        header = "\n".join(header_lines)
-        np.savetxt(Path(fname), data, header=header, fmt="%.6f")
-
 
 @dataclasses.dataclass(frozen=True)
 class DatasetDiagnostics:
@@ -381,6 +214,558 @@ class DatasetDiagnostics:
     n_obs: int
     dof: float
     leverage: float
+
+
+def _manifest_path(path: Path) -> Path:
+    """Return the readable sidecar path for a result archive."""
+    return path.with_suffix(".manifest.json")
+
+
+def _json_float(value: float) -> float | str:
+    """Encode non-finite floats without non-standard JSON numbers."""
+    value = float(value)
+    if np.isnan(value):
+        return "nan"
+    if np.isposinf(value):
+        return "inf"
+    if np.isneginf(value):
+        return "-inf"
+    return value
+
+
+def _manifest_float(value: object) -> float:
+    """Decode a finite or explicitly tagged manifest float."""
+    if value == "nan":
+        return float("nan")
+    if value == "inf":
+        return float("inf")
+    if value == "-inf":
+        return float("-inf")
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"expected a numeric manifest value, got {value!r}")
+    return float(value)
+
+
+def _array_checksum(array: np.ndarray) -> str:
+    """Return a SHA-256 checksum over an array's stored bytes."""
+    return hashlib.sha256(np.ascontiguousarray(array).tobytes()).hexdigest()
+
+
+def _array_manifest(array: np.ndarray) -> dict[str, object]:
+    """Describe one numeric archive array for safe loading."""
+    return {
+        "shape": list(array.shape),
+        "dtype": array.dtype.str,
+        "sha256": _array_checksum(array),
+    }
+
+
+def _result_arrays(result: InversionResult) -> dict[str, np.ndarray]:
+    """Collect numeric result arrays without object dtypes."""
+    arrays = {
+        "slip": np.asarray(result.slip),
+        "slip_vector": np.asarray(result.slip_vector),
+        "residuals": np.asarray(result.residuals),
+        "predicted": np.asarray(result.predicted),
+    }
+    optional = {
+        "plate_rake": result.plate_rake,
+        "local_rake": result.local_rake,
+        "lower_bounds": result.lower_bounds,
+        "upper_bounds": result.upper_bounds,
+        "smoothing_target": result.smoothing_target,
+        "constraint_matrix": result.constraint_matrix,
+        "constraint_bounds": result.constraint_bounds,
+    }
+    if isinstance(result.smoothing, np.ndarray):
+        optional["smoothing"] = result.smoothing
+    for name, value in optional.items():
+        if value is not None:
+            arrays[name] = np.asarray(value)
+    for name, array in arrays.items():
+        if array.dtype.hasobject:
+            raise TypeError(f"result array {name!r} must not have object dtype")
+    return arrays
+
+
+def _diagnostic_manifest(values: DatasetDiagnostics) -> dict[str, object]:
+    """Encode one diagnostics record for JSON."""
+    return {
+        "chi2": _json_float(values.chi2),
+        "reduced_chi2": _json_float(values.reduced_chi2),
+        "wrms": _json_float(values.wrms),
+        "rms": _json_float(values.rms),
+        "n_obs": values.n_obs,
+        "dof": _json_float(values.dof),
+        "leverage": _json_float(values.leverage),
+    }
+
+
+def _build_manifest(
+    result: InversionResult,
+    arrays: Mapping[str, np.ndarray],
+) -> dict[str, object]:
+    """Build the versioned result manifest."""
+    smoothing: str | None
+    if isinstance(result.smoothing, np.ndarray):
+        smoothing = "__array__"
+    else:
+        smoothing = result.smoothing
+    result_metadata: dict[str, object] = {
+        "reduced_chi2": _json_float(result.reduced_chi2),
+        "rms": _json_float(result.rms),
+        "moment": _json_float(result.moment),
+        "Mw": _json_float(result.Mw),
+        "smoothing": smoothing,
+        "smoothing_strength": (
+            None
+            if result.smoothing_strength is None
+            else _json_float(result.smoothing_strength)
+        ),
+        "components": result.components,
+        "rake": None if result.rake is None else _json_float(result.rake),
+        "slip_azimuth": (
+            None if result.slip_azimuth is None else _json_float(result.slip_azimuth)
+        ),
+        "dataset_names": list(result.dataset_names),
+        "dataset_slices": [
+            [row_slice.start, row_slice.stop] for row_slice in result.dataset_slices
+        ],
+        "solver": result.solver,
+        "success": result.success,
+        "message": result.message,
+        "smoothing_selection": result.smoothing_selection,
+        "backend": result.backend,
+        "precision": result.precision,
+        "warnings": list(result.warnings),
+        "quantity": result.quantity,
+        "units": result.units,
+        "system_hash": result.system_hash,
+        "dataset_diagnostics": [
+            _diagnostic_manifest(values) for values in result.dataset_diagnostics
+        ],
+    }
+    return {
+        "schema": _RESULT_SCHEMA,
+        "schema_version": RESULT_SCHEMA_VERSION,
+        "geodef_version": importlib.metadata.version("geodef"),
+        "result": result_metadata,
+        "arrays": {name: _array_manifest(array) for name, array in arrays.items()},
+    }
+
+
+def save(result: InversionResult, fname: str | Path) -> None:
+    """Save a result as a safe versioned NumPy archive plus JSON manifest.
+
+    The manifest is embedded in the ``.npz`` for single-file portability and
+    written beside it as ``<stem>.manifest.json`` for direct inspection.
+    Numeric arrays never use pickle or object dtypes.
+
+    Args:
+        result: Inversion result to save.
+        fname: Destination ``.npz`` path.
+
+    Raises:
+        ValueError: If ``fname`` does not end in ``.npz``.
+        TypeError: If a result array has object dtype.
+    """
+    path = Path(fname)
+    if path.suffix != ".npz":
+        raise ValueError("result archive filename must end in '.npz'")
+    arrays = _result_arrays(result)
+    manifest = _build_manifest(result, arrays)
+    manifest_bytes = orjson.dumps(manifest, option=orjson.OPT_INDENT_2)
+    archive_arrays = dict(arrays)
+    archive_arrays["__manifest__"] = np.frombuffer(manifest_bytes, dtype=np.uint8)
+    np.savez_compressed(file=path, **archive_arrays)  # type: ignore[arg-type]
+    with open(_manifest_path(path), "wb") as file:
+        file.write(manifest_bytes)
+        file.write(b"\n")
+
+
+def _as_mapping(value: object, label: str) -> Mapping[str, object]:
+    """Validate a JSON object loaded from a manifest."""
+    if not isinstance(value, dict):
+        raise ValueError(f"manifest {label} must be an object")
+    if not all(isinstance(key, str) for key in value):
+        raise ValueError(f"manifest {label} keys must be strings")
+    return cast(Mapping[str, object], value)
+
+
+def _read_manifest(archive: Mapping[str, np.ndarray], path: Path) -> dict[str, object]:
+    """Read and cross-check embedded and sidecar manifests."""
+    embedded = bytes(np.asarray(archive["__manifest__"], dtype=np.uint8))
+    sidecar_path = _manifest_path(path)
+    if sidecar_path.exists():
+        with open(sidecar_path, "rb") as file:
+            sidecar = file.read().rstrip(b"\n")
+        if sidecar != embedded:
+            raise ValueError("result sidecar manifest does not match the archive")
+    loaded = orjson.loads(embedded)
+    mapping = _as_mapping(loaded, "root")
+    return dict(mapping)
+
+
+def _validated_arrays(
+    archive: Mapping[str, np.ndarray],
+    manifest: Mapping[str, object],
+) -> dict[str, np.ndarray]:
+    """Validate every declared array before constructing a result."""
+    array_metadata = _as_mapping(manifest.get("arrays"), "arrays")
+    arrays: dict[str, np.ndarray] = {}
+    for name, raw_metadata in array_metadata.items():
+        if name not in archive:
+            raise ValueError(f"result archive is missing declared array {name!r}")
+        metadata = _as_mapping(raw_metadata, f"arrays.{name}")
+        array = np.asarray(archive[name])
+        if array.dtype.hasobject:
+            raise ValueError(f"result array {name!r} has unsafe object dtype")
+        shape = metadata.get("shape")
+        if not isinstance(shape, list) or list(array.shape) != shape:
+            raise ValueError(f"result array {name!r} shape does not match manifest")
+        if metadata.get("dtype") != array.dtype.str:
+            raise ValueError(f"result array {name!r} dtype does not match manifest")
+        if metadata.get("sha256") != _array_checksum(array):
+            raise ValueError(f"result array {name!r} checksum does not match manifest")
+        arrays[name] = array.copy()
+    for required in {"slip", "slip_vector", "residuals", "predicted"}:
+        if required not in arrays:
+            raise ValueError(f"result manifest is missing required array {required!r}")
+    return arrays
+
+
+def _required_string(metadata: Mapping[str, object], name: str) -> str:
+    """Read a required string manifest field."""
+    value = metadata.get(name)
+    if not isinstance(value, str):
+        raise ValueError(f"manifest result.{name} must be a string")
+    return value
+
+
+def _optional_float(metadata: Mapping[str, object], name: str) -> float | None:
+    """Read an optional float manifest field."""
+    value = metadata.get(name)
+    return None if value is None else _manifest_float(value)
+
+
+def _optional_array(arrays: Mapping[str, np.ndarray], name: str) -> np.ndarray | None:
+    """Return an optional copied archive array."""
+    array = arrays.get(name)
+    return None if array is None else array.copy()
+
+
+def _load_diagnostics(value: object) -> tuple[DatasetDiagnostics, ...]:
+    """Decode diagnostics records from a manifest."""
+    if not isinstance(value, list):
+        raise ValueError("manifest result.dataset_diagnostics must be a list")
+    records = []
+    for index, raw_record in enumerate(value):
+        record = _as_mapping(raw_record, f"dataset_diagnostics[{index}]")
+        n_obs = record.get("n_obs")
+        if not isinstance(n_obs, int):
+            raise ValueError("diagnostic n_obs must be an integer")
+        records.append(
+            DatasetDiagnostics(
+                chi2=_manifest_float(record.get("chi2")),
+                reduced_chi2=_manifest_float(record.get("reduced_chi2")),
+                wrms=_manifest_float(record.get("wrms")),
+                rms=_manifest_float(record.get("rms")),
+                n_obs=n_obs,
+                dof=_manifest_float(record.get("dof")),
+                leverage=_manifest_float(record.get("leverage")),
+            )
+        )
+    return tuple(records)
+
+
+def _load_partitions(
+    metadata: Mapping[str, object], n_rows: int
+) -> tuple[tuple[str, ...], tuple[slice, ...]]:
+    """Decode and validate named dataset row partitions."""
+    raw_names = metadata.get("dataset_names")
+    raw_slices = metadata.get("dataset_slices")
+    if not isinstance(raw_names, list) or not all(
+        isinstance(name, str) for name in raw_names
+    ):
+        raise ValueError("manifest result.dataset_names must be a string list")
+    if len(raw_names) != len(set(raw_names)):
+        raise ValueError("manifest dataset names must be unique")
+    if not isinstance(raw_slices, list) or len(raw_slices) != len(raw_names):
+        raise ValueError("manifest dataset slices must match dataset names")
+    slices = []
+    expected_start = 0
+    for raw_slice in raw_slices:
+        if (
+            not isinstance(raw_slice, list)
+            or len(raw_slice) != 2
+            or not all(isinstance(bound, int) for bound in raw_slice)
+        ):
+            raise ValueError("manifest dataset slices must be [start, stop] pairs")
+        start, stop = cast(list[int], raw_slice)
+        if start != expected_start or stop < start:
+            raise ValueError("manifest dataset slices must be contiguous and ordered")
+        slices.append(slice(start, stop))
+        expected_start = stop
+    if slices and expected_start != n_rows:
+        raise ValueError("manifest dataset slices do not cover all observation rows")
+    return tuple(cast(list[str], raw_names)), tuple(slices)
+
+
+def _load_versioned(
+    archive: Mapping[str, np.ndarray], manifest: Mapping[str, object]
+) -> InversionResult:
+    """Construct a result after validating the current schema."""
+    if manifest.get("schema") != _RESULT_SCHEMA:
+        raise ValueError(f"unknown result schema {manifest.get('schema')!r}")
+    version = manifest.get("schema_version")
+    if version != RESULT_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported result schema version {version!r}; "
+            f"this GeoDef supports version {RESULT_SCHEMA_VERSION}"
+        )
+    arrays = _validated_arrays(archive, manifest)
+    metadata = _as_mapping(manifest.get("result"), "result")
+    dataset_names, dataset_slices = _load_partitions(metadata, arrays["predicted"].size)
+
+    raw_smoothing = metadata.get("smoothing")
+    if raw_smoothing == "__array__":
+        smoothing: str | np.ndarray | None = _optional_array(arrays, "smoothing")
+        if smoothing is None:
+            raise ValueError("custom smoothing is missing its archive array")
+    elif raw_smoothing is None or isinstance(raw_smoothing, str):
+        smoothing = raw_smoothing
+    else:
+        raise ValueError("manifest result.smoothing must be a string or null")
+
+    success = metadata.get("success")
+    if not isinstance(success, bool):
+        raise ValueError("manifest result.success must be boolean")
+    raw_warnings = metadata.get("warnings")
+    if not isinstance(raw_warnings, list) or not all(
+        isinstance(warning, str) for warning in raw_warnings
+    ):
+        raise ValueError("manifest result.warnings must be a string list")
+    smoothing_selection = metadata.get("smoothing_selection")
+    if smoothing_selection is not None and not isinstance(smoothing_selection, str):
+        raise ValueError("manifest smoothing_selection must be a string or null")
+
+    return InversionResult(
+        slip=arrays["slip"],
+        slip_vector=arrays["slip_vector"],
+        residuals=arrays["residuals"],
+        predicted=arrays["predicted"],
+        reduced_chi2=_manifest_float(metadata.get("reduced_chi2")),
+        rms=_manifest_float(metadata.get("rms")),
+        moment=_manifest_float(metadata.get("moment")),
+        Mw=_manifest_float(metadata.get("Mw")),
+        smoothing=smoothing,
+        smoothing_strength=_optional_float(metadata, "smoothing_strength"),
+        components=_required_string(metadata, "components"),
+        rake=_optional_float(metadata, "rake"),
+        slip_azimuth=_optional_float(metadata, "slip_azimuth"),
+        plate_rake=_optional_array(arrays, "plate_rake"),
+        local_rake=_optional_array(arrays, "local_rake"),
+        dataset_names=dataset_names,
+        dataset_slices=dataset_slices,
+        solver=_required_string(metadata, "solver"),
+        success=success,
+        message=_required_string(metadata, "message"),
+        smoothing_selection=smoothing_selection,
+        backend=_required_string(metadata, "backend"),
+        precision=_required_string(metadata, "precision"),
+        warnings=tuple(cast(list[str], raw_warnings)),
+        quantity=_required_string(metadata, "quantity"),
+        units=_required_string(metadata, "units"),
+        system_hash=_required_string(metadata, "system_hash"),
+        lower_bounds=_optional_array(arrays, "lower_bounds"),
+        upper_bounds=_optional_array(arrays, "upper_bounds"),
+        smoothing_target=_optional_array(arrays, "smoothing_target"),
+        constraint_matrix=_optional_array(arrays, "constraint_matrix"),
+        constraint_bounds=_optional_array(arrays, "constraint_bounds"),
+        dataset_diagnostics=_load_diagnostics(metadata.get("dataset_diagnostics")),
+    )
+
+
+def _legacy_optional_scalar(
+    archive: Mapping[str, np.ndarray], name: str
+) -> float | None:
+    """Read a NaN-sentinel scalar from the unversioned schema."""
+    if name not in archive:
+        return None
+    value = float(archive[name][0])
+    return None if np.isnan(value) else value
+
+
+def _load_legacy(archive: Mapping[str, np.ndarray]) -> InversionResult:
+    """Migrate the branch's unversioned result archive in memory."""
+    required = {
+        "slip",
+        "slip_vector",
+        "residuals",
+        "predicted",
+        "reduced_chi2",
+        "rms",
+        "moment",
+        "Mw",
+        "smoothing_str",
+        "smoothing_strength",
+        "components",
+    }
+    missing = required - set(archive)
+    if missing:
+        raise ValueError(f"legacy result archive is missing {sorted(missing)}")
+    smoothing_name = str(archive["smoothing_str"][0])
+    if smoothing_name == "__none__":
+        smoothing: str | np.ndarray | None = None
+    elif smoothing_name == "__array__":
+        if "smoothing_arr" not in archive:
+            raise ValueError("legacy custom smoothing array is missing")
+        smoothing = archive["smoothing_arr"].copy()
+    else:
+        smoothing = smoothing_name
+    plate_rake = archive.get("plate_rake")
+    local_rake = archive.get("local_rake")
+    n_rows = archive["predicted"].size
+    return InversionResult(
+        slip=archive["slip"].copy(),
+        slip_vector=archive["slip_vector"].copy(),
+        residuals=archive["residuals"].copy(),
+        predicted=archive["predicted"].copy(),
+        reduced_chi2=float(archive["reduced_chi2"][0]),
+        rms=float(archive["rms"][0]),
+        moment=float(archive["moment"][0]),
+        Mw=float(archive["Mw"][0]),
+        smoothing=smoothing,
+        smoothing_strength=_legacy_optional_scalar(archive, "smoothing_strength"),
+        components=str(archive["components"][0]),
+        rake=_legacy_optional_scalar(archive, "rake"),
+        slip_azimuth=_legacy_optional_scalar(archive, "slip_azimuth"),
+        plate_rake=(
+            None if plate_rake is None or plate_rake.size == 0 else plate_rake.copy()
+        ),
+        local_rake=(
+            None if local_rake is None or local_rake.size == 0 else local_rake.copy()
+        ),
+        dataset_names=("data",),
+        dataset_slices=(slice(0, n_rows),),
+        warnings=("loaded and migrated a legacy unversioned result archive",),
+    )
+
+
+def load(fname: str | Path) -> InversionResult:
+    """Load and validate a versioned result, or migrate an old archive.
+
+    Args:
+        fname: Result ``.npz`` path.
+
+    Returns:
+        Reconstructed compact result record.
+
+    Raises:
+        FileNotFoundError: If the archive does not exist.
+        ValueError: If its schema, manifest, or arrays fail validation.
+    """
+    path = Path(fname)
+    if not path.exists():
+        raise FileNotFoundError(f"result archive not found: {path}")
+    try:
+        with np.load(path, allow_pickle=False) as loaded:
+            archive = {name: loaded[name].copy() for name in loaded.files}
+    except ValueError as error:
+        raise ValueError(
+            "result archive contains an unsafe or unreadable array"
+        ) from error
+    if "__manifest__" not in archive:
+        return _load_legacy(archive)
+    manifest = _read_manifest(archive, path)
+    return _load_versioned(archive, manifest)
+
+
+def save_table(result: InversionResult, fname: str | Path, fault: Fault) -> None:
+    """Save a slip distribution as a human-readable per-patch table.
+
+    Args:
+        result: Inversion result to write.
+        fname: Output text path.
+        fault: Matching fault geometry.
+
+    Raises:
+        ValueError: If result and fault patch counts differ.
+    """
+    if result.n_patches != fault.n_patches:
+        raise ValueError(
+            f"result has {result.n_patches} patches but fault has {fault.n_patches}"
+        )
+    slip_2d = result.slip if result.slip.ndim == 2 else result.slip[:, np.newaxis]
+    smoothing_desc = (
+        "none"
+        if result.smoothing is None
+        else (result.smoothing if isinstance(result.smoothing, str) else "custom")
+    )
+    strength_desc = (
+        "N/A"
+        if result.smoothing_strength is None
+        else f"{result.smoothing_strength:.6g}"
+    )
+    header_lines = [
+        "geodef InversionResult",
+        f"components: {result.components}",
+        f"smoothing: {smoothing_desc}, strength: {strength_desc}",
+        f"reduced_chi2: {result.reduced_chi2:.6g}",
+        f"rms: {result.rms:.6g} {result.units}",
+        f"moment: {result.moment:.6g} N-m",
+        f"Mw: {result.Mw:.4f}",
+    ]
+    if result.rake is not None:
+        header_lines.append(f"rake_deg: {result.rake:.6g}")
+    if result.slip_azimuth is not None:
+        header_lines.append(f"slip_azimuth_deg: {result.slip_azimuth:.6g}")
+
+    if fault.engine == "okada":
+        if fault._length is None or fault._width is None:
+            raise ValueError("rectangular fault is missing patch dimensions")
+        column_names = "lon lat depth_m strike dip length_m width_m"
+        geometry = np.column_stack(
+            [
+                fault._lon,
+                fault._lat,
+                fault._depth,
+                fault.strike,
+                fault.dip,
+                fault._length,
+                fault._width,
+            ]
+        )
+    else:
+        column_names = "lon lat depth_m strike dip area_m2"
+        geometry = np.column_stack(
+            [
+                fault._lon,
+                fault._lat,
+                fault._depth,
+                fault.strike,
+                fault.dip,
+                fault.areas,
+            ]
+        )
+
+    if result.components == "both":
+        slip_columns = ["slip_strike_m", "slip_dip_m"]
+    elif result.components == "strike":
+        slip_columns = ["slip_strike_m"]
+    elif result.components == "dip":
+        slip_columns = ["slip_dip_m"]
+    elif result.components in {"rake", "azimuth"}:
+        slip_columns = ["slip_amplitude_m"]
+    else:
+        slip_columns = ["slip_rake_parallel_m", "slip_rake_perpendicular_m"]
+    header_lines.append(f"{column_names}  {'  '.join(slip_columns)}")
+    np.savetxt(
+        Path(fname),
+        np.column_stack([geometry, slip_2d]),
+        header="\n".join(header_lines),
+        fmt="%.6f",
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -617,6 +1002,44 @@ class LinearSystem:
                 raise TypeError(
                     f"datasets must contain DataSet instances, got {type(ds).__name__}"
                 )
+        if not datasets:
+            raise ValueError("datasets must contain at least one DataSet")
+        semantics = {(dataset.quantity, dataset.units) for dataset in datasets}
+        if len(semantics) != 1:
+            raise ValueError(
+                "joint datasets must use the same quantity and units; "
+                f"received {sorted(semantics)}"
+            )
+
+        explicit_names = [
+            dataset.dataset_name
+            for dataset in datasets
+            if dataset.dataset_name is not None
+        ]
+        if len(explicit_names) != len(set(explicit_names)):
+            raise ValueError("explicit dataset names must be unique")
+        used_names = set(explicit_names)
+        generated_counts: dict[str, int] = {}
+        dataset_names: list[str] = []
+        for dataset in datasets:
+            if dataset.dataset_name is not None:
+                dataset_names.append(dataset.dataset_name)
+                continue
+            base = type(dataset).__name__.lower()
+            count = generated_counts.get(base, 0) + 1
+            candidate = base if count == 1 else f"{base}_{count}"
+            while candidate in used_names:
+                count += 1
+                candidate = f"{base}_{count}"
+            generated_counts[base] = count
+            used_names.add(candidate)
+            dataset_names.append(candidate)
+
+        offset = 0
+        dataset_slices = []
+        for dataset in datasets:
+            dataset_slices.append(slice(offset, offset + dataset.n_obs))
+            offset += dataset.n_obs
         if components not in _VALID_COMPONENTS:
             raise ValueError(
                 f"components must be one of {_VALID_COMPONENTS}, got {components!r}"
@@ -645,6 +1068,9 @@ class LinearSystem:
 
         self.fault = fault
         self.datasets = datasets
+        self.dataset_names = tuple(dataset_names)
+        self.dataset_slices = tuple(dataset_slices)
+        self.quantity, self.units = next(iter(semantics))
         self.smoothing = smoothing
         self.components = components
         self.rake = rake
@@ -960,6 +1386,9 @@ class LinearSystem:
             bounds, self._n_patches, self._n_params // self._n_patches
         )
 
+        smoothing_selection = (
+            smoothing_strength if isinstance(smoothing_strength, str) else None
+        )
         if isinstance(smoothing_strength, str):
             if smoothing_strength == "abic":
                 strength = self._optimal_abic()
@@ -1008,8 +1437,35 @@ class LinearSystem:
         else:
             basis_angle = None
         strike_slip, dip_slip = _physical_components(m, self.components, basis_angle)
-        moment = self.fault.moment(magnitude(strike_slip, dip_slip))
-        mw = moment_to_magnitude(moment)
+        result_warnings: list[str] = []
+        if self.d.size <= self._n_params:
+            result_warnings.append(
+                "the inversion has no positive nominal degrees of freedom"
+            )
+        if self.quantity == "velocity":
+            moment = float("nan")
+            mw = float("nan")
+            result_warnings.append(
+                "moment and Mw are undefined for velocity data; slip is a slip rate"
+            )
+        else:
+            moment = self.fault.moment(magnitude(strike_slip, dip_slip))
+            mw = moment_to_magnitude(moment)
+
+        constraint_matrix: np.ndarray | None = None
+        constraint_bounds: np.ndarray | None = None
+        if constraints is not None:
+            constraint_matrix = np.asarray(constraints[0], dtype=float).copy()
+            constraint_bounds = np.asarray(constraints[1], dtype=float).copy()
+        lower_bounds: np.ndarray | None = None
+        upper_bounds: np.ndarray | None = None
+        if exp_bounds is not None:
+            lower_bounds = exp_bounds[0].copy()
+            upper_bounds = exp_bounds[1].copy()
+        system_hash = _system_hash(self.G, self.d, self.W, self.L)
+        fit_diagnostics = tuple(
+            self._compute_dataset_diagnostics(residuals, reg_strength)
+        )
 
         return InversionResult(
             slip=slip,
@@ -1031,6 +1487,28 @@ class LinearSystem:
                 if self.slip_azimuth is not None
                 else None
             ),
+            dataset_names=self.dataset_names,
+            dataset_slices=self.dataset_slices,
+            solver=method,
+            success=True,
+            message=f"{method} completed",
+            smoothing_selection=smoothing_selection,
+            backend=backend.get_backend(),
+            precision=backend.get_precision(),
+            warnings=tuple(result_warnings),
+            quantity=self.quantity,
+            units=self.units,
+            system_hash=system_hash,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+            smoothing_target=(
+                None
+                if smoothing_target is None
+                else np.asarray(smoothing_target, dtype=float).copy()
+            ),
+            constraint_matrix=constraint_matrix,
+            constraint_bounds=constraint_bounds,
+            dataset_diagnostics=fit_diagnostics,
         )
 
     def lcurve(
@@ -1152,14 +1630,21 @@ class LinearSystem:
         Returns:
             List of ``DatasetDiagnostics``, one per dataset.
         """
-        lev = self._hat_diagonal(result.smoothing_strength)
-        residuals = result.residuals
+        return self._compute_dataset_diagnostics(
+            result.residuals, result.smoothing_strength
+        )
+
+    def _compute_dataset_diagnostics(
+        self,
+        residuals: np.ndarray,
+        smoothing_strength: float | None,
+    ) -> list[DatasetDiagnostics]:
+        """Compute named-fit statistics from solve-time arrays."""
+        lev = self._hat_diagonal(smoothing_strength)
 
         diags = []
-        offset = 0
-        for ds in self.datasets:
+        for ds, idx in zip(self.datasets, self.dataset_slices):
             n = ds.n_obs
-            idx = slice(offset, offset + n)
             r_k = residuals[idx]
             W_k = self.W[idx, idx]
 
@@ -1181,7 +1666,6 @@ class LinearSystem:
                     leverage=lev_k,
                 )
             )
-            offset += n
 
         return diags
 
@@ -1766,35 +2250,89 @@ def geometry_search(
     )
 
 
-def dataset_diagnostics(
-    result: InversionResult,
-    fault: Fault,
-    datasets: DataSet | list[DataSet],
-) -> list[DatasetDiagnostics]:
-    """Compute per-dataset fit diagnostics using the hat matrix.
-
-    For each dataset, computes chi-squared, reduced chi-squared, WRMS,
-    RMS, effective DOF, and leverage using the (regularized) hat matrix
-    ``H = G_w (G_w^T G_w + lambda L^T L)^{-1} G_w^T``.
+def prediction(result: InversionResult) -> dict[str, np.ndarray]:
+    """Split stacked model predictions by dataset name.
 
     Args:
-        result: Output from ``invert()``.
-        fault: Fault geometry (same as passed to ``invert()``).
-        datasets: Dataset(s) used in the inversion.
+        result: Inversion result from :func:`solve`.
 
     Returns:
-        List of ``DatasetDiagnostics``, one per dataset.
+        Name-keyed prediction arrays in solve order.
     """
-    sys = LinearSystem(
-        fault,
-        datasets,
-        result.smoothing,
-        result.components,
-        result.rake,
-        result.slip_azimuth,
-        result.plate_rake,
+    if not result.dataset_names:
+        return {"data": result.predicted}
+    return {
+        name: result.predicted[row_slice]
+        for name, row_slice in zip(result.dataset_names, result.dataset_slices)
+    }
+
+
+def residual(result: InversionResult) -> dict[str, np.ndarray]:
+    """Split stacked observation-minus-prediction residuals by dataset name.
+
+    Args:
+        result: Inversion result from :func:`solve`.
+
+    Returns:
+        Name-keyed residual arrays in solve order.
+    """
+    if not result.dataset_names:
+        return {"data": result.residuals}
+    return {
+        name: result.residuals[row_slice]
+        for name, row_slice in zip(result.dataset_names, result.dataset_slices)
+    }
+
+
+def diagnostics(result: InversionResult) -> dict[str, DatasetDiagnostics]:
+    """Return stored fit diagnostics keyed by dataset name.
+
+    Args:
+        result: Inversion result from :func:`solve`.
+
+    Returns:
+        Name-keyed per-dataset diagnostics in solve order.
+    """
+    names = result.dataset_names or tuple(
+        f"data_{index + 1}" for index in range(len(result.dataset_diagnostics))
     )
-    return sys.dataset_diagnostics(result)
+    return dict(zip(names, result.dataset_diagnostics))
+
+
+def summary(result: InversionResult) -> str:
+    """Format the essential assumptions and fit statistics as plain text.
+
+    Args:
+        result: Inversion result from :func:`solve`.
+
+    Returns:
+        Multi-line human-readable summary.
+    """
+    smoothing = "none"
+    if result.smoothing is not None:
+        smoothing_name = (
+            result.smoothing if isinstance(result.smoothing, str) else "custom"
+        )
+        smoothing = f"{smoothing_name} (lambda={result.smoothing_strength:.6g})"
+        if result.smoothing_selection is not None:
+            smoothing += f", selected by {result.smoothing_selection}"
+    lines = [
+        f"solver: {result.solver} ({'success' if result.success else 'failed'})",
+        f"datasets: {', '.join(result.dataset_names) or 'data'}",
+        f"quantity: {result.quantity} [{result.units}]",
+        f"components: {result.components}",
+        f"regularization: {smoothing}",
+        f"reduced chi-squared: {result.reduced_chi2:.6g}",
+        f"RMS: {result.rms:.6g} {result.units}",
+        f"backend: {result.backend}/{result.precision}",
+    ]
+    for name, values in diagnostics(result).items():
+        lines.append(
+            f"{name}: n={values.n_obs}, reduced chi-squared="
+            f"{values.reduced_chi2:.6g}, RMS={values.rms:.6g} {result.units}"
+        )
+    lines.extend(f"warning: {warning}" for warning in result.warnings)
+    return "\n".join(lines)
 
 
 def model_covariance(
@@ -2304,6 +2842,31 @@ def _compute_reduced_chi2(
         return float("nan")
     weighted_ssr = residuals @ W @ residuals
     return float(weighted_ssr / dof)
+
+
+def _system_hash(
+    greens_matrix: np.ndarray,
+    observations: np.ndarray,
+    weights: np.ndarray,
+    regularizer: np.ndarray | None,
+) -> str:
+    """Fingerprint the numerical system needed to verify a reproduced solve."""
+    digest = hashlib.sha256()
+    for label, array in (
+        ("G", greens_matrix),
+        ("d", observations),
+        ("W", weights),
+        ("L", regularizer),
+    ):
+        digest.update(label.encode())
+        if array is None:
+            digest.update(b"none")
+            continue
+        contiguous = np.ascontiguousarray(array)
+        digest.update(str(contiguous.shape).encode())
+        digest.update(contiguous.dtype.str.encode())
+        digest.update(contiguous.tobytes())
+    return digest.hexdigest()
 
 
 def _lcurve_corner(

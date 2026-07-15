@@ -11,10 +11,14 @@ Classes:
     Vertical: Single-component vertical displacement (e.g. coral uplift).
 """
 
+import ctypes
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Protocol, cast
 
 import numpy as np
+import numpy.typing as npt
 
 from geodef.validation import (
     ValidationReport,
@@ -32,6 +36,200 @@ def _make_readonly(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
+def _broadcast_1d(name: str, values: npt.ArrayLike, n: int) -> np.ndarray:
+    """Broadcast a scalar or validate a one-dimensional array."""
+    array = np.asarray(values, dtype=float)
+    if array.ndim == 0:
+        array = np.full(n, float(array))
+    return as_1d_floats(name, array, n=n)
+
+
+def _validate_measurement_metadata(quantity: str, units: str) -> None:
+    """Validate observation semantics without converting user values."""
+    if quantity not in {"displacement", "velocity"}:
+        raise ValueError("quantity must be 'displacement' or 'velocity'")
+    displacement_units = {"m", "cm", "mm"}
+    velocity_units = {"m/s", "m/yr", "cm/yr", "mm/yr"}
+    allowed = displacement_units if quantity == "displacement" else velocity_units
+    if units not in allowed:
+        raise ValueError(
+            f"{quantity} units must be one of {sorted(allowed)}, got {units!r}"
+        )
+
+
+class _InterchangeBuffer(Protocol):
+    """Buffer subset used from the dataframe interchange protocol."""
+
+    ptr: int
+    bufsize: int
+
+
+class _InterchangeColumn(Protocol):
+    """Column subset used from the dataframe interchange protocol."""
+
+    @property
+    def dtype(self) -> tuple[int, int, str, str]: ...
+
+    @property
+    def offset(self) -> int: ...
+
+    @property
+    def describe_null(self) -> tuple[int, object]: ...
+
+    def size(self) -> int: ...
+
+    def get_buffers(
+        self,
+    ) -> Mapping[
+        str,
+        tuple[_InterchangeBuffer, tuple[int, int, str, str]] | None,
+    ]: ...
+
+
+class _InterchangeFrame(Protocol):
+    """Dataframe subset used from the dataframe interchange protocol."""
+
+    def column_names(self) -> Sequence[str]: ...
+
+    def get_column_by_name(self, name: str) -> _InterchangeColumn: ...
+
+
+class _DataFrameProvider(Protocol):
+    """Object implementing the Python dataframe interchange protocol."""
+
+    def __dataframe__(
+        self, *, nan_as_null: bool = False, allow_copy: bool = True
+    ) -> _InterchangeFrame: ...
+
+
+def _buffer_bytes(buffer: _InterchangeBuffer) -> np.ndarray:
+    """Expose an interchange buffer as a copied uint8 array."""
+    byte_array = (ctypes.c_uint8 * buffer.bufsize).from_address(buffer.ptr)
+    return np.ctypeslib.as_array(byte_array).copy()
+
+
+def _protocol_dtype(dtype: tuple[int, int, str, str]) -> np.dtype:
+    """Translate a numeric dataframe-interchange dtype to NumPy."""
+    kind, bit_width, _format, endian = dtype
+    kind_codes = {0: "i", 1: "u", 2: "f", 20: "b"}
+    if kind not in kind_codes:
+        raise TypeError(f"unsupported dataframe column dtype kind {kind}")
+    byte_order = endian if endian in {"<", ">"} else "="
+    return np.dtype(f"{byte_order}{kind_codes[kind]}{bit_width // 8}")
+
+
+def _protocol_validity(
+    column: _InterchangeColumn,
+    buffers: Mapping[
+        str,
+        tuple[_InterchangeBuffer, tuple[int, int, str, str]] | None,
+    ],
+) -> np.ndarray | None:
+    """Return a null mask for an interchange column when one is declared."""
+    null_kind, sentinel = column.describe_null
+    if null_kind in {0, 1, 2}:
+        return None
+    validity_entry = buffers.get("validity")
+    if validity_entry is None:
+        return None
+    validity_buffer, validity_dtype = validity_entry
+    raw = _buffer_bytes(validity_buffer)
+    if null_kind == 3:
+        bits = np.unpackbits(raw, bitorder="little")
+        validity = bits[column.offset : column.offset + column.size()]
+    elif null_kind == 4:
+        dtype = _protocol_dtype(validity_dtype)
+        validity = raw.view(dtype)[column.offset : column.offset + column.size()]
+    else:
+        raise TypeError(f"unsupported dataframe null representation {null_kind}")
+    return validity == int(cast(int, sentinel))
+
+
+def _protocol_column(frame: _InterchangeFrame, name: str) -> np.ndarray:
+    """Copy one dataframe-interchange column into a NumPy array."""
+    column = frame.get_column_by_name(name)
+    buffers = column.get_buffers()
+    data_entry = buffers.get("data")
+    if data_entry is None:
+        raise ValueError(f"dataframe column {name!r} has no data buffer")
+    data_buffer, dtype = data_entry
+    kind = dtype[0]
+    if kind == 21:
+        offsets_entry = buffers.get("offsets")
+        if offsets_entry is None:
+            raise ValueError(f"string dataframe column {name!r} has no offsets")
+        offsets_buffer, offsets_dtype = offsets_entry
+        offsets = _buffer_bytes(offsets_buffer).view(_protocol_dtype(offsets_dtype))
+        start = column.offset
+        offsets = offsets[start : start + column.size() + 1]
+        raw = _buffer_bytes(data_buffer)
+        values = np.asarray(
+            [
+                bytes(raw[offsets[i] : offsets[i + 1]]).decode("utf-8")
+                for i in range(column.size())
+            ],
+            dtype=object,
+        )
+    else:
+        array_dtype = _protocol_dtype(dtype)
+        values = _buffer_bytes(data_buffer).view(array_dtype)
+        values = values[column.offset : column.offset + column.size()].copy()
+
+    null_kind, sentinel = column.describe_null
+    if null_kind == 1 and np.issubdtype(values.dtype, np.floating):
+        return values
+    if null_kind == 2:
+        missing = values == sentinel
+    else:
+        missing = _protocol_validity(column, buffers)
+    if missing is not None and np.any(missing):
+        object_values = values.astype(object)
+        object_values[missing] = None
+        return object_values
+    return values
+
+
+def _table_column(table: object, name: str) -> np.ndarray:
+    """Extract a named column from a mapping, structured array, or dataframe."""
+    if isinstance(table, Mapping):
+        if name not in table:
+            raise KeyError(name)
+        return np.asarray(table[name])
+    if isinstance(table, np.ndarray) and table.dtype.names is not None:
+        if name not in table.dtype.names:
+            raise KeyError(name)
+        return np.asarray(table[name])
+    if hasattr(table, "__dataframe__"):
+        provider = cast(_DataFrameProvider, table)
+        frame = provider.__dataframe__(nan_as_null=False, allow_copy=True)
+        if name not in frame.column_names():
+            raise KeyError(name)
+        return _protocol_column(frame, name)
+    raise TypeError(
+        "table must be a column mapping, structured NumPy array, or implement "
+        "the Python dataframe interchange protocol"
+    )
+
+
+def _missing_mask(values: np.ndarray) -> np.ndarray:
+    """Return a one-dimensional missing-value mask."""
+    if np.issubdtype(values.dtype, np.floating):
+        return np.isnan(values)
+    if np.issubdtype(values.dtype, np.datetime64):
+        return np.isnat(values)
+    if values.dtype.kind == "O":
+        return np.fromiter(
+            (
+                value is None
+                or (isinstance(value, (float, np.floating)) and np.isnan(value))
+                for value in values
+            ),
+            dtype=bool,
+            count=values.size,
+        )
+    return np.zeros(values.size, dtype=bool)
+
+
 def _names_header(name: np.ndarray | None) -> str:
     """Encode site names as a leading ``savetxt`` header line, or ``''``.
 
@@ -41,6 +239,19 @@ def _names_header(name: np.ndarray | None) -> str:
     if name is None:
         return ""
     return "names: " + " ".join(str(x) for x in name) + "\n"
+
+
+def _metadata_header(dataset: "DataSet") -> str:
+    """Encode common dataset metadata as leading comment lines."""
+    lines = [_names_header(dataset.station_names)]
+    if dataset.dataset_name is not None:
+        lines.append(f"dataset_name: {dataset.dataset_name}\n")
+    lines.extend([f"quantity: {dataset.quantity}\n", f"units: {dataset.units}\n"])
+    if dataset.epoch is not None:
+        lines.append(f"epoch: {dataset.epoch}\n")
+    if dataset.time_span is not None:
+        lines.append(f"time_span: {dataset.time_span[0]} | {dataset.time_span[1]}\n")
+    return "".join(lines)
 
 
 def _read_names(path: Path) -> np.ndarray | None:
@@ -54,6 +265,40 @@ def _read_names(path: Path) -> np.ndarray | None:
                 tokens = stripped[len("names:") :].split()
                 return np.asarray(tokens, dtype=str)
     return None
+
+
+def _read_metadata(
+    path: Path,
+) -> tuple[str | None, str, str, str | None, tuple[str, str] | None]:
+    """Read common metadata comments from a dataset text file."""
+    values: dict[str, str] = {}
+    with open(path) as file:
+        for line in file:
+            if not line.startswith("#"):
+                break
+            stripped = line.lstrip("#").strip()
+            key, separator, value = stripped.partition(":")
+            if separator and key in {
+                "dataset_name",
+                "quantity",
+                "units",
+                "epoch",
+                "time_span",
+            }:
+                values[key] = value.strip()
+    raw_span = values.get("time_span")
+    time_span = None
+    if raw_span is not None:
+        start, separator, end = raw_span.partition("|")
+        if separator:
+            time_span = (start.strip(), end.strip())
+    return (
+        values.get("dataset_name"),
+        values.get("quantity", "displacement"),
+        values.get("units", "m"),
+        values.get("epoch"),
+        time_span,
+    )
 
 
 class DataSet(ABC):
@@ -76,6 +321,11 @@ class DataSet(ABC):
         lon: np.ndarray,
         lat: np.ndarray,
         name: np.ndarray | None = None,
+        dataset_name: str | None = None,
+        quantity: str = "displacement",
+        units: str = "m",
+        epoch: str | None = None,
+        time_span: tuple[str, str] | None = None,
         covariance: np.ndarray | None = None,
         validate_covariance: bool = True,
     ) -> None:
@@ -94,9 +344,22 @@ class DataSet(ABC):
                 raise ValueError("name must be a 1-D array of length n_stations")
             name = _make_readonly(name)
 
+        if dataset_name is not None and not dataset_name.strip():
+            raise ValueError("dataset_name must not be empty")
+        _validate_measurement_metadata(quantity, units)
+        if time_span is not None:
+            if len(time_span) != 2 or not all(str(value) for value in time_span):
+                raise ValueError("time_span must contain two non-empty epoch labels")
+            time_span = (str(time_span[0]), str(time_span[1]))
+
         self._lon = lon
         self._lat = lat
         self._name = name
+        self._dataset_name = dataset_name
+        self._quantity = quantity
+        self._units = units
+        self._epoch = epoch
+        self._time_span = time_span
         self._covariance_explicit = covariance
         self._validate_covariance = validate_covariance
         self._covariance_cache: np.ndarray | None = None
@@ -105,6 +368,36 @@ class DataSet(ABC):
     def name(self) -> np.ndarray | None:
         """Optional per-station site names, shape (n_stations,), or None."""
         return self._name
+
+    @property
+    def station_names(self) -> np.ndarray | None:
+        """Optional per-station labels, shape ``(n_stations,)``."""
+        return self._name
+
+    @property
+    def dataset_name(self) -> str | None:
+        """Stable identifier used for joint results and plots."""
+        return self._dataset_name
+
+    @property
+    def quantity(self) -> str:
+        """Measurement quantity: ``'displacement'`` or ``'velocity'``."""
+        return self._quantity
+
+    @property
+    def units(self) -> str:
+        """Units of observations and uncertainties."""
+        return self._units
+
+    @property
+    def epoch(self) -> str | None:
+        """Optional representative observation epoch."""
+        return self._epoch
+
+    @property
+    def time_span(self) -> tuple[str, str] | None:
+        """Optional start and end epochs used to estimate the measurement."""
+        return self._time_span
 
     @property
     def lon(self) -> np.ndarray:
@@ -257,6 +550,11 @@ class GNSS(DataSet):
         su: np.ndarray | None = None,
         rho: np.ndarray | float | None = None,
         name: np.ndarray | None = None,
+        dataset_name: str | None = None,
+        quantity: str = "displacement",
+        units: str = "m",
+        epoch: str | None = None,
+        time_span: tuple[str, str] | None = None,
         covariance: np.ndarray | None = None,
         validate_covariance: bool = True,
     ) -> None:
@@ -266,6 +564,11 @@ class GNSS(DataSet):
             lon=lon,
             lat=lat,
             name=name,
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
             covariance=covariance,
             validate_covariance=validate_covariance,
         )
@@ -337,6 +640,36 @@ class GNSS(DataSet):
     def components(self) -> str:
         """Active component string: ``'enu'`` or ``'en'``."""
         return "enu" if self._vu is not None else "en"
+
+    @property
+    def east(self) -> np.ndarray:
+        """East component values, shape ``(n_stations,)``."""
+        return self._ve
+
+    @property
+    def north(self) -> np.ndarray:
+        """North component values, shape ``(n_stations,)``."""
+        return self._vn
+
+    @property
+    def up(self) -> np.ndarray | None:
+        """Up component values, or ``None`` for horizontal data."""
+        return self._vu
+
+    @property
+    def sigma_east(self) -> np.ndarray:
+        """East-component standard deviations."""
+        return self._se
+
+    @property
+    def sigma_north(self) -> np.ndarray:
+        """North-component standard deviations."""
+        return self._sn
+
+    @property
+    def sigma_up(self) -> np.ndarray | None:
+        """Up-component standard deviations, or ``None``."""
+        return self._su
 
     @property
     def n_obs(self) -> int:
@@ -413,7 +746,7 @@ class GNSS(DataSet):
                 su,
             ]
         )
-        header = _names_header(self._name) + "lon lat uE uN uZ sigE sigN sigZ"
+        header = _metadata_header(self) + "lon lat uE uN uZ sigE sigN sigZ"
         np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
@@ -475,6 +808,8 @@ class GNSS(DataSet):
         if components == "en":
             vu, su = None, None
 
+        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
+
         return cls(
             lon=lon,
             lat=lat,
@@ -485,6 +820,11 @@ class GNSS(DataSet):
             sn=sn,
             su=su,
             name=_read_names(path),
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
         )
 
 
@@ -524,6 +864,12 @@ class InSAR(DataSet):
         look_e: np.ndarray,
         look_n: np.ndarray,
         look_u: np.ndarray,
+        name: np.ndarray | None = None,
+        dataset_name: str | None = None,
+        quantity: str = "displacement",
+        units: str = "m",
+        epoch: str | None = None,
+        time_span: tuple[str, str] | None = None,
         covariance: np.ndarray | None = None,
         validate_covariance: bool = True,
         normalize_look: bool = False,
@@ -531,6 +877,12 @@ class InSAR(DataSet):
         super().__init__(
             lon=lon,
             lat=lat,
+            name=name,
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
             covariance=covariance,
             validate_covariance=validate_covariance,
         )
@@ -643,9 +995,8 @@ class InSAR(DataSet):
                 self._look_u,
             ]
         )
-        np.savetxt(
-            Path(fname), data, header="lon lat uLOS sigLOS losE losN losU", fmt="%.8f"
-        )
+        header = _metadata_header(self) + "lon lat uLOS sigLOS losE losN losU"
+        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save InSAR data in GMT-compatible format.
@@ -687,6 +1038,7 @@ class InSAR(DataSet):
         lon, lat = raw[:, 0], raw[:, 1]
         los, sigma = raw[:, 2], raw[:, 3]
         look_e, look_n, look_u = raw[:, 4], raw[:, 5], raw[:, 6]
+        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
 
         return cls(
             lon=lon,
@@ -696,6 +1048,12 @@ class InSAR(DataSet):
             look_e=look_e,
             look_n=look_n,
             look_u=look_u,
+            name=_read_names(path),
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
         )
 
 
@@ -724,6 +1082,11 @@ class Vertical(DataSet):
         displacement: np.ndarray,
         sigma: np.ndarray,
         name: np.ndarray | None = None,
+        dataset_name: str | None = None,
+        quantity: str = "displacement",
+        units: str = "m",
+        epoch: str | None = None,
+        time_span: tuple[str, str] | None = None,
         covariance: np.ndarray | None = None,
         validate_covariance: bool = True,
     ) -> None:
@@ -731,6 +1094,11 @@ class Vertical(DataSet):
             lon=lon,
             lat=lat,
             name=name,
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
             covariance=covariance,
             validate_covariance=validate_covariance,
         )
@@ -794,7 +1162,7 @@ class Vertical(DataSet):
                 self._sigma,
             ]
         )
-        header = _names_header(self._name) + "lon lat uZ sigZ"
+        header = _metadata_header(self) + "lon lat uZ sigZ"
         np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
@@ -835,6 +1203,7 @@ class Vertical(DataSet):
         raw = np.loadtxt(path, comments="#", ndmin=2)
         lon, lat = raw[:, 0], raw[:, 1]
         displacement, sigma = raw[:, 2], raw[:, 3]
+        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
 
         return cls(
             lon=lon,
@@ -842,7 +1211,425 @@ class Vertical(DataSet):
             displacement=displacement,
             sigma=sigma,
             name=_read_names(path),
+            dataset_name=dataset_name,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
         )
+
+
+def gnss(
+    *,
+    lon: npt.ArrayLike,
+    lat: npt.ArrayLike,
+    east: npt.ArrayLike,
+    north: npt.ArrayLike,
+    up: npt.ArrayLike,
+    sigma_east: npt.ArrayLike,
+    sigma_north: npt.ArrayLike,
+    sigma_up: npt.ArrayLike,
+    name: str | None = None,
+    station_names: Sequence[str] | None = None,
+    quantity: str = "displacement",
+    units: str = "m",
+    epoch: str | None = None,
+    time_span: tuple[str, str] | None = None,
+    covariance: np.ndarray | None = None,
+) -> GNSS:
+    """Build a validated three-component GNSS dataset.
+
+    Scalar uncertainties are broadcast over stations. Component names are
+    geographic East, North, and Up; values and uncertainties use ``units``.
+
+    Args:
+        lon: Station longitudes in degrees.
+        lat: Station latitudes in degrees.
+        east: East component values.
+        north: North component values.
+        up: Up component values.
+        sigma_east: East-component standard deviations.
+        sigma_north: North-component standard deviations.
+        sigma_up: Up-component standard deviations.
+        name: Stable dataset identifier.
+        station_names: Optional station labels.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units shared by values and uncertainties.
+        epoch: Optional representative epoch.
+        time_span: Optional start and end epoch labels.
+        covariance: Optional full observation covariance.
+
+    Returns:
+        An existing :class:`GNSS` dataset object.
+    """
+    lon_array = np.asarray(lon, dtype=float)
+    n = lon_array.size
+    return GNSS(
+        lon=lon_array,
+        lat=np.asarray(lat, dtype=float),
+        ve=_broadcast_1d("east", east, n),
+        vn=_broadcast_1d("north", north, n),
+        vu=_broadcast_1d("up", up, n),
+        se=_broadcast_1d("sigma_east", sigma_east, n),
+        sn=_broadcast_1d("sigma_north", sigma_north, n),
+        su=_broadcast_1d("sigma_up", sigma_up, n),
+        name=None if station_names is None else np.asarray(station_names, dtype=str),
+        dataset_name=name,
+        quantity=quantity,
+        units=units,
+        epoch=epoch,
+        time_span=time_span,
+        covariance=covariance,
+    )
+
+
+def horizontal_gnss(
+    *,
+    lon: npt.ArrayLike,
+    lat: npt.ArrayLike,
+    east: npt.ArrayLike,
+    north: npt.ArrayLike,
+    sigma_east: npt.ArrayLike,
+    sigma_north: npt.ArrayLike,
+    name: str | None = None,
+    station_names: Sequence[str] | None = None,
+    quantity: str = "displacement",
+    units: str = "m",
+    epoch: str | None = None,
+    time_span: tuple[str, str] | None = None,
+    covariance: np.ndarray | None = None,
+) -> GNSS:
+    """Build a validated horizontal GNSS dataset.
+
+    Args:
+        lon: Station longitudes in degrees.
+        lat: Station latitudes in degrees.
+        east: East component values.
+        north: North component values.
+        sigma_east: East-component standard deviations.
+        sigma_north: North-component standard deviations.
+        name: Stable dataset identifier.
+        station_names: Optional station labels.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units shared by values and uncertainties.
+        epoch: Optional representative epoch.
+        time_span: Optional start and end epoch labels.
+        covariance: Optional full observation covariance.
+
+    Returns:
+        An existing horizontal :class:`GNSS` dataset object.
+    """
+    lon_array = np.asarray(lon, dtype=float)
+    n = lon_array.size
+    return GNSS(
+        lon=lon_array,
+        lat=np.asarray(lat, dtype=float),
+        ve=_broadcast_1d("east", east, n),
+        vn=_broadcast_1d("north", north, n),
+        se=_broadcast_1d("sigma_east", sigma_east, n),
+        sn=_broadcast_1d("sigma_north", sigma_north, n),
+        name=None if station_names is None else np.asarray(station_names, dtype=str),
+        dataset_name=name,
+        quantity=quantity,
+        units=units,
+        epoch=epoch,
+        time_span=time_span,
+        covariance=covariance,
+    )
+
+
+def insar(
+    *,
+    lon: npt.ArrayLike,
+    lat: npt.ArrayLike,
+    los: npt.ArrayLike,
+    sigma: npt.ArrayLike,
+    look_e: npt.ArrayLike,
+    look_n: npt.ArrayLike,
+    look_u: npt.ArrayLike,
+    name: str | None = None,
+    station_names: Sequence[str] | None = None,
+    quantity: str = "displacement",
+    units: str = "m",
+    epoch: str | None = None,
+    time_span: tuple[str, str] | None = None,
+    covariance: np.ndarray | None = None,
+    normalize_look: bool = False,
+) -> InSAR:
+    """Build a validated InSAR line-of-sight dataset.
+
+    Args:
+        lon: Pixel longitudes in degrees.
+        lat: Pixel latitudes in degrees.
+        los: Line-of-sight values.
+        sigma: Line-of-sight standard deviations.
+        look_e: East look-vector components.
+        look_n: North look-vector components.
+        look_u: Up look-vector components.
+        name: Stable dataset identifier.
+        station_names: Optional pixel labels.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units shared by values and uncertainties.
+        epoch: Optional representative epoch.
+        time_span: Optional start and end epoch labels.
+        covariance: Optional full observation covariance.
+        normalize_look: Normalize supplied look vectors when true.
+
+    Returns:
+        An existing :class:`InSAR` dataset object.
+    """
+    lon_array = np.asarray(lon, dtype=float)
+    n = lon_array.size
+    return InSAR(
+        lon=lon_array,
+        lat=np.asarray(lat, dtype=float),
+        los=_broadcast_1d("los", los, n),
+        sigma=_broadcast_1d("sigma", sigma, n),
+        look_e=_broadcast_1d("look_e", look_e, n),
+        look_n=_broadcast_1d("look_n", look_n, n),
+        look_u=_broadcast_1d("look_u", look_u, n),
+        name=None if station_names is None else np.asarray(station_names, dtype=str),
+        dataset_name=name,
+        quantity=quantity,
+        units=units,
+        epoch=epoch,
+        time_span=time_span,
+        covariance=covariance,
+        normalize_look=normalize_look,
+    )
+
+
+def vertical(
+    *,
+    lon: npt.ArrayLike,
+    lat: npt.ArrayLike,
+    displacement: npt.ArrayLike,
+    sigma: npt.ArrayLike,
+    name: str | None = None,
+    station_names: Sequence[str] | None = None,
+    quantity: str = "displacement",
+    units: str = "m",
+    epoch: str | None = None,
+    time_span: tuple[str, str] | None = None,
+    covariance: np.ndarray | None = None,
+) -> Vertical:
+    """Build a validated vertical-observation dataset.
+
+    Args:
+        lon: Observation longitudes in degrees.
+        lat: Observation latitudes in degrees.
+        displacement: Vertical displacement or velocity values.
+        sigma: Standard deviations.
+        name: Stable dataset identifier.
+        station_names: Optional point labels.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units shared by values and uncertainties.
+        epoch: Optional representative epoch.
+        time_span: Optional start and end epoch labels.
+        covariance: Optional full observation covariance.
+
+    Returns:
+        An existing :class:`Vertical` dataset object.
+    """
+    lon_array = np.asarray(lon, dtype=float)
+    n = lon_array.size
+    return Vertical(
+        lon=lon_array,
+        lat=np.asarray(lat, dtype=float),
+        displacement=_broadcast_1d("displacement", displacement, n),
+        sigma=_broadcast_1d("sigma", sigma, n),
+        name=None if station_names is None else np.asarray(station_names, dtype=str),
+        dataset_name=name,
+        quantity=quantity,
+        units=units,
+        epoch=epoch,
+        time_span=time_span,
+        covariance=covariance,
+    )
+
+
+_TABLE_FIELDS = {
+    "gnss": {
+        "lon",
+        "lat",
+        "east",
+        "north",
+        "up",
+        "sigma_east",
+        "sigma_north",
+        "sigma_up",
+    },
+    "horizontal_gnss": {
+        "lon",
+        "lat",
+        "east",
+        "north",
+        "sigma_east",
+        "sigma_north",
+    },
+    "insar": {"lon", "lat", "los", "sigma", "look_e", "look_n", "look_u"},
+    "vertical": {"lon", "lat", "displacement", "sigma"},
+}
+
+
+def from_table(
+    table: object,
+    *,
+    kind: str,
+    columns: Mapping[str, str],
+    units: str = "m",
+    missing: str = "raise",
+    name: str | None = None,
+    quantity: str = "displacement",
+    epoch: str | None = None,
+    time_span: tuple[str, str] | None = None,
+) -> DataSet:
+    """Build a dataset from explicitly mapped table columns.
+
+    The input may be a column mapping, a structured NumPy array, or any object
+    implementing the Python dataframe interchange protocol. No dataframe
+    library is required by GeoDef.
+
+    Args:
+        table: Table-like source.
+        kind: ``'gnss'``, ``'horizontal_gnss'``, ``'insar'``, or
+            ``'vertical'``.
+        columns: Mapping from GeoDef field names to source column names. Add
+            ``'station_names'`` to preserve optional point labels.
+        units: Units shared by observations and uncertainties.
+        missing: ``'raise'`` to report missing values or ``'drop'`` to remove
+            every row containing one.
+        name: Stable dataset identifier.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        epoch: Optional representative epoch.
+        time_span: Optional start and end epoch labels.
+
+    Returns:
+        An existing validated dataset class selected by ``kind``.
+
+    Raises:
+        KeyError: If a mapped source column is absent.
+        TypeError: If the table type is unsupported.
+        ValueError: If fields, lengths, or missing-value handling are invalid.
+    """
+    if kind not in _TABLE_FIELDS:
+        raise ValueError(f"unknown dataset kind {kind!r}; use {sorted(_TABLE_FIELDS)}")
+    if missing not in {"raise", "drop"}:
+        raise ValueError("missing must be 'raise' or 'drop'")
+
+    required = _TABLE_FIELDS[kind]
+    provided = set(columns)
+    missing_fields = required - provided
+    extra_fields = provided - required - {"station_names"}
+    if missing_fields:
+        raise ValueError(f"columns is missing required fields {sorted(missing_fields)}")
+    if extra_fields:
+        raise ValueError(f"columns contains unknown fields {sorted(extra_fields)}")
+
+    extracted: dict[str, np.ndarray] = {}
+    for field, source in columns.items():
+        try:
+            values = _table_column(table, source)
+        except KeyError as error:
+            raise KeyError(
+                f"source column {source!r} mapped to {field!r} was not found"
+            ) from error
+        if values.ndim != 1:
+            raise ValueError(
+                f"column {field!r} ({source!r}) must be one-dimensional, "
+                f"got shape {values.shape}"
+            )
+        extracted[field] = values
+
+    lengths = {values.size for values in extracted.values()}
+    if len(lengths) != 1:
+        detail = {field: values.size for field, values in extracted.items()}
+        raise ValueError(f"mapped table columns must have matching lengths: {detail}")
+
+    row_missing = np.zeros(next(iter(lengths)), dtype=bool)
+    missing_by_field: dict[str, np.ndarray] = {}
+    for field, values in extracted.items():
+        field_missing = _missing_mask(values)
+        missing_by_field[field] = field_missing
+        row_missing |= field_missing
+    if np.any(row_missing) and missing == "raise":
+        field = next(
+            field
+            for field, field_missing in missing_by_field.items()
+            if field_missing.any()
+        )
+        raise ValueError(
+            f"column {field!r} ({columns[field]!r}) contains missing values; "
+            "pass missing='drop' to remove incomplete rows"
+        )
+    if missing == "drop":
+        keep = ~row_missing
+        extracted = {field: values[keep] for field, values in extracted.items()}
+
+    station_names = cast(
+        Sequence[str] | None,
+        extracted.get("station_names"),
+    )
+    if kind == "gnss":
+        return gnss(
+            lon=extracted["lon"],
+            lat=extracted["lat"],
+            east=extracted["east"],
+            north=extracted["north"],
+            up=extracted["up"],
+            sigma_east=extracted["sigma_east"],
+            sigma_north=extracted["sigma_north"],
+            sigma_up=extracted["sigma_up"],
+            name=name,
+            station_names=station_names,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
+        )
+    if kind == "horizontal_gnss":
+        return horizontal_gnss(
+            lon=extracted["lon"],
+            lat=extracted["lat"],
+            east=extracted["east"],
+            north=extracted["north"],
+            sigma_east=extracted["sigma_east"],
+            sigma_north=extracted["sigma_north"],
+            name=name,
+            station_names=station_names,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
+        )
+    if kind == "insar":
+        return insar(
+            lon=extracted["lon"],
+            lat=extracted["lat"],
+            los=extracted["los"],
+            sigma=extracted["sigma"],
+            look_e=extracted["look_e"],
+            look_n=extracted["look_n"],
+            look_u=extracted["look_u"],
+            name=name,
+            station_names=station_names,
+            quantity=quantity,
+            units=units,
+            epoch=epoch,
+            time_span=time_span,
+        )
+    return vertical(
+        lon=extracted["lon"],
+        lat=extracted["lat"],
+        displacement=extracted["displacement"],
+        sigma=extracted["sigma"],
+        name=name,
+        station_names=station_names,
+        quantity=quantity,
+        units=units,
+        epoch=epoch,
+        time_span=time_span,
+    )
 
 
 def spatial_covariance(
