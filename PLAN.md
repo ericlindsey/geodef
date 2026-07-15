@@ -330,10 +330,10 @@ computations; ordinary transformations and one-shot workflows are functions.
 - [x] Keep `InversionResult` a compact, serializable data record. Add direct
   named slip views (`strike_slip`, `dip_slip`, `slip_magnitude`, `slip_rake`)
   where they are unambiguous; keep `slip_vector` as the blocked expert view.
-- [ ] Record dataset names and row slices, solver status, regularization
+- [x] Record dataset names and row slices, solver status, regularization
   selection, backend, warnings, and minimal provenance needed to interpret and
   reproduce a solve. Do not retain live `Fault` or dataset objects in results.
-- [ ] Add module functions `invert.prediction`, `invert.residual`,
+- [x] Add module functions `invert.prediction`, `invert.residual`,
   `invert.diagnostics`, and `invert.summary`, plus corresponding `plot`
   functions. Do not turn the result record into a workflow facade.
 - [ ] Define a versioned, safe result file schema with metadata and migration;

@@ -6,8 +6,8 @@ Verifies that:
   the correct values.
 - lcurve wls fast-path matches the augmented-matrix fallback.
 - abic_curve uses cached eig_LtL (checked via internal cache entry).
-- dataset_diagnostics / model_covariance / model_resolution /
-  model_uncertainty agree with the module-level wrappers.
+- prepared-system assessment agrees with the stored result diagnostics and
+  module-level covariance/resolution/uncertainty functions.
 - Validation errors are raised correctly from __init__ and invert().
 """
 
@@ -19,7 +19,7 @@ from geodef.fault import Fault
 from geodef.invert import (
     LinearSystem,
     abic_curve,
-    dataset_diagnostics,
+    diagnostics,
     lcurve,
     model_covariance,
     model_resolution,
@@ -314,7 +314,7 @@ class TestPostInversionParity:
         result = sys.invert(smoothing_strength=5.0)
         return result, sys
 
-    def test_dataset_diagnostics_matches_wrapper(
+    def test_dataset_diagnostics_matches_stored_result(
         self,
         fault_4x3,
         gnss,
@@ -322,7 +322,7 @@ class TestPostInversionParity:
     ):
         result, sys = result_and_sys
         diag_method = sys.dataset_diagnostics(result)
-        diag_func = dataset_diagnostics(result, fault_4x3, gnss)
+        diag_func = list(diagnostics(result).values())
         assert len(diag_method) == len(diag_func)
         assert diag_method[0].chi2 == pytest.approx(diag_func[0].chi2)
         assert diag_method[0].leverage == pytest.approx(diag_func[0].leverage)

@@ -127,9 +127,35 @@ through `result.strike_slip` and `result.dip_slip`.
 | `rake` | float or `None` | Fixed rake angle for `components='rake'` |
 | `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
 | `plate_rake` | `(N,)` or `None` | Per-patch large-scale direction for `components='plate'` |
+| `dataset_names` | tuple of str | Stable identifiers in stacked-row order |
+| `dataset_slices` | tuple of slice | Rows belonging to each named dataset |
+| `dataset_diagnostics` | tuple | Solve-time fit diagnostics for each dataset |
+| `solver`, `success`, `message` | scalars | Solver choice and completion status |
+| `smoothing_selection` | str or `None` | `abic`/`cv` when lambda was selected automatically |
+| `backend`, `precision` | str | Numerical backend configuration used for the solve |
+| `quantity`, `units` | str | Displacement/velocity semantics inherited from the data |
+| `warnings` | tuple of str | Interpretation warnings retained with the result |
+| `system_hash` | str | SHA-256 fingerprint for verifying a reconstructed system |
 
 Use the named physical arrays for interpretation and plotting. Use
 `slip_vector` when assembling linear algebra in the solved basis.
+
+For ordinary assessment, use functions rather than slicing stacked rows:
+
+```python
+predictions = geodef.invert.prediction(result)  # {dataset_name: array}
+residuals = geodef.invert.residual(result)      # {dataset_name: array}
+diagnostics = geodef.invert.diagnostics(result) # {dataset_name: diagnostics}
+print(geodef.invert.summary(result))
+
+geodef.plot.prediction(result)
+geodef.plot.residual(result)
+geodef.plot.diagnostics(result)
+geodef.plot.summary(result)
+```
+
+The mappings always follow solve order, including for one dataset. The stacked
+`predicted` and `residuals` arrays remain the explicit linear-algebra views.
 
 ```python
 result.save("result.npz")                   # save to disk
@@ -310,13 +336,15 @@ sigma = geodef.model_uncertainty(result, fault, [gnss, insar])
 # shape (P,); per-parameter 1-sigma from sqrt(diag(Cm))
 ```
 
-### `dataset_diagnostics(result, fault, datasets) → list[DatasetDiagnostics]`
+### `diagnostics(result) → dict[str, DatasetDiagnostics]`
 
-Per-dataset fit statistics using the hat matrix.
+Per-dataset fit statistics are computed during the solve and retained in the
+result, so assessment does not need the live fault and datasets.
 
 ```python
-diags = geodef.dataset_diagnostics(result, fault, [gnss, insar])
-for d in diags:
+diags = geodef.invert.diagnostics(result)
+for name, d in diags.items():
+    print(name)
     print(d.chi2, d.reduced_chi2, d.wrms, d.n_obs, d.dof)
 ```
 

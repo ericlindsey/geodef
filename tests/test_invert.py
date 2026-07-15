@@ -16,7 +16,7 @@ from geodef.greens import stack_obs, stack_weights
 from geodef.invert import (
     DatasetDiagnostics,
     InversionResult,
-    dataset_diagnostics,
+    diagnostics,
     model_covariance,
     model_resolution,
     model_uncertainty,
@@ -1258,7 +1258,7 @@ class TestDatasetDiagnostics:
     def test_single_dataset_returns_list(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert isinstance(diags, list)
         assert len(diags) == 1
         assert isinstance(diags[0], DatasetDiagnostics)
@@ -1268,7 +1268,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert len(diags) == 2
 
     def test_n_obs_matches_datasets(self, fault_4x3, obs_points):
@@ -1276,7 +1276,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert diags[0].n_obs == gnss.n_obs
         assert diags[1].n_obs == insar.n_obs
 
@@ -1285,7 +1285,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, slip_ss, slip_ds)
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         assert sum(d.n_obs for d in diags) == len(result.residuals)
 
     def test_dof_sums_to_total(self, fault_4x3, obs_points):
@@ -1293,7 +1293,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         insar = _make_insar(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         total_n = gnss.n_obs + insar.n_obs
         total_dof = sum(d.dof for d in diags)
@@ -1304,7 +1304,7 @@ class TestDatasetDiagnostics:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         insar = _make_insar(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, [gnss, insar])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar])
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         total_leverage = sum(d.leverage for d in diags)
         np.testing.assert_allclose(total_leverage, n_params, atol=1e-8)
@@ -1312,33 +1312,33 @@ class TestDatasetDiagnostics:
     def test_chi2_positive(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].chi2 >= 0
 
     def test_reduced_chi2_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         """Noise-free data should give near-zero chi2."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].reduced_chi2 < 1e-6
 
     def test_wrms_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].wrms < 1e-6
 
     def test_rms_near_zero_for_perfect_fit(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].rms < 1e-10
 
     def test_with_regularization(self, fault_4x3, obs_points):
         """Regularized hat matrix should have trace < n_params."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         n_params = 2 * fault_4x3.n_patches
         assert diags[0].leverage < n_params
 
@@ -1349,14 +1349,14 @@ class TestDatasetDiagnostics:
         result_reg = invert(
             fault_4x3, gnss, smoothing="laplacian", smoothing_strength=1e3
         )
-        diags_unreg = dataset_diagnostics(result_unreg, fault_4x3, gnss)
-        diags_reg = dataset_diagnostics(result_reg, fault_4x3, gnss)
+        diags_unreg = list(diagnostics(result_unreg).values())
+        diags_reg = list(diagnostics(result_reg).values())
         assert diags_reg[0].dof > diags_unreg[0].dof
 
     def test_single_component(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, components="strike")
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert diags[0].n_obs == gnss.n_obs
         assert diags[0].leverage < fault_4x3.n_patches + 1
 
@@ -1364,7 +1364,7 @@ class TestDatasetDiagnostics:
         """Should accept a single DataSet (not wrapped in list)."""
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
-        diags = dataset_diagnostics(result, fault_4x3, gnss)
+        diags = list(diagnostics(result).values())
         assert len(diags) == 1
 
     def test_three_datasets(self, fault_4x3, obs_points):
@@ -1373,7 +1373,7 @@ class TestDatasetDiagnostics:
         insar = _make_insar(fault_4x3, obs_points, slip_ss, slip_ds)
         vert = _make_vertical(fault_4x3, obs_points, slip_ss, slip_ds)
         result = invert(fault_4x3, [gnss, insar, vert])
-        diags = dataset_diagnostics(result, fault_4x3, [gnss, insar, vert])
+        diags = list(diagnostics(result).values())
         assert len(diags) == 3
         assert diags[0].n_obs == gnss.n_obs
         assert diags[1].n_obs == insar.n_obs

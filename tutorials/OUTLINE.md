@@ -434,7 +434,7 @@ derived quantities.
   estimate, with uncertainty.
 
 **Key calls.** `geodef.model_covariance(...)`, `geodef.model_resolution(...)`,
-`geodef.model_uncertainty(...)`, `geodef.dataset_diagnostics(...)`,
+`geodef.model_uncertainty(...)`, `geodef.invert.diagnostics(...)`,
 `fault.moment(...)` / magnitude; `plot.resolution`, `plot.uncertainty`.
 
 **Plots.** Per-patch uncertainty map; resolution diagonal map; a checkerboard

@@ -173,6 +173,17 @@ geodef.plot.fit(gnss.obs, result.predicted[:gnss.n_obs],
     style='residual_histogram')
 ```
 
+For an inversion result, the named assessment plots avoid manual slicing and
+do not require the original fault or dataset objects:
+
+```python
+geodef.plot.prediction(result)                     # observed vs predicted
+geodef.plot.residual(result)                       # residual histograms
+geodef.plot.diagnostics(result)                    # reduced chi-squared bars
+geodef.plot.diagnostics(result, metric="rms")
+geodef.plot.summary(result)                        # assumptions and fit text
+```
+
 ---
 
 ## `plot.fault3d(fault, **kwargs)`
