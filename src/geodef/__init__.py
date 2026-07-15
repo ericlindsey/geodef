@@ -11,6 +11,7 @@ from geodef import (
     geometry,
     gradients,
     greens,
+    invert,
     medium,
     mesh,
     okada,
@@ -37,11 +38,11 @@ from geodef.invert import (
     compute_abic,
     dataset_diagnostics,
     geometry_search,
-    invert,
     lcurve,
     model_covariance,
     model_resolution,
     model_uncertainty,
+    solve,
 )
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
 
@@ -55,6 +56,7 @@ __all__ = [
     "geometry",
     "gradients",
     "greens",
+    "invert",
     "medium",
     "mesh",
     "okada",
@@ -93,7 +95,7 @@ __all__ = [
     "compute_abic",
     "dataset_diagnostics",
     "geometry_search",
-    "invert",
+    "solve",
     "lcurve",
     "model_covariance",
     "model_resolution",

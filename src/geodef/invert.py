@@ -27,7 +27,7 @@ from geodef.geometry import (
     _resolve_frame,
     as_planar_vector,
 )
-from geodef.greens import greens, select_slip_columns, stack_obs, stack_weights
+from geodef.greens import matrix, select_slip_columns, stack_obs, stack_weights
 from geodef.slip import from_plate, from_rake, magnitude, unpack
 from geodef.slip import rake as slip_rake
 
@@ -661,7 +661,7 @@ class LinearSystem:
         self._n_patches = n_patches
         self._n_params = n_components * n_patches
 
-        G_full = greens(fault, datasets)
+        G_full = matrix(fault, datasets)
         self.d = stack_obs(datasets)
         self.W = stack_weights(datasets)
         self.G = select_slip_columns(
@@ -1266,7 +1266,7 @@ class LinearSystem:
 # ======================================================================
 
 
-def invert(
+def solve(
     fault: Fault,
     datasets: DataSet | list[DataSet],
     smoothing: str | np.ndarray | None = None,

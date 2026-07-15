@@ -861,7 +861,7 @@ def spatial_covariance(
     This is the standard way to represent spatially-correlated InSAR noise
     (atmosphere, orbits) instead of assuming diagonal ``C_d``. Pass the result
     as ``covariance=`` to a single-component-per-station dataset (``InSAR`` or
-    ``Vertical``), or thread it through ``geodef.invert()``.
+    ``Vertical``), or thread it through ``geodef.invert.solve()``.
 
     The covariance is ``C_ij = sill * rho(d_ij) + nugget * delta_ij`` where
     ``rho`` is the correlation function:

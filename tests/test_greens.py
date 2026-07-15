@@ -10,6 +10,7 @@ from geodef.greens import (
     build_laplacian_2d,
     build_laplacian_2d_simple,
     build_laplacian_knn,
+    laplacian,
     select_slip_columns,
 )
 
@@ -44,6 +45,23 @@ class TestSlipColumnSelection:
 
 class TestLaplacian2D:
     """Tests for build_laplacian_2d."""
+
+    def test_fault_laplacian_function(self):
+        from geodef.fault import Fault
+
+        fault = Fault.planar(
+            lat=0.0,
+            lon=100.0,
+            depth=10_000.0,
+            strike=0.0,
+            dip=30.0,
+            length=20_000.0,
+            width=10_000.0,
+            n_length=3,
+            n_width=3,
+        )
+
+        np.testing.assert_array_equal(laplacian(fault), fault.laplacian)
 
     def test_matrix_shape(self):
         nL, nW = 5, 4

@@ -1,8 +1,8 @@
-"""Tests for geodef.greens() polymorphic Green's matrix assembly (Phase 3.3).
+"""Tests for polymorphic Green's matrix assembly (Phase 3.3).
 
-Covers: greens() with single and joint datasets, all data types (GNSS,
+Covers: matrix() with single and joint datasets, all data types (GNSS,
 InSAR, Vertical), consistency with fault.displacement(), stack_obs(),
-stack_weights(), _project_greens(), and tri engine support.
+stack_weights(), project(), and tri engine support.
 """
 
 import numpy as np
@@ -12,8 +12,10 @@ import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
 from geodef.greens import (
-    _project_greens,
-    greens,
+    matrix as greens,
+)
+from geodef.greens import (
+    project,
     select_slip_columns,
     stack_obs,
     stack_weights,
@@ -123,7 +125,7 @@ def vertical_4pt(obs_points):
 
 
 # ======================================================================
-# 1. greens() shape tests — single dataset
+# 1. matrix() shape tests — single dataset
 # ======================================================================
 
 
@@ -148,7 +150,7 @@ class TestGreensShape:
 
 
 # ======================================================================
-# 2. greens() shape tests — joint datasets
+# 2. matrix() shape tests — joint datasets
 # ======================================================================
 
 
@@ -180,7 +182,7 @@ class TestGreensJoint:
 
 
 class TestConsistencyWithDisplacement:
-    """Verify that greens() @ slip == fault.displacement() results."""
+    """Verify that matrix() @ slip == fault.displacement() results."""
 
     def test_gnss_forward_model(self, single_patch, obs_points):
         lat, lon = obs_points
@@ -360,21 +362,21 @@ class TestStackUtilities:
 
 
 # ======================================================================
-# 7. _project_greens internal helper
+# 7. project() helper
 # ======================================================================
 
 
 class TestProjectGreens:
-    """Tests for the _project_greens helper function."""
+    """Tests for the project helper function."""
 
     def test_insar_projection_reduces_rows(self, fault_4x3, insar_4pixel):
         G_raw = fault_4x3.greens_matrix(insar_4pixel.lat, insar_4pixel.lon)
-        G_proj = _project_greens(insar_4pixel, G_raw)
+        G_proj = project(insar_4pixel, G_raw)
         assert G_proj.shape == (4, 24)  # from (12, 24) to (4, 24)
 
     def test_gnss_3comp_preserves_rows(self, fault_4x3, gnss_4station):
         G_raw = fault_4x3.greens_matrix(gnss_4station.lat, gnss_4station.lon)
-        G_proj = _project_greens(gnss_4station, G_raw)
+        G_proj = project(gnss_4station, G_raw)
         assert G_proj.shape == (12, 24)  # 3*4 stays 3*4
 
     def test_vertical_extracts_uz(self, single_patch, obs_points):
@@ -382,7 +384,7 @@ class TestProjectGreens:
         n = len(lat)
         vert = Vertical(lon=lon, lat=lat, displacement=np.zeros(n), sigma=np.ones(n))
         G_raw = single_patch.greens_matrix(lat, lon)
-        G_proj = _project_greens(vert, G_raw)
+        G_proj = project(vert, G_raw)
 
         # Vertical projection should extract rows 2, 5, 8, 11 from G_raw
         G_uz = G_raw[2::3, :]
@@ -395,10 +397,10 @@ class TestProjectGreens:
 
 
 class TestTopLevelAPI:
-    """Verify greens() is accessible from geodef namespace."""
+    """Verify matrix() is accessible from the greens namespace."""
 
     def test_greens_accessible(self):
-        assert hasattr(geodef.greens, "greens")
+        assert hasattr(geodef.greens, "matrix")
 
     def test_stack_obs_accessible(self):
         assert hasattr(geodef, "stack_obs")
@@ -469,7 +471,7 @@ class TestTriEngine:
         assert np.any(G != 0.0)
 
     def test_tri_with_greens_function(self, tri_fault):
-        """greens() works with tri engine faults."""
+        """matrix() works with tri engine faults."""
         obs_lat = np.array([0.1, -0.1])
         obs_lon = np.array([100.1, 99.9])
         n = len(obs_lat)
@@ -501,12 +503,12 @@ class TestTriEngine:
 
 
 # ======================================================================
-# 6. greens() component selection
+# 6. matrix() component selection
 # ======================================================================
 
 
 class TestGreensComponents:
-    """greens(components=...) reduces columns like the inversion path."""
+    """matrix(components=...) reduces columns like the inversion path."""
 
     def test_both_is_default(self, fault_4x3, gnss_4station):
         G_default = greens(fault_4x3, gnss_4station)

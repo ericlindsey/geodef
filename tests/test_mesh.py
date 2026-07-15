@@ -1479,7 +1479,7 @@ class TestIntegration:
             su=np.array([0.001]),
         )
 
-        G = greens_mod.greens(fault, gnss)
+        G = greens_mod.matrix(fault, gnss)
         assert G.shape[0] == 3  # 3 components
         assert G.shape[1] == fault.n_patches * 2  # ss + ds
 

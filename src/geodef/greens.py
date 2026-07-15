@@ -3,7 +3,7 @@
 Combines displacement/strain Green's matrix construction (from okada_greens)
 with patch grid generation, component Green's functions, and Laplacian
 regularization operators (from okada_utils). Also provides the polymorphic
-``greens()`` function for assembling projected Green's matrices from
+``matrix()`` function for assembling projected Green's matrices from
 ``Fault`` and ``DataSet`` objects.
 """
 
@@ -735,7 +735,7 @@ def select_slip_columns(
     return G_full[:, :n_patches] * np.cos(theta) + G_full[:, n_patches:] * np.sin(theta)
 
 
-def greens(
+def matrix(
     fault: Fault,
     datasets: DataSet | list[DataSet],
     *,
@@ -757,7 +757,8 @@ def greens(
             (default, ``2*N`` columns), ``'strike'``, ``'dip'``, ``'rake'``
             (fixed rake), ``'azimuth'`` (fixed geographic slip azimuth), or
             ``'plate'`` (plate-rake-parallel/perpendicular coordinates).
-            The reduction uses the same semantics as :func:`geodef.invert`.
+            The reduction uses the same semantics as
+            :func:`geodef.invert.solve`.
         rake: Fixed rake angle in degrees, required for ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``components='azimuth'``.
@@ -780,7 +781,7 @@ def greens(
         key = _build_greens_key(fault, data)
         G_proj = _cache.cached_compute(
             key,
-            lambda: _project_greens(
+            lambda: project(
                 data, fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
             ),
         )
@@ -839,7 +840,7 @@ def stack_weights(datasets: DataSet | list[DataSet]) -> np.ndarray:
     return scipy.linalg.block_diag(*blocks)
 
 
-def _project_greens(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
+def project(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
     """Project a raw Green's matrix through a dataset's projection.
 
     For displacement Green's matrices (3 components per station), reshapes
@@ -874,6 +875,18 @@ def _project_greens(data: DataSet, G_raw: np.ndarray) -> np.ndarray:
         G_proj[:, col] = data.project(*[components[:, c] for c in range(n_comp)])
 
     return G_proj
+
+
+def laplacian(fault: Fault) -> np.ndarray:
+    """Return the fault's patch Laplacian regularization matrix.
+
+    Args:
+        fault: Rectangular or triangular fault.
+
+    Returns:
+        Dense Laplacian matrix with shape ``(N, N)``.
+    """
+    return fault.laplacian
 
 
 def resolution(G: np.ndarray) -> np.ndarray:

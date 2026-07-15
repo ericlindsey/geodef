@@ -20,11 +20,13 @@ from geodef.invert import (
     LinearSystem,
     abic_curve,
     dataset_diagnostics,
-    invert,
     lcurve,
     model_covariance,
     model_resolution,
     model_uncertainty,
+)
+from geodef.invert import (
+    solve as invert,
 )
 
 # ======================================================================

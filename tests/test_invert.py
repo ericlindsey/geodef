@@ -11,15 +11,18 @@ import scipy.linalg
 
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
-from geodef.greens import greens, stack_obs, stack_weights
+from geodef.greens import matrix as greens
+from geodef.greens import stack_obs, stack_weights
 from geodef.invert import (
     DatasetDiagnostics,
     InversionResult,
     dataset_diagnostics,
-    invert,
     model_covariance,
     model_resolution,
     model_uncertainty,
+)
+from geodef.invert import (
+    solve as invert,
 )
 from geodef.slip import from_plate, pack
 

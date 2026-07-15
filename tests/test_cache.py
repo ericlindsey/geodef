@@ -10,7 +10,7 @@ from geodef.cache import compute_hash
 from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
 from geodef.geometry import LocalFrame
-from geodef.greens import greens
+from geodef.greens import matrix as greens
 
 # ====================================================================
 # Group 1: compute_hash (pure function)
@@ -297,7 +297,7 @@ class TestInfo:
 
 
 # ====================================================================
-# Group 5: Integration with greens()
+# Group 5: Integration with matrix()
 # ====================================================================
 
 
@@ -353,7 +353,7 @@ def insar_data() -> InSAR:
 
 
 class TestGreensIntegration:
-    """Tests for caching integration with greens()."""
+    """Tests for caching integration with matrix()."""
 
     def test_greens_caches_result(self, fault_small: Fault, gnss_data: GNSS) -> None:
         """First call creates cache file, second call uses it."""
