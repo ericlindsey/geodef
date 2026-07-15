@@ -39,7 +39,7 @@ geodef.cache.clear()    # delete all cached files
 
 ## How caching works
 
-`geodef.greens.greens()` and `Fault.stress_kernel()` automatically cache their
+`geodef.greens.matrix()` and `Fault.stress_kernel()` automatically cache their
 results. The cache key is computed from all input arrays and parameters (fault
 geometry, observation coordinates, data class, active GNSS components, look
 vectors, etc.) using SHA-256. If the key matches an existing `.npz` file, the
@@ -67,7 +67,7 @@ To bypass caching entirely for a session:
 
 ```python
 geodef.cache.disable()
-G = geodef.greens.greens(fault, gnss)  # always recomputes
+G = geodef.greens.matrix(fault, gnss)  # always recomputes
 geodef.cache.enable()
 ```
 

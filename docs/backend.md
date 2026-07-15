@@ -100,8 +100,8 @@ and rerun the final inversion in float64:
 geodef.backend.set_precision("float32")
 ac = geodef.abic_curve(fault, data, smoothing="laplacian")   # fast sweep
 geodef.backend.set_precision("float64")
-result = geodef.invert(fault, data, smoothing="laplacian",
-                       smoothing_strength=ac.optimal)         # final solve
+result = geodef.invert.solve(fault, data, smoothing="laplacian",
+                             smoothing_strength=ac.optimal)   # final solve
 ```
 
 With the JAX backend, precision is synced to JAX's `jax_enable_x64` flag,

@@ -28,28 +28,28 @@ ordering as the stacked observation vector.
 
 ## High-level assembly
 
-### `greens(fault, datasets, *, components='both', rake=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
+### `matrix(fault, datasets, *, components='both', rake=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
 Build the projected Green's matrix for one or more datasets. Results are automatically cached.
 
 ```python
 import geodef
 
-G = geodef.greens.greens(fault, gnss)                # shape (n_obs, 2*N)
-G = geodef.greens.greens(fault, [gnss, insar])       # rows stacked vertically
+G = geodef.greens.matrix(fault, gnss)                # shape (n_obs, 2*N)
+G = geodef.greens.matrix(fault, [gnss, insar])       # rows stacked vertically
 ```
 
 By default columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
 
-Pass `components=` to have `greens()` return a single-component matrix (shape
-`(n_obs, N)`) directly, using the same slip basis as `geodef.invert()`:
+Pass `components=` to have `matrix()` return a single-component matrix (shape
+`(n_obs, N)`) directly, using the same slip basis as `geodef.invert.solve()`:
 
 ```python
-G_strike = geodef.greens.greens(fault, gnss, components='strike')
-G_dip    = geodef.greens.greens(fault, gnss, components='dip')
-G_rake   = geodef.greens.greens(fault, gnss, components='rake', rake=90.0)
-G_az     = geodef.greens.greens(fault, gnss, components='azimuth', slip_azimuth=350.0)
-G_plate  = geodef.greens.greens(fault, gnss, components='plate', plate_rake=plate_rake)
+G_strike = geodef.greens.matrix(fault, gnss, components='strike')
+G_dip    = geodef.greens.matrix(fault, gnss, components='dip')
+G_rake   = geodef.greens.matrix(fault, gnss, components='rake', rake=90.0)
+G_az     = geodef.greens.matrix(fault, gnss, components='azimuth', slip_azimuth=350.0)
+G_plate  = geodef.greens.matrix(fault, gnss, components='plate', plate_rake=plate_rake)
 ```
 
 For `'rake'` (a single rake for every patch) and `'azimuth'` (a fixed
@@ -64,9 +64,9 @@ triangle orientations.
 
 ### `select_slip_columns(G_full, n_patches, components, rake=None, fault_strike=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
-The reduction primitive behind `greens(components=...)`. Apply it to any
+The reduction primitive behind `matrix(components=...)`. Apply it to any
 already-assembled `(M, 2*N)` matrix — a Green's matrix or a stress kernel — to
-project it into a one-component slip basis. `geodef.invert()` uses it internally
+project it into a one-component slip basis. `geodef.invert.solve()` uses it internally
 for `components='strike'|'dip'|'rake'|'azimuth'|'plate'` and to project
 stress-kernel regularization into the active basis.
 
@@ -86,7 +86,7 @@ Build block-diagonal inverse-covariance weight matrix.
 W = geodef.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 ```
 
-`geodef.invert()` calls these internally; use them directly when assembling `G @ m` by hand.
+`geodef.invert.solve()` calls these internally; use them directly when assembling `G @ m` by hand.
 
 `W` is the inverse covariance, not a vector of standard deviations. In
 derivations it is often clearer to whiten the system with a matrix `R` such
@@ -95,6 +95,17 @@ that `R.T @ R = W`, then solve with `R @ G` and `R @ d`.
 ---
 
 ## Laplacian operators
+
+### `project(data, G_raw) → np.ndarray`
+
+Project a raw three-component displacement matrix into a dataset's observed
+components. This is useful when assembling a custom forward operator.
+
+### `laplacian(fault) → np.ndarray`
+
+Return the fault's patch-order-aware Laplacian matrix. This is the convenient
+entry point for ordinary use; the builders below remain available for custom
+grids.
 
 ### `build_laplacian_2d(nL, nW) → np.ndarray`
 

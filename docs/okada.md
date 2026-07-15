@@ -136,4 +136,4 @@ All low-level engines use a local Cartesian frame:
 - `z` — observation depth (≤ 0 for surface or below)
 - `depth` — fault centroid depth (positive down)
 
-The `Fault.greens_matrix()` and `greens.greens()` functions handle the geographic-to-local conversion automatically.
+The `Fault.greens_matrix()` and `greens.matrix()` functions handle the geographic-to-local conversion automatically.

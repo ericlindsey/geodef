@@ -28,31 +28,31 @@ for general background.
 
 ---
 
-## `invert(fault, datasets, **kwargs) → InversionResult`
+## `solve(fault, datasets, **kwargs) → InversionResult`
 
 ```python
 import geodef
 
 # Unregularized WLS
-result = geodef.invert(fault, [gnss, insar])
+result = geodef.invert.solve(fault, [gnss, insar])
 
 # Laplacian smoothing, non-negative
-result = geodef.invert(fault, [gnss, insar],
-                       smoothing='laplacian',
-                       smoothing_strength=1e3,
-                       bounds=(0, None))
+result = geodef.invert.solve(fault, [gnss, insar],
+                             smoothing='laplacian',
+                             smoothing_strength=1e3,
+                             bounds=(0, None))
 
 # One-parameter slip bases
-result = geodef.invert(fault, gnss, components='rake', rake=90.0)
-result = geodef.invert(fault, gnss,
-                       components='azimuth', slip_azimuth=15.0)
+result = geodef.invert.solve(fault, gnss, components='rake', rake=90.0)
+result = geodef.invert.solve(fault, gnss,
+                             components='azimuth', slip_azimuth=15.0)
 
 # Two plate-motion coordinates, suitable for variable-orientation meshes
 plate_rake = geodef.slip.plate_rake_from_euler(
     fault, (pole_lat, pole_lon, rate)
 )
-result = geodef.invert(fault, gnss,
-                       components='plate', plate_rake=plate_rake)
+result = geodef.invert.solve(fault, gnss,
+                             components='plate', plate_rake=plate_rake)
 ```
 
 ### Key parameters
@@ -190,8 +190,8 @@ ac.optimal       # λ at minimum ABIC
 ### Auto-tuning via `smoothing_strength`
 
 ```python
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='abic')
-result = geodef.invert(fault, data, smoothing='laplacian', smoothing_strength='cv')
+result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='abic')
+result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='cv')
 ```
 
 On the JAX backend (`geodef.backend.set_backend('jax')`), `abic_curve`

@@ -85,7 +85,7 @@ These are acceptance criteria for every roadmap item.
 ### What already serves learners well
 
 - The core relation `d = G m` is visible rather than hidden behind a framework.
-- `Fault.planar(...)`, `fault.displacement(...)`, and `geodef.invert(...)` form
+- `Fault.planar(...)`, `fault.displacement(...)`, and `geodef.solve(...)` form
   a compact path from geometry to a solution.
 - NumPy is the default; advanced compilation and sampling are opt-in.
 - Durable domain objects are immutable, synthetic tutorials are reproducible, and the
@@ -294,16 +294,15 @@ computations; ordinary transformations and one-shot workflows are functions.
 
 ### 1.2 Give the functional namespaces memorable names
 
-- [ ] Make the module path the primary discovery surface. Prefer specific names
+- [x] Make the module path the primary discovery surface. Prefer specific names
   over umbrella verbs: `geodef.invert.solve`, `lcurve`, `abic_curve`,
   `dataset_diagnostics`, and `model_covariance`; `geodef.greens.matrix`,
   `project`, and `laplacian`; `geodef.slip.pack`, `unpack`, `from_rake`,
   `from_azimuth`, `from_plate`, `to_plate`, `magnitude`, and `rake`.
-- [ ] Resolve the top-level `geodef.invert` function/module collision over two
-  minor releases: first add `geodef.solve` and deprecate the callable
-  `geodef.invert(...)`; then free `geodef.invert` for the module so
-  `geodef.invert.solve(...)` works after ordinary `import geodef`. Do not use a
-  callable module proxy merely to make both meanings coexist.
+- [x] Resolve the top-level `geodef.invert` function/module collision directly
+  before release: `geodef.invert` is the module, `geodef.invert.solve(...)` is
+  the primary call, and `geodef.solve(...)` is the short alias. No deprecation
+  shim or callable-module proxy is needed because the draft API has no users.
 - [x] Represent a slip basis with explicit function keywords (`components`,
   `rake`, `slip_azimuth`, `plate_rake`) and conversion functions. Do not create
   `SlipBasis`, `Regularization`, or `Bounds` configuration classes.

@@ -80,7 +80,7 @@ Invert directly in those coordinates with `components="plate"` and
 `[parallel | perpendicular]` and exposes both the solved and physical views:
 
 ```python
-result = geodef.invert(
+result = geodef.invert.solve(
     fault,
     datasets,
     components="plate",
