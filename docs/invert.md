@@ -158,10 +158,18 @@ The mappings always follow solve order, including for one dataset. The stacked
 `predicted` and `residuals` arrays remain the explicit linear-algebra views.
 
 ```python
-result.save("result.npz")                   # save to disk
-result.save_table("result.txt", fault)       # human-readable per-patch table
-result = InversionResult.load("result.npz") # reload
+geodef.invert.save(result, "result.npz")
+geodef.invert.save_table(result, "result.txt", fault)
+result = geodef.invert.load("result.npz")
 ```
+
+`invert.save` writes `result.npz` and a readable `result.manifest.json`. The
+same versioned manifest is embedded in the NumPy archive, so the `.npz` remains
+portable by itself. The archive contains numeric arrays only and is always
+loaded with pickling disabled. On load, GeoDef verifies the schema version plus
+every array's declared shape, dtype, and SHA-256 checksum. Unversioned result
+archives written by the earlier development API are migrated in memory and
+marked with a warning; saving the loaded result writes the current schema.
 
 ---
 

@@ -336,7 +336,7 @@ computations; ordinary transformations and one-shot workflows are functions.
 - [x] Add module functions `invert.prediction`, `invert.residual`,
   `invert.diagnostics`, and `invert.summary`, plus corresponding `plot`
   functions. Do not turn the result record into a workflow facade.
-- [ ] Define a versioned, safe result file schema with metadata and migration;
+- [x] Define a versioned, safe result file schema with metadata and migration;
   retain `.npz` portability and add a human-readable manifest.
 
 ### 1.5 Friendlier data functions

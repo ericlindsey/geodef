@@ -17,9 +17,12 @@ from geodef.invert import (
     DatasetDiagnostics,
     InversionResult,
     diagnostics,
+    load,
     model_covariance,
     model_resolution,
     model_uncertainty,
+    save,
+    save_table,
 )
 from geodef.invert import (
     solve as invert,
@@ -1520,7 +1523,7 @@ class TestModelUncertainty:
 
 
 class TestInversionResultIO:
-    """Test InversionResult.save(), .load(), and .save_table()."""
+    """Test functional result archive and table I/O."""
 
     def _make_result(self, fault_4x3, obs_points):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
@@ -1534,21 +1537,21 @@ class TestInversionResultIO:
     def test_save_creates_npz(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
+        save(result, fpath)
         assert fpath.exists()
 
     def test_save_load_roundtrip_slip(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.slip, result.slip)
 
     def test_save_load_roundtrip_predicted(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.predicted, result.predicted)
 
     def test_chi2_has_no_compatibility_alias(self):
@@ -1557,8 +1560,8 @@ class TestInversionResultIO:
     def test_save_load_roundtrip_scalars(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         np.testing.assert_allclose(loaded.reduced_chi2, result.reduced_chi2)
         np.testing.assert_allclose(loaded.rms, result.rms)
         np.testing.assert_allclose(loaded.moment, result.moment)
@@ -1570,29 +1573,29 @@ class TestInversionResultIO:
         result = self._make_result(fault_4x3, obs_points)
         assert isinstance(result.smoothing, str)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.smoothing == result.smoothing
 
     def test_save_load_no_smoothing(self, fault_4x3, obs_points, tmp_path):
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss)
         fpath = tmp_path / "result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.smoothing is None
         assert loaded.smoothing_strength is None
 
     def test_save_table_creates_file(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         assert fpath.exists()
 
     def test_save_table_has_header_stats(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "chi2" in text.lower() or "rms" in text.lower()
         assert "Mw" in text or "mw" in text.lower()
@@ -1600,7 +1603,7 @@ class TestInversionResultIO:
     def test_save_table_rect_fault_columns(self, fault_4x3, obs_points, tmp_path):
         result = self._make_result(fault_4x3, obs_points)
         fpath = tmp_path / "result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         # Data lines (non-comment) should have at least 9 columns
         data_lines = [
             ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
@@ -1622,7 +1625,7 @@ class TestInversionResultIO:
         gnss = _make_gnss(fault, (lat_pts, lon_pts), 1.0, 0.0)
         result = invert(fault, gnss)
         fpath = tmp_path / "tri_result.dat"
-        result.save_table(fpath, fault)
+        save_table(result, fpath, fault)
         data_lines = [
             ln for ln in fpath.read_text().splitlines() if ln and not ln.startswith("#")
         ]
@@ -1773,8 +1776,8 @@ class TestComponentsRake:
         )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.components == "rake"
         assert loaded.rake == pytest.approx(rake)
         np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
@@ -1787,7 +1790,7 @@ class TestComponentsRake:
         )
         result = invert(fault_4x3, gnss, components="rake", rake=rake)
         fpath = tmp_path / "rake_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_amplitude_m" in text
 
@@ -1796,7 +1799,7 @@ class TestComponentsRake:
         gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
         result = invert(fault_4x3, gnss, components="dip")
         fpath = tmp_path / "dip_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_dip_m" in text
         assert "slip_strike_m" not in text
@@ -1875,8 +1878,8 @@ class TestComponentsPlate:
         result = invert(fault_4x3, gnss, components="plate", plate_rake=plate_rake)
 
         path = tmp_path / "plate_result.npz"
-        result.save(path)
-        loaded = InversionResult.load(path)
+        save(result, path)
+        loaded = load(path)
 
         np.testing.assert_allclose(loaded.slip_vector, result.slip_vector)
         np.testing.assert_allclose(loaded.plate_rake, plate_rake)
@@ -2000,8 +2003,8 @@ class TestComponentsAzimuth:
         )
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         fpath = tmp_path / "az_result.npz"
-        result.save(fpath)
-        loaded = InversionResult.load(fpath)
+        save(result, fpath)
+        loaded = load(fpath)
         assert loaded.components == "azimuth"
         assert loaded.slip_azimuth == pytest.approx(az)
         assert loaded.rake is None
@@ -2012,6 +2015,6 @@ class TestComponentsAzimuth:
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         fpath = tmp_path / "az_result.dat"
-        result.save_table(fpath, fault_4x3)
+        save_table(result, fpath, fault_4x3)
         text = fpath.read_text()
         assert "slip_amplitude_m" in text
