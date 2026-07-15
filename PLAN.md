@@ -345,7 +345,7 @@ computations; ordinary transformations and one-shot workflows are functions.
   `data.vertical` functions with keyword-only component names and sensible
   defaults. They return the existing validated dataset classes; class
   constructors remain available for compatibility.
-- [ ] Add `data.from_table` with explicit column mappings, units,
+- [x] Add `data.from_table` with explicit column mappings, units,
   missing-value handling, and station names. Keep dataframe libraries optional
   and accept the Python dataframe interchange protocol rather than coupling the
   core to one implementation.

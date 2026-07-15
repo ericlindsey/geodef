@@ -169,6 +169,35 @@ All data classes share:
 | `data.epoch` | Optional representative epoch label |
 | `data.time_span` | Optional `(start, end)` epoch labels |
 
+### Constructing from a table
+
+`data.from_table` accepts a plain column mapping, a structured NumPy array, or
+an object implementing the Python dataframe interchange protocol. This keeps
+Pandas, Polars, and other dataframe libraries optional. Column mappings are
+always explicit, so a source's abbreviations and unit-bearing names cannot be
+silently misinterpreted.
+
+```python
+vertical = data.from_table(
+    table,
+    kind="vertical",
+    columns={
+        "lon": "longitude",
+        "lat": "latitude",
+        "displacement": "uplift_mm",
+        "sigma": "uplift_sigma_mm",
+        "station_names": "benchmark",
+    },
+    units="mm",
+    name="leveling",
+)
+```
+
+Choose `kind="gnss"`, `"horizontal_gnss"`, `"insar"`, or `"vertical"`.
+By default, a missing value raises an error naming both the GeoDef field and
+source column. Pass `missing="drop"` to discard every incomplete row before
+the normal dataset validation runs.
+
 ### Site names
 
 The construction functions accept `station_names=` for per-station labels and
