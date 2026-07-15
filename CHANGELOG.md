@@ -7,8 +7,24 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-15
+
 ### Added
 
+- Function-oriented everyday APIs: `data.gnss`, `data.horizontal_gnss`,
+  `data.insar`, `data.vertical`, dataframe-neutral `data.from_table`, named
+  `greens` and `slip` conversions, and explicit patch reshape/flatten helpers.
+- Stable dataset identifiers, station labels, displacement/velocity semantics,
+  units, epoch, and time-span metadata. Joint inversion results retain named
+  row partitions, solver/regularization/backend provenance, interpretation
+  warnings, reproducibility inputs, and solve-time per-dataset diagnostics
+  without retaining live fault or dataset objects.
+- `invert.prediction`, `invert.residual`, `invert.diagnostics`, and
+  `invert.summary`, with corresponding result-aware plotting functions that do
+  not require manual row slicing.
+- Versioned, checksum-verified result archives through `invert.save` and
+  `invert.load`: numeric-only `.npz` data, an embedded manifest, a readable
+  JSON sidecar, and in-memory migration of older unversioned archives.
 - `geodef.validation`: fail-early physical input validation on every public
   constructor (non-finite values, bad latitudes/dips/depths, non-positive
   uncertainties, non-unit InSAR look vectors with a `normalize_look`
@@ -62,6 +78,14 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed
 
+- **breaking** — `geodef.invert` is consistently the module,
+  `geodef.invert.solve(...)` is the primary inversion call, and
+  `geodef.solve(...)` is the short alias. The colliding top-level callable and
+  the redundant module-level `dataset_diagnostics(result, fault, datasets)`
+  path were removed during the pre-release window.
+- **breaking** — result I/O is functional: use `invert.save`, `invert.load`,
+  and `invert.save_table`; `InversionResult` remains a compact data record
+  rather than becoming a workflow facade.
 - **breaking** — `GNSS`, `InSAR`, `Vertical`, `Fault.planar`, and
   `Fault.planar_from_corner` are now keyword-only (and `from_triangles`
   after `vertices`): the geographic ordering policy is lon-first for new
@@ -95,7 +119,7 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 - Golden okada92 comparisons use `rtol=1e-9` so platform/NumPy roundoff
   drift does not produce false failures.
 
-## [1.1.0] - 2026-07
+## [0.0.1] - 2026-07-12
 
 Baseline for this changelog; see `git log` for prior detail.
 

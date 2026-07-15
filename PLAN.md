@@ -17,7 +17,7 @@ request or major change is wrapping up.
 
 ---
 
-## Shipped baseline (v1.1)
+## Current foundation (v0.1)
 
 The following capabilities are complete and are foundations, not open roadmap
 items:
@@ -628,20 +628,18 @@ does not multiply special cases in beginner-facing code.
 The priorities are ordered deliberately, but each phase should deliver useful
 increments rather than becoming a long-lived rewrite.
 
-1. **v1.1.x consistency releases:** Priority 0, documentation corrections,
-   packaging fixes, licensing/CI/typing scaffolding, cache-key completeness,
-   validation, and deprecation scaffolding.
-2. **v1.2 beginner workflow:** a small function-oriented `invert`, `greens`,
-   `slip`, and `data` surface; `LocalFrame`; named result views; and the revised
-   quickstart.
-3. **v1.3 scale layer:** callable noise/linear operators, nuisance parameters,
-   module extractions, and large-problem diagnostics. `LinearSystem` remains the
-   optional prepared-system API for repeated analyses.
-4. **Parallel research releases:** remaining JAX work and SMC can proceed in
-   small units once their touched public semantics are settled.
-5. **v2 candidates:** only genuinely breaking cleanup that survived a full
-   deprecation cycle; new engines and cycle modeling do not by themselves
-   justify a major-version break.
+1. **v0.1 foundation:** Priorities 0 and 1 — consistency, validation,
+   packaging/licensing/CI, safe caching, explicit material parameters, and the
+   small function-oriented everyday API.
+2. **v0.2 learning release:** Priority 2's quickstart, revised course,
+   reproducible examples, and usability tests.
+3. **Later 0.x releases:** implementation boundaries, callable operators,
+   nuisance parameters, large-problem diagnostics, and the remaining JAX and
+   Bayesian work. `LinearSystem` remains the optional prepared-system API for
+   repeated analyses.
+4. **v1.0:** only after this roadmap is complete and the resulting public
+   workflows have gone through human testing. New engines or a large feature
+   count do not by themselves justify 1.0.
 
 For each user-facing phase, require:
 

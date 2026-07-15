@@ -28,6 +28,10 @@ GeoDef versions are `MAJOR.MINOR.PATCH`:
   do not remove or repurpose public names.
 - **Major** releases may remove names whose deprecation period has elapsed.
 
+The 0.x series is the pre-release development line. Version 1.0 is reserved
+until the roadmap is complete and the resulting workflows have undergone
+human testing; reaching a large feature count alone does not trigger 1.0.
+
 ## Deprecation
 
 After the first public release, a public name or behavior is removed only
@@ -64,7 +68,8 @@ window, pin a git commit and read `CHANGELOG.md` when updating.
 
 ## Dependencies
 
-- `numpy`, `scipy`, and `matplotlib` are the only required dependencies.
+- `numpy`, `scipy`, `matplotlib`, and `orjson` are the only required
+  dependencies. `orjson` writes safe, versioned result manifests.
 - Optional stacks (JAX, blackjax, meshpy, netCDF4, pyproj, cartopy) are
   never imported at `import geodef` time and never required by the base
   install; features that need them raise a clear `ImportError` naming the
