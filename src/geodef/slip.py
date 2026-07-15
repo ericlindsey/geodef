@@ -115,9 +115,7 @@ def from_rake(
         ``(strike_slip, dip_slip)`` arrays, each shape ``(N,)``.
     """
     amplitude_array = _as_1d(amplitude, "amplitude")
-    angle = np.deg2rad(
-        _angle(rake_degrees, amplitude_array.size, "rake_degrees")
-    )
+    angle = np.deg2rad(_angle(rake_degrees, amplitude_array.size, "rake_degrees"))
     return amplitude_array * np.cos(angle), amplitude_array * np.sin(angle)
 
 
@@ -137,9 +135,7 @@ def from_azimuth(
         ``(strike_slip, dip_slip)`` arrays, each shape ``(N,)``.
     """
     amplitude_array = _as_1d(amplitude, "amplitude")
-    strike = _angle(
-        fault_strike_degrees, amplitude_array.size, "fault_strike_degrees"
-    )
+    strike = _angle(fault_strike_degrees, amplitude_array.size, "fault_strike_degrees")
     return from_rake(amplitude_array, float(azimuth_degrees) - strike)
 
 
@@ -169,9 +165,7 @@ def from_plate(
             "plate_rake_degrees",
         )
     )
-    strike_slip = parallel_array * np.cos(angle) - perpendicular_array * np.sin(
-        angle
-    )
+    strike_slip = parallel_array * np.cos(angle) - perpendicular_array * np.sin(angle)
     dip_slip = parallel_array * np.sin(angle) + perpendicular_array * np.cos(angle)
     return strike_slip, dip_slip
 
@@ -203,9 +197,7 @@ def to_plate(
     return parallel, perpendicular
 
 
-def magnitude(
-    strike_slip: npt.ArrayLike, dip_slip: npt.ArrayLike
-) -> np.ndarray:
+def magnitude(strike_slip: npt.ArrayLike, dip_slip: npt.ArrayLike) -> np.ndarray:
     """Return unsigned physical slip magnitude per patch.
 
     Args:
@@ -237,9 +229,7 @@ def rake(strike_slip: npt.ArrayLike, dip_slip: npt.ArrayLike) -> np.ndarray:
     return np.degrees(np.arctan2(dip_array, strike_array))
 
 
-def plate_rake_from_euler(
-    fault: Fault, pole: tuple[float, float, float]
-) -> np.ndarray:
+def plate_rake_from_euler(fault: Fault, pole: tuple[float, float, float]) -> np.ndarray:
     """Compute plate direction in each patch's local rake coordinates.
 
     Args:
@@ -256,9 +246,7 @@ def plate_rake_from_euler(
     from geodef.euler import pole_velocity
 
     centers = fault.centers_geo
-    east, north = pole_velocity(
-        centers[:, 1], centers[:, 0], pole[0], pole[1], pole[2]
-    )
+    east, north = pole_velocity(centers[:, 1], centers[:, 0], pole[0], pole[1], pole[2])
     if np.any(np.hypot(east, north) == 0.0):
         raise ValueError("Euler pole produces zero velocity at a patch center")
     azimuth = np.degrees(np.arctan2(east, north))

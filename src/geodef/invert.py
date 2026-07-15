@@ -488,6 +488,7 @@ class GeometrySearchResult:
     message: str
     n_iterations: int
 
+
 @dataclasses.dataclass(frozen=True)
 class ABICCurveResult:
     """Result of an ABIC curve analysis.
@@ -1006,9 +1007,7 @@ class LinearSystem:
             basis_angle = self.plate_rake
         else:
             basis_angle = None
-        strike_slip, dip_slip = _physical_components(
-            m, self.components, basis_angle
-        )
+        strike_slip, dip_slip = _physical_components(m, self.components, basis_angle)
         moment = self.fault.moment(magnitude(strike_slip, dip_slip))
         mw = moment_to_magnitude(moment)
 

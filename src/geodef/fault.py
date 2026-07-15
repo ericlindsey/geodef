@@ -193,12 +193,8 @@ class Fault:
         if n_length < 1 or n_width < 1:
             raise ValueError("n_length and n_width must be positive integers")
         selected_frame = LocalFrame(lat, lon) if frame is None else frame
-        center = selected_frame.to_enu(
-            lon=lon, lat=lat, alt=selected_frame.origin_alt
-        )
-        as_planar_vector(
-            [center[0], center[1], depth, strike, dip, length, width]
-        )
+        center = selected_frame.to_enu(lon=lon, lat=lat, alt=selected_frame.origin_alt)
+        as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
         patch_L = length / n_length
         patch_W = width / n_width
 
@@ -905,9 +901,7 @@ class Fault:
             return self
         if self._vertices is not None:
             vertices = self._frame.transform_enu(self._vertices, target=frame)
-            return Fault.from_triangles(
-                vertices, frame=frame, medium=self._medium
-            )
+            return Fault.from_triangles(vertices, frame=frame, medium=self._medium)
         return Fault(
             self._lat,
             self._lon,
@@ -1072,9 +1066,7 @@ class Fault:
         slip_s = np.broadcast_to(
             np.asarray(slip_strike, dtype=float), (self.n_patches,)
         )
-        slip_d = np.broadcast_to(
-            np.asarray(slip_dip, dtype=float), (self.n_patches,)
-        )
+        slip_d = np.broadcast_to(np.asarray(slip_dip, dtype=float), (self.n_patches,))
 
         G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
 
@@ -1145,9 +1137,7 @@ class Fault:
         slip_array = np.asarray(slip, dtype=float)
         return float(mu * np.sum(slip_array * self.areas))
 
-    def magnitude(
-        self, slip: npt.ArrayLike, mu: float | None = None
-    ) -> float:
+    def magnitude(self, slip: npt.ArrayLike, mu: float | None = None) -> float:
         """Compute moment magnitude from a slip distribution.
 
         Args:

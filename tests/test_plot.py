@@ -240,6 +240,7 @@ class TestGetSlipComponent:
         with pytest.raises(ValueError, match="length"):
             _get_slip_component(np.ones(5), rect_fault.n_patches, "magnitude")
 
+
 class TestStationsToLocal:
     """Tests for _stations_to_local_km."""
 

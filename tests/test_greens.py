@@ -38,6 +38,7 @@ class TestSlipColumnSelection:
         with pytest.raises(ValueError, match="plate_rake"):
             select_slip_columns(np.ones((3, 4)), 2, "plate")
 
+
 # ---------------------------------------------------------------------------
 # Laplacian (forward/backward difference boundaries)
 # ---------------------------------------------------------------------------

@@ -1812,9 +1812,7 @@ class TestComponentsPlate:
 
     def test_recovers_plate_parallel_and_perpendicular(self, fault_4x3, obs_points):
         plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
-        truth_strike, truth_dip = from_plate(
-            np.ones(12), np.full(12, 0.2), plate_rake
-        )
+        truth_strike, truth_dip = from_plate(np.ones(12), np.full(12, 0.2), plate_rake)
         gnss = _make_gnss(fault_4x3, obs_points, truth_strike, truth_dip)
 
         result = invert(
@@ -1827,9 +1825,7 @@ class TestComponentsPlate:
         assert result.components == "plate"
         np.testing.assert_allclose(result.plate_rake, plate_rake)
         np.testing.assert_allclose(result.rake_parallel, 1.0, atol=0.1)
-        np.testing.assert_allclose(
-            result.rake_perpendicular, 0.2, atol=0.1
-        )
+        np.testing.assert_allclose(result.rake_perpendicular, 0.2, atol=0.1)
 
     def test_laplacian_and_bounds_use_plate_coordinates(self, fault_4x3, obs_points):
         plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
@@ -1849,9 +1845,7 @@ class TestComponentsPlate:
         assert np.all(result.rake_parallel >= 0.0)
         assert np.all(np.abs(result.rake_perpendicular) <= 0.010001)
 
-    def test_plate_vector_is_accepted_as_smoothing_target(
-        self, fault_4x3, obs_points
-    ):
+    def test_plate_vector_is_accepted_as_smoothing_target(self, fault_4x3, obs_points):
         plate_rake = np.full(12, 30.0)
         target = pack(np.ones(12), np.zeros(12))
         truth_strike, truth_dip = from_plate(np.ones(12), np.zeros(12), plate_rake)
@@ -1878,9 +1872,7 @@ class TestComponentsPlate:
         plate_rake = np.linspace(20.0, 40.0, fault_4x3.n_patches)
         truth_strike, truth_dip = from_plate(np.ones(12), np.zeros(12), plate_rake)
         gnss = _make_gnss(fault_4x3, obs_points, truth_strike, truth_dip)
-        result = invert(
-            fault_4x3, gnss, components="plate", plate_rake=plate_rake
-        )
+        result = invert(fault_4x3, gnss, components="plate", plate_rake=plate_rake)
 
         path = tmp_path / "plate_result.npz"
         result.save(path)
