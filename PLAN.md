@@ -361,13 +361,13 @@ land directly, without deprecation shims — the precedent set in 1.2. They must
 be complete before Priority 2 bakes today's names into the quickstart, course,
 and examples; every one becomes a migration burden after v0.2.
 
-- [ ] Resolve the remaining name collisions from the structural audit: rename
+- [x] Resolve the remaining name collisions from the structural audit: rename
   `greens.resolution` to `greens.resolution_matrix`; keep
   `invert.model_resolution` as the primary assessment call and
   `plot.resolution` as the plotting name (no longer ambiguous once the
   `greens` name is specific). Rename `plot.map`, which shadows the builtin
   and reads like the `geomap` module, to `plot.map_view`.
-- [ ] Standardize regularization vocabulary on the math the tutorials teach
+- [x] Standardize regularization vocabulary on the math the tutorials teach
   (`Phi = r.T @ W @ r + lambda * ||L(m - m_ref)||^2`): rename the
   `smoothing=` keyword to `regularization=`, `smoothing_strength=` to
   `regularization_strength=`, and `smoothing_target=` to
@@ -376,18 +376,18 @@ and examples; every one becomes a migration burden after v0.2.
   version and migrate the old key on load). The values `'laplacian'`,
   `'damping'`, and `'stresskernel'` are unchanged; `'damping'` is no longer
   described as a kind of smoothing.
-- [ ] Remove the legacy latitude-first `Fault.centers`; `centers_geo` and
+- [x] Remove the legacy latitude-first `Fault.centers`; `centers_geo` and
   `centers_local` remain as the two documented accessors. Update the notebook
   cells that still use it.
-- [ ] Unify mesh units on meters: `mesh.from_slab2` takes `target_length` and
+- [x] Unify mesh units on meters: `mesh.from_slab2` takes `target_length` and
   `max_depth` in kilometers while `from_polygon`/`from_trace` take meters, and
   `from_trace` mixes a kilometer `max_depth` with a meters-argument `dip`
   callable in one signature. Convert every public mesh length/depth argument
   to meters, per the enduring unit convention.
-- [ ] Make `invert.solve` arguments keyword-only after `fault` and `datasets`,
+- [x] Make `invert.solve` arguments keyword-only after `fault` and `datasets`,
   matching the `Fault.planar` policy, so `solve(fault, data, 0.5)` cannot
   silently pass a strength where the regularization type belongs.
-- [ ] Decide the API stability tiers now (beginner-public, expert-public,
+- [x] Decide the API stability tiers now (beginner-public, expert-public,
   private) and trim the top-level `__all__` to the documented set, so
   Priority 2 documents the final vocabulary. Publishing the map and the
   dependency-direction and import-test work remain in 3.1.
