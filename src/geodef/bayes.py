@@ -15,7 +15,7 @@ The data model is ``d = G(theta) m + e`` with ``e ~ N(0, sigma^2 W^-1)``
 and the conjugate slip prior ``m ~ N(0, sigma^2 (lambda L^T L)^-1)``.
 Three prior modes are supported:
 
-- ``'hierarchical'``: ``L`` is a smoothing operator (e.g. Laplacian) and
+- ``'hierarchical'``: ``L`` is a regularization operator (e.g. Laplacian) and
   ``log10(lambda)`` is **sampled**, so posteriors average over all
   regularization strengths weighted by the evidence.
 - ``'weak'``: ``L = I`` with a fixed, user-chosen slip scale — the
@@ -35,7 +35,7 @@ Requires the JAX backend::
         theta0, datasets, frame=frame,
         free=["dip", "depth"],
         theta_prior={"dip": (5.0, 60.0), "depth": (5e3, 40e3)},
-        n_length=8, n_width=4, smoothing="laplacian",
+        n_length=8, n_width=4, regularization="laplacian",
     )
     log_density = post.logpdf(post.x0)
 """
@@ -320,7 +320,7 @@ class _CollapsedPosterior:
         The exact Gaussian marginal over slip in the hierarchical and
         weak modes (up to the constant ``log|W|/2`` from weighting the
         data, and using the pseudo-determinant convention when the
-        smoothing operator is rank-deficient); the profiled objective
+        regularization operator is rank-deficient); the profiled objective
         without the Occam log-determinant terms in profiled mode.
 
         Args:
@@ -580,10 +580,10 @@ class RectPosterior(_CollapsedPosterior):
             ``'both'``, ``'strike'``, or ``'dip'``.
         mode: Slip-prior mode: ``'hierarchical'``, ``'weak'``, or
             ``'profiled'`` (see module docstring).
-        smoothing: Regularization operator (as in ``invert()``) for the
+        regularization: Regularization operator (as in ``invert()``) for the
             hierarchical and profiled modes; must be None for
             ``'weak'``.
-        smoothing_strength: Fixed lambda for ``'profiled'``; initial
+        regularization_strength: Fixed lambda for ``'profiled'``; initial
             lambda (sampler starting point) for ``'hierarchical'``.
         slip_scale: Prior slip scale in meters for ``'weak'`` — the
             prior is ``m ~ N(0, (sigma * slip_scale)^2 I)``.
@@ -629,8 +629,8 @@ class RectPosterior(_CollapsedPosterior):
         n_width: int = 1,
         components: str = "both",
         mode: str = "hierarchical",
-        smoothing: str | np.ndarray | None = "laplacian",
-        smoothing_strength: float | None = None,
+        regularization: str | np.ndarray | None = "laplacian",
+        regularization_strength: float | None = None,
         slip_scale: float | None = None,
         positive: str | npt.ArrayLike | None = None,
         log10_sigma_prior: tuple[float, float] = (-2.0, 2.0),
@@ -659,15 +659,16 @@ class RectPosterior(_CollapsedPosterior):
         if mode == "weak":
             if slip_scale is None:
                 raise ValueError("mode='weak' requires slip_scale (meters)")
-            if smoothing is not None:
+            if regularization is not None:
                 raise ValueError(
-                    "mode='weak' uses an identity slip prior; smoothing must be None"
+                    "mode='weak' uses an identity slip prior; "
+                    "regularization must be None"
                 )
-        if mode == "hierarchical" and smoothing is None:
-            raise ValueError("mode='hierarchical' requires a smoothing operator")
-        if mode == "profiled" and smoothing_strength is None:
+        if mode == "hierarchical" and regularization is None:
+            raise ValueError("mode='hierarchical' requires a regularization operator")
+        if mode == "profiled" and regularization_strength is None:
             raise ValueError(
-                "mode='profiled' requires a fixed smoothing_strength (lambda)"
+                "mode='profiled' requires a fixed regularization_strength (lambda)"
             )
 
         frame = _resolve_frame(frame, ref_lat, ref_lon)
@@ -690,7 +691,7 @@ class RectPosterior(_CollapsedPosterior):
         # Template system provides the stacked data, weights, and
         # regularization operator; its Green's matrix is not used.
         template = _fault_from_planar_vector(theta0, frame, n_length, n_width)
-        sys = LinearSystem(template, datasets, smoothing, components)
+        sys = LinearSystem(template, datasets, regularization, components)
         n_patches = n_length * n_width
         self._col_start, self._col_stop = {
             "both": (0, 2 * n_patches),
@@ -729,15 +730,15 @@ class RectPosterior(_CollapsedPosterior):
             self._logdet_rank = n_params
             self._logdet_sum = 0.0
         else:
-            if smoothing is not None:
+            if regularization is not None:
                 self._LtL = sys.LtL
                 eig = np.abs(np.linalg.eigvalsh(self._LtL))
             else:
                 self._LtL = np.zeros((n_params, n_params))
                 eig = np.zeros(n_params)
             if mode == "profiled":
-                assert smoothing_strength is not None
-                self._lambda_fixed = float(smoothing_strength)
+                assert regularization_strength is not None
+                self._lambda_fixed = float(regularization_strength)
             else:
                 self._lambda_fixed = None
             pos = _rank_positive_eigs(eig)
@@ -748,8 +749,8 @@ class RectPosterior(_CollapsedPosterior):
         # path (only used when lambda is sampled, i.e. hierarchical).
         if self._lambda_fixed is not None:
             self._lam_ref = float(self._lambda_fixed)
-        elif smoothing_strength:
-            self._lam_ref = float(smoothing_strength)
+        elif regularization_strength:
+            self._lam_ref = float(regularization_strength)
         else:
             self._lam_ref = 10.0 ** (
                 0.5 * (log10_lambda_prior[0] + log10_lambda_prior[1])
@@ -765,8 +766,8 @@ class RectPosterior(_CollapsedPosterior):
             self.param_names.append("log10_lambda")
             specs.append(("uniform",) + tuple(map(float, log10_lambda_prior)))
             lam0 = (
-                float(np.log10(smoothing_strength))
-                if smoothing_strength
+                float(np.log10(regularization_strength))
+                if regularization_strength
                 else 0.5 * (log10_lambda_prior[0] + log10_lambda_prior[1])
             )
             x0.append(float(np.clip(lam0, *log10_lambda_prior)))
@@ -1458,9 +1459,9 @@ class TriPosterior(_CollapsedPosterior):
             ``'both'``, ``'strike'``, or ``'dip'``.
         mode: Slip-prior mode: ``'hierarchical'``, ``'weak'``, or
             ``'profiled'`` (see the module docstring).
-        smoothing: Regularization operator for the hierarchical and
+        regularization: Regularization operator for the hierarchical and
             profiled modes; must be None for ``'weak'``.
-        smoothing_strength: Fixed lambda for ``'profiled'``; initial
+        regularization_strength: Fixed lambda for ``'profiled'``; initial
             lambda (sampler starting point) for ``'hierarchical'``.
         slip_scale: Prior slip scale in meters for ``'weak'``.
         log10_sigma_prior: Uniform prior bounds on ``log10_sigma``.
@@ -1483,8 +1484,8 @@ class TriPosterior(_CollapsedPosterior):
         knots0: npt.ArrayLike | None = None,
         components: str = "both",
         mode: str = "hierarchical",
-        smoothing: str | np.ndarray | None = "laplacian",
-        smoothing_strength: float | None = None,
+        regularization: str | np.ndarray | None = "laplacian",
+        regularization_strength: float | None = None,
         slip_scale: float | None = None,
         log10_sigma_prior: tuple[float, float] = (-2.0, 2.0),
         log10_lambda_prior: tuple[float, float] = (-8.0, 8.0),
@@ -1508,15 +1509,16 @@ class TriPosterior(_CollapsedPosterior):
         if mode == "weak":
             if slip_scale is None:
                 raise ValueError("mode='weak' requires slip_scale (meters)")
-            if smoothing is not None:
+            if regularization is not None:
                 raise ValueError(
-                    "mode='weak' uses an identity slip prior; smoothing must be None"
+                    "mode='weak' uses an identity slip prior; "
+                    "regularization must be None"
                 )
-        if mode == "hierarchical" and smoothing is None:
-            raise ValueError("mode='hierarchical' requires a smoothing operator")
-        if mode == "profiled" and smoothing_strength is None:
+        if mode == "hierarchical" and regularization is None:
+            raise ValueError("mode='hierarchical' requires a regularization operator")
+        if mode == "profiled" and regularization_strength is None:
             raise ValueError(
-                "mode='profiled' requires a fixed smoothing_strength (lambda)"
+                "mode='profiled' requires a fixed regularization_strength (lambda)"
             )
 
         self.mode = mode
@@ -1527,7 +1529,7 @@ class TriPosterior(_CollapsedPosterior):
         nk = warp.n_knots
 
         ref_fault = warp._ref_fault
-        sys = LinearSystem(ref_fault, datasets, smoothing, components)
+        sys = LinearSystem(ref_fault, datasets, regularization, components)
         n_patches = ref_fault.n_patches
         self._col_start, self._col_stop = {
             "both": (0, 2 * n_patches),
@@ -1566,15 +1568,15 @@ class TriPosterior(_CollapsedPosterior):
             self._logdet_rank = n_slip
             self._logdet_sum = 0.0
         else:
-            if smoothing is not None:
+            if regularization is not None:
                 self._LtL = sys.LtL
                 eig = np.abs(np.linalg.eigvalsh(self._LtL))
             else:
                 self._LtL = np.zeros((n_slip, n_slip))
                 eig = np.zeros(n_slip)
             if mode == "profiled":
-                assert smoothing_strength is not None
-                self._lambda_fixed = float(smoothing_strength)
+                assert regularization_strength is not None
+                self._lambda_fixed = float(regularization_strength)
             else:
                 self._lambda_fixed = None
             pos = _rank_positive_eigs(eig)
@@ -1598,8 +1600,8 @@ class TriPosterior(_CollapsedPosterior):
             self.param_names.append("log10_lambda")
             specs.append(("uniform",) + tuple(map(float, log10_lambda_prior)))
             lam0 = (
-                float(np.log10(smoothing_strength))
-                if smoothing_strength
+                float(np.log10(regularization_strength))
+                if regularization_strength
                 else 0.5 * (log10_lambda_prior[0] + log10_lambda_prior[1])
             )
             x0.append(float(np.clip(lam0, *log10_lambda_prior)))
@@ -1724,18 +1726,18 @@ class SlipPosterior:
             or ``'dip'``.
         mode: Slip-prior mode:
 
-            - ``'hierarchical'``: smoothing operator, ``log10_lambda``
-              sampled (requires ``smoothing``).
-            - ``'fixed'``: smoothing operator at a fixed
-              ``smoothing_strength`` — a proper posterior at one
-              lambda, not a profile (requires ``smoothing`` and
-              ``smoothing_strength``).
+            - ``'hierarchical'``: regularization operator, ``log10_lambda``
+              sampled (requires ``regularization``).
+            - ``'fixed'``: regularization operator at a fixed
+              ``regularization_strength`` — a proper posterior at one
+              lambda, not a profile (requires ``regularization`` and
+              ``regularization_strength``).
             - ``'weak'``: identity prior with a fixed ``slip_scale``
-              (requires ``slip_scale``; ``smoothing`` must be None).
-        smoothing: Regularization operator (as in ``LinearSystem``) for
+              (requires ``slip_scale``; ``regularization`` must be None).
+        regularization: Regularization operator (as in ``LinearSystem``) for
             the hierarchical and fixed modes; must be None for
             ``'weak'``.
-        smoothing_strength: Fixed lambda for ``'fixed'``; reference
+        regularization_strength: Fixed lambda for ``'fixed'``; reference
             lambda (whitening only, not sampled) for ``'hierarchical'``
             when given, else the midpoint of ``log10_lambda_prior``.
         slip_scale: Prior slip scale in meters for ``'weak'`` — the
@@ -1768,8 +1770,8 @@ class SlipPosterior:
         *,
         components: str = "both",
         mode: str = "hierarchical",
-        smoothing: str | np.ndarray | None = "laplacian",
-        smoothing_strength: float | None = None,
+        regularization: str | np.ndarray | None = "laplacian",
+        regularization_strength: float | None = None,
         slip_scale: float | None = None,
         positive: str | npt.ArrayLike | None = None,
         log10_sigma_prior: tuple[float, float] = (-2.0, 2.0),
@@ -1787,21 +1789,22 @@ class SlipPosterior:
         if mode == "weak":
             if slip_scale is None:
                 raise ValueError("mode='weak' requires slip_scale (meters)")
-            if smoothing is not None:
+            if regularization is not None:
                 raise ValueError(
-                    "mode='weak' uses an identity slip prior; smoothing must be None"
+                    "mode='weak' uses an identity slip prior; "
+                    "regularization must be None"
                 )
-        if mode == "hierarchical" and smoothing is None:
-            raise ValueError("mode='hierarchical' requires a smoothing operator")
+        if mode == "hierarchical" and regularization is None:
+            raise ValueError("mode='hierarchical' requires a regularization operator")
         if mode == "fixed":
-            if smoothing is None:
-                raise ValueError("mode='fixed' requires a smoothing operator")
-            if smoothing_strength is None:
+            if regularization is None:
+                raise ValueError("mode='fixed' requires a regularization operator")
+            if regularization_strength is None:
                 raise ValueError(
-                    "mode='fixed' requires a fixed smoothing_strength (lambda)"
+                    "mode='fixed' requires a fixed regularization_strength (lambda)"
                 )
 
-        sys = LinearSystem(fault, datasets, smoothing, components)
+        sys = LinearSystem(fault, datasets, regularization, components)
         self.mode = mode
         self.components = components
         self._G_w = np.asarray(sys.G_w, dtype=np.float64)
@@ -1827,12 +1830,12 @@ class SlipPosterior:
             self._logdet_rank = len(pos)
             self._logdet_sum = float(np.sum(np.log(pos)))
             if mode == "fixed":
-                assert smoothing_strength is not None
-                lam_ref = float(smoothing_strength)
+                assert regularization_strength is not None
+                lam_ref = float(regularization_strength)
             else:
                 lam_ref = (
-                    float(smoothing_strength)
-                    if smoothing_strength
+                    float(regularization_strength)
+                    if regularization_strength
                     else 10.0 ** (0.5 * (log10_lambda_prior[0] + log10_lambda_prior[1]))
                 )
         self._lambda_fixed: float | None = None if mode == "hierarchical" else lam_ref

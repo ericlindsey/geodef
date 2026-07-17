@@ -1057,7 +1057,9 @@ class TestPlotMap:
     def test_map_with_values(self, rect_fault):
         """Map should color patches when values array is provided."""
         vals = np.random.rand(rect_fault.n_patches)
-        ax = geodef.plot.map_view(rect_fault, values=vals, cmap="hot", colorbar_label="Test")
+        ax = geodef.plot.map_view(
+            rect_fault, values=vals, cmap="hot", colorbar_label="Test"
+        )
         assert isinstance(ax, plt.Axes)
         # Colorbar adds an extra axes
         assert len(ax.figure.axes) >= 2
@@ -1097,7 +1099,7 @@ class TestLCurvePlotRefactor:
         from geodef.invert import LCurveResult
 
         return LCurveResult(
-            smoothing_values=np.logspace(-2, 2, 10),
+            regularization_values=np.logspace(-2, 2, 10),
             misfits=np.logspace(1, -1, 10),
             model_norms=np.logspace(-1, 1, 10),
             optimal=1.0,
@@ -1144,7 +1146,7 @@ class TestABICCurvePlotRefactor:
         from geodef.invert import ABICCurveResult
 
         return ABICCurveResult(
-            smoothing_values=np.logspace(-2, 2, 10),
+            regularization_values=np.logspace(-2, 2, 10),
             abic_values=np.random.rand(10) * 100 + 50,
             misfits=np.logspace(1, -1, 10),
             model_norms=np.logspace(-1, 1, 10),
@@ -1201,7 +1203,7 @@ class TestModuleStructure:
         assert hasattr(geodef.plot, "insar")
         assert hasattr(geodef.plot, "fit")
         assert hasattr(geodef.plot, "fault3d")
-        assert hasattr(geodef.plot, "map")
+        assert hasattr(geodef.plot, "map_view")
 
     def test_accessible_from_geodef(self):
         assert hasattr(geodef, "plot")

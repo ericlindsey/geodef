@@ -44,7 +44,7 @@ def _tri_fault(
 
     Each grid cell becomes two triangles. Depths follow
     ``depth0 + dip_grad * north_offset``, matching the shape used to
-    validate the Laplacian-smoothing path (>= 7 triangles).
+    validate the Laplacian-regularization path (>= 7 triangles).
     """
     u = np.linspace(-length / 2, length / 2, nx)
     v = np.linspace(-width / 2, width / 2, ny)
@@ -158,8 +158,8 @@ def tri_post_hier(warp4, gnss_tri):
         knot_prior=(-20000.0, 20000.0),
         components="dip",
         mode="hierarchical",
-        smoothing="laplacian",
-        smoothing_strength=1.0,
+        regularization="laplacian",
+        regularization_strength=1.0,
     )
 
 
@@ -172,8 +172,8 @@ def tri_post_profiled(warp4, gnss_tri):
         knot_prior=(-20000.0, 20000.0),
         components="dip",
         mode="profiled",
-        smoothing="laplacian",
-        smoothing_strength=1.0,
+        regularization="laplacian",
+        regularization_strength=1.0,
     )
 
 
@@ -301,7 +301,7 @@ class TestFrameAnchor:
         self, tri_post_hier, mesh_fault, gnss_tri
     ):
         sys = LinearSystem(
-            mesh_fault, [gnss_tri], smoothing="laplacian", components="dip"
+            mesh_fault, [gnss_tri], regularization="laplacian", components="dip"
         )
         x = np.zeros(tri_post_hier.n_params)
         g_w = backend.to_numpy(tri_post_hier._assemble(x)[2])
@@ -434,7 +434,7 @@ class TestConstruction:
             knot_prior=(-500.0, 500.0),
             components="dip",
             mode="hierarchical",
-            smoothing="laplacian",
+            regularization="laplacian",
         )
         nk = warp4.n_knots
         assert post.param_names == [f"knot{i}" for i in range(nk)] + [
@@ -452,7 +452,7 @@ class TestConstruction:
             knot_prior=(-500.0, 500.0),
             components="dip",
             mode="weak",
-            smoothing=None,
+            regularization=None,
             slip_scale=5.0,
         )
         nk = warp4.n_knots
@@ -465,8 +465,8 @@ class TestConstruction:
             knot_prior=(-500.0, 500.0),
             components="dip",
             mode="profiled",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         nk = warp4.n_knots
         assert post.param_names == [f"knot{i}" for i in range(nk)] + ["log10_sigma"]
@@ -478,8 +478,8 @@ class TestConstruction:
             knot_prior=("normal", 0.0, 300.0),
             components="dip",
             mode="profiled",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         nk = warp4.n_knots
         assert np.all(~post._is_uniform[:nk])
@@ -500,8 +500,8 @@ class TestConstruction:
             knot_prior=specs,
             components="dip",
             mode="profiled",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         np.testing.assert_allclose(post._hi[:3], [100.0, 200.0, np.inf])
         assert not post._is_uniform[2]
@@ -516,8 +516,8 @@ class TestConstruction:
                 knot_prior=specs,
                 components="dip",
                 mode="profiled",
-                smoothing="laplacian",
-                smoothing_strength=1.0,
+                regularization="laplacian",
+                regularization_strength=1.0,
             )
 
     def test_knots0_sets_starting_point(self, warp4, gnss_tri):
@@ -530,8 +530,8 @@ class TestConstruction:
             knots0=k0,
             components="dip",
             mode="profiled",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         np.testing.assert_allclose(post.x0[:nk], k0)
 
@@ -544,8 +544,8 @@ class TestConstruction:
             knots0=np.full(nk, 900.0),
             components="dip",
             mode="profiled",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         np.testing.assert_allclose(post.x0[:nk], 500.0)
 
@@ -558,8 +558,8 @@ class TestConstruction:
                 knots0=np.zeros(warp4.n_knots + 1),
                 components="dip",
                 mode="profiled",
-                smoothing="laplacian",
-                smoothing_strength=1.0,
+                regularization="laplacian",
+                regularization_strength=1.0,
             )
 
     def test_requires_jax_backend(self, warp4, gnss_tri):
@@ -571,8 +571,8 @@ class TestConstruction:
                 knot_prior=(-500.0, 500.0),
                 components="dip",
                 mode="profiled",
-                smoothing="laplacian",
-                smoothing_strength=1.0,
+                regularization="laplacian",
+                regularization_strength=1.0,
             )
 
     def test_bad_mode_raises(self, warp4, gnss_tri):
@@ -589,8 +589,8 @@ class TestConstruction:
                 knot_prior=(-500.0, 500.0),
                 components="rake",
                 mode="profiled",
-                smoothing="laplacian",
-                smoothing_strength=1.0,
+                regularization="laplacian",
+                regularization_strength=1.0,
             )
 
     def test_weak_requires_slip_scale(self, warp4, gnss_tri):
@@ -600,27 +600,27 @@ class TestConstruction:
                 gnss_tri,
                 knot_prior=(-500.0, 500.0),
                 mode="weak",
-                smoothing=None,
+                regularization=None,
             )
 
-    def test_hierarchical_requires_smoothing(self, warp4, gnss_tri):
-        with pytest.raises(ValueError, match="smoothing"):
+    def test_hierarchical_requires_regularization(self, warp4, gnss_tri):
+        with pytest.raises(ValueError, match="regularization"):
             bayes.TriPosterior(
                 warp4,
                 gnss_tri,
                 knot_prior=(-500.0, 500.0),
                 mode="hierarchical",
-                smoothing=None,
+                regularization=None,
             )
 
-    def test_profiled_requires_smoothing_strength(self, warp4, gnss_tri):
-        with pytest.raises(ValueError, match="smoothing_strength"):
+    def test_profiled_requires_regularization_strength(self, warp4, gnss_tri):
+        with pytest.raises(ValueError, match="regularization_strength"):
             bayes.TriPosterior(
                 warp4,
                 gnss_tri,
                 knot_prior=(-500.0, 500.0),
                 mode="profiled",
-                smoothing="laplacian",
+                regularization="laplacian",
             )
 
 
@@ -661,8 +661,8 @@ class TestRecovery:
             knots0=np.array([600.0, -300.0]),
             components="dip",
             mode="hierarchical",
-            smoothing="laplacian",
-            smoothing_strength=1.0,
+            regularization="laplacian",
+            regularization_strength=1.0,
         )
         result = bayes.sample(post, n_samples=500, n_warmup=500, n_chains=2, seed=0)
 

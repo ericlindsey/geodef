@@ -38,8 +38,8 @@ result = geodef.invert.solve(fault, [gnss, insar])
 
 # Laplacian smoothing, non-negative
 result = geodef.invert.solve(fault, [gnss, insar],
-                             smoothing='laplacian',
-                             smoothing_strength=1e3,
+                             regularization='laplacian',
+                             regularization_strength=1e3,
                              bounds=(0, None))
 
 # One-parameter slip bases
@@ -60,9 +60,9 @@ result = geodef.invert.solve(fault, gnss,
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `method` | auto | `'wls'`, `'nnls'`, `'bounded_ls'`, `'constrained'` |
-| `smoothing` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
-| `smoothing_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
-| `smoothing_target` | `None` | Vector reference for `(m - m_ref)` regularization |
+| `regularization` | `None` | `'laplacian'`, `'damping'`, `'stresskernel'`, or a custom matrix |
+| `regularization_strength` | `0.0` | Regularization weight λ, or `'abic'`/`'cv'` for auto-tuning |
+| `regularization_target` | `None` | Vector reference for `(m - m_ref)` regularization |
 | `bounds` | `None` | `(lower, upper)` slip bounds; each side is a scalar, a per-component array, a per-parameter array, or `None` |
 | `components` | `'both'` | Slip basis: `'both'`, `'strike'`, `'dip'`, `'rake'`, `'azimuth'`, or `'plate'` |
 | `rake` | `None` | Fixed local rake angle in degrees; required for `components='rake'` |
@@ -121,8 +121,8 @@ through `result.strike_slip` and `result.dip_slip`.
 | `rms` | scalar | RMS misfit |
 | `moment` | scalar | Seismic moment in N·m |
 | `Mw` | scalar | Moment magnitude |
-| `smoothing` | str, ndarray, or `None` | Regularization type used |
-| `smoothing_strength` | float or `None` | λ used, or `None` when no regularization was applied |
+| `regularization` | str, ndarray, or `None` | Regularization type used |
+| `regularization_strength` | float or `None` | λ used, or `None` when no regularization was applied |
 | `components` | str | Slip basis used in the inversion |
 | `rake` | float or `None` | Fixed rake angle for `components='rake'` |
 | `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
@@ -131,7 +131,7 @@ through `result.strike_slip` and `result.dip_slip`.
 | `dataset_slices` | tuple of slice | Rows belonging to each named dataset |
 | `dataset_diagnostics` | tuple | Solve-time fit diagnostics for each dataset |
 | `solver`, `success`, `message` | scalars | Solver choice and completion status |
-| `smoothing_selection` | str or `None` | `abic`/`cv` when lambda was selected automatically |
+| `regularization_selection` | str or `None` | `abic`/`cv` when lambda was selected automatically |
 | `backend`, `precision` | str | Numerical backend configuration used for the solve |
 | `quantity`, `units` | str | Displacement/velocity semantics inherited from the data |
 | `warnings` | tuple of str | Interpretation warnings retained with the result |
@@ -182,13 +182,13 @@ weights, and optional smoothing matrix.
 ```python
 system = geodef.LinearSystem(
     fault, [gnss, insar],
-    smoothing='laplacian',
+    regularization='laplacian',
     components='azimuth',
     slip_azimuth=15.0,
 )
 
-lc = system.lcurve(smoothing_range=(1e-2, 1e6))
-result = system.invert(smoothing_strength=lc.optimal, bounds=(0, None))
+lc = system.lcurve(regularization_range=(1e-2, 1e6))
+result = system.invert(regularization_strength=lc.optimal, bounds=(0, None))
 diagnostics = system.dataset_diagnostics(result)
 ```
 
@@ -203,29 +203,29 @@ cross-validation tests prediction of held-out observations. Agreement among
 methods is reassuring, while disagreement is useful evidence that covariance,
 mesh, or prior assumptions deserve examination.
 
-### `lcurve(fault, datasets, smoothing, smoothing_range, n=50, **kwargs) → LCurveResult`
+### `lcurve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → LCurveResult`
 
 ```python
-lc = geodef.lcurve(fault, [gnss, insar], smoothing='laplacian',
-                   smoothing_range=(1e-2, 1e6), n=50)
+lc = geodef.lcurve(fault, [gnss, insar], regularization='laplacian',
+                   regularization_range=(1e-2, 1e6), n=50)
 lc.plot()        # log-log misfit vs model norm; optimal marked
 lc.optimal       # λ at maximum curvature
 ```
 
-### `abic_curve(fault, datasets, smoothing, smoothing_range, n=50, **kwargs) → ABICCurveResult`
+### `abic_curve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → ABICCurveResult`
 
 ```python
-ac = geodef.abic_curve(fault, [gnss, insar], smoothing='laplacian',
-                       smoothing_range=(1e-2, 1e8), n=50)
+ac = geodef.abic_curve(fault, [gnss, insar], regularization='laplacian',
+                       regularization_range=(1e-2, 1e8), n=50)
 ac.plot()        # ABIC vs λ; optimal marked
 ac.optimal       # λ at minimum ABIC
 ```
 
-### Auto-tuning via `smoothing_strength`
+### Auto-tuning via `regularization_strength`
 
 ```python
-result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='abic')
-result = geodef.invert.solve(fault, data, smoothing='laplacian', smoothing_strength='cv')
+result = geodef.invert.solve(fault, data, regularization='laplacian', regularization_strength='abic')
+result = geodef.invert.solve(fault, data, regularization='laplacian', regularization_strength='cv')
 ```
 
 On the JAX backend (`geodef.backend.set_backend('jax')`), `abic_curve`
@@ -275,7 +275,7 @@ result = geodef.geometry_search(
     bounds={'dip': (5.0, 45.0)},
     n_length=12, n_width=6,
     components='dip',
-    smoothing='laplacian', smoothing_strength=1.0,
+    regularization='laplacian', regularization_strength=1.0,
 )
 
 result.fault          # concrete optimal Fault
@@ -292,7 +292,7 @@ Notes:
   supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
 - `result.fault` is the ordinary domain view. `result.theta` is the exact
   `[e0, n0, depth, strike, dip, length, width]` array view.
-- The inner solve is unconstrained WLS with fixed `smoothing_strength`;
+- The inner solve is unconstrained WLS with fixed `regularization_strength`;
   choose λ first (e.g. with `abic_curve` at a reasonable starting
   geometry).
 - The objective is non-convex — for poorly constrained problems, run

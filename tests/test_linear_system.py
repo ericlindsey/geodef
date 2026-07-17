@@ -114,12 +114,12 @@ class TestLinearSystemConstruction:
         assert isinstance(sys.datasets, list)
         assert len(sys.datasets) == 1
 
-    def test_smoothing_builds_L(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
+    def test_regularization_builds_L(self, fault_4x3, gnss):
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
         assert sys.L is not None
         assert sys.L.shape[1] == 2 * fault_4x3.n_patches
 
-    def test_no_smoothing_L_is_none(self, fault_4x3, gnss):
+    def test_no_regularization_L_is_none(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
         assert sys.L is None
 
@@ -150,15 +150,15 @@ class TestCachedProperties:
         assert a is b  # same object — no recomputation
 
     def test_LtL_shape(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
         n = 2 * fault_4x3.n_patches
         assert sys.LtL.shape == (n, n)
 
     def test_LtL_equals_manual(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
         np.testing.assert_allclose(sys.LtL, sys.L.T @ sys.L)
 
-    def test_LtL_raises_without_smoothing(self, fault_4x3, gnss):
+    def test_LtL_raises_without_regularization(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
         with pytest.raises(AttributeError):
             _ = sys.LtL
@@ -186,16 +186,21 @@ class TestInvertMethodParity:
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_regularized_matches_wrapper(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
-        r_method = sys.invert(smoothing_strength=10.0)
-        r_func = invert(fault_4x3, gnss, smoothing="laplacian", smoothing_strength=10.0)
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
+        r_method = sys.invert(regularization_strength=10.0)
+        r_func = invert(
+            fault_4x3, gnss, regularization="laplacian", regularization_strength=10.0
+        )
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_multi_dataset_matches_wrapper(self, fault_4x3, gnss, insar):
-        sys = LinearSystem(fault_4x3, [gnss, insar], smoothing="damping")
-        r_method = sys.invert(smoothing_strength=1.0)
+        sys = LinearSystem(fault_4x3, [gnss, insar], regularization="damping")
+        r_method = sys.invert(regularization_strength=1.0)
         r_func = invert(
-            fault_4x3, [gnss, insar], smoothing="damping", smoothing_strength=1.0
+            fault_4x3,
+            [gnss, insar],
+            regularization="damping",
+            regularization_strength=1.0,
         )
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
@@ -206,21 +211,21 @@ class TestInvertMethodParity:
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_nnls_matches_wrapper(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="damping")
-        r_method = sys.invert(smoothing_strength=1.0, bounds=(0, None))
+        sys = LinearSystem(fault_4x3, gnss, regularization="damping")
+        r_method = sys.invert(regularization_strength=1.0, bounds=(0, None))
         r_func = invert(
             fault_4x3,
             gnss,
-            smoothing="damping",
-            smoothing_strength=1.0,
+            regularization="damping",
+            regularization_strength=1.0,
             bounds=(0, None),
         )
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector, rtol=1e-5)
 
-    def test_invalid_smoothing_strength_raises(self, fault_4x3, gnss):
+    def test_invalid_regularization_strength_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
         with pytest.raises(ValueError):
-            sys.invert(smoothing_strength="abic")
+            sys.invert(regularization_strength="abic")
 
 
 # ======================================================================
@@ -230,10 +235,14 @@ class TestInvertMethodParity:
 
 class TestLcurveMethod:
     def test_matches_wrapper(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
-        lc_method = sys.lcurve(smoothing_range=(1e-1, 1e3), n=5)
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
+        lc_method = sys.lcurve(regularization_range=(1e-1, 1e3), n=5)
         lc_func = lcurve(
-            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-1, 1e3), n=5
+            fault_4x3,
+            gnss,
+            regularization="laplacian",
+            regularization_range=(1e-1, 1e3),
+            n=5,
         )
         np.testing.assert_allclose(lc_method.misfits, lc_func.misfits, rtol=1e-10)
         np.testing.assert_allclose(
@@ -242,7 +251,7 @@ class TestLcurveMethod:
 
     def test_wls_fast_path_matches_augmented(self, fault_4x3, gnss):
         """WLS fast path (GtWG + lam*LtL solve) must equal augmented lstsq."""
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
         lambdas = [0.1, 1.0, 10.0]
         for lam in lambdas:
             H = sys.GtWG + lam * sys.LtL
@@ -255,15 +264,15 @@ class TestLcurveMethod:
                 m_fast, m_aug, atol=1e-10, err_msg=f"Mismatch at lam={lam}"
             )
 
-    def test_no_smoothing_raises(self, fault_4x3, gnss):
+    def test_no_regularization_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
-        with pytest.raises(ValueError, match="smoothing"):
+        with pytest.raises(ValueError, match="regularization"):
             sys.lcurve()
 
     def test_returns_lcurve_result(self, fault_4x3, gnss):
         from geodef.invert import LCurveResult
 
-        sys = LinearSystem(fault_4x3, gnss, smoothing="damping")
+        sys = LinearSystem(fault_4x3, gnss, regularization="damping")
         lc = sys.lcurve(n=5)
         assert isinstance(lc, LCurveResult)
         assert len(lc.misfits) == 5
@@ -276,10 +285,14 @@ class TestLcurveMethod:
 
 class TestAbicCurveMethod:
     def test_matches_wrapper(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
-        ac_method = sys.abic_curve(smoothing_range=(1e-1, 1e3), n=5)
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
+        ac_method = sys.abic_curve(regularization_range=(1e-1, 1e3), n=5)
         ac_func = abic_curve(
-            fault_4x3, gnss, smoothing="laplacian", smoothing_range=(1e-1, 1e3), n=5
+            fault_4x3,
+            gnss,
+            regularization="laplacian",
+            regularization_range=(1e-1, 1e3),
+            n=5,
         )
         np.testing.assert_allclose(
             ac_method.abic_values, ac_func.abic_values, rtol=1e-10
@@ -287,19 +300,19 @@ class TestAbicCurveMethod:
         np.testing.assert_allclose(ac_method.misfits, ac_func.misfits, rtol=1e-10)
 
     def test_eig_LtL_cached_after_abic_curve(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
         sys.abic_curve(n=3)
         assert "_eig_LtL" in sys.__dict__
 
-    def test_no_smoothing_raises(self, fault_4x3, gnss):
+    def test_no_regularization_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
-        with pytest.raises(ValueError, match="smoothing"):
+        with pytest.raises(ValueError, match="regularization"):
             sys.abic_curve()
 
     def test_optimal_is_minimum_abic(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="damping")
+        sys = LinearSystem(fault_4x3, gnss, regularization="damping")
         ac = sys.abic_curve(n=10)
-        assert ac.optimal == ac.smoothing_values[np.argmin(ac.abic_values)]
+        assert ac.optimal == ac.regularization_values[np.argmin(ac.abic_values)]
 
 
 # ======================================================================
@@ -310,8 +323,8 @@ class TestAbicCurveMethod:
 class TestPostInversionParity:
     @pytest.fixture
     def result_and_sys(self, fault_4x3, gnss):
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
-        result = sys.invert(smoothing_strength=5.0)
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
+        result = sys.invert(regularization_strength=5.0)
         return result, sys
 
     def test_dataset_diagnostics_matches_stored_result(
@@ -362,8 +375,8 @@ class TestPostInversionParity:
 
     def test_GtWG_reused_across_calls(self, fault_4x3, gnss):
         """GtWG cached_property is computed once and shared by all methods."""
-        sys = LinearSystem(fault_4x3, gnss, smoothing="laplacian")
-        result = sys.invert(smoothing_strength=5.0)
+        sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
+        result = sys.invert(regularization_strength=5.0)
         # Trigger several methods that all use GtWG
         _ = sys.model_resolution(result)
         _ = sys.model_covariance(result)

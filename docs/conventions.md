@@ -89,7 +89,7 @@ modes):
 Phi(m) = (d - G m)^T W (d - G m)  +  lambda * ||L (m - m_ref)||^2
 ```
 
-- `lambda` is the value of `smoothing_strength`. It multiplies the
+- `lambda` is the value of `regularization_strength`. It multiplies the
   *squared* seminorm — never `lambda^2`.
 - The equivalent augmented least-squares system appends rows
   `sqrt(lambda) * L` (and data `sqrt(lambda) * L m_ref`).
@@ -101,9 +101,9 @@ Mapping from published sources:
 
 | Source's convention | GeoDef equivalent |
 |---|---|
-| `alpha * \|\|L m\|\|^2` (e.g. Tikhonov texts) | `smoothing_strength = alpha` |
-| `alpha^2` or `lambda^2 * \|\|L m\|\|^2` (e.g. Aster et al.; earlier GeoDef tutorial drafts) | `smoothing_strength = alpha^2` (their `alpha` is our `sqrt(lambda)`) |
-| `(1/beta^2)` precision weighting (Bayesian, e.g. Fukuda & Johnson 2008) | `smoothing_strength = sigma_d^2 / sigma_m^2` at fixed hyperparameters |
+| `alpha * \|\|L m\|\|^2` (e.g. Tikhonov texts) | `regularization_strength = alpha` |
+| `alpha^2` or `lambda^2 * \|\|L m\|\|^2` (e.g. Aster et al.; earlier GeoDef tutorial drafts) | `regularization_strength = alpha^2` (their `alpha` is our `sqrt(lambda)`) |
+| `(1/beta^2)` precision weighting (Bayesian, e.g. Fukuda & Johnson 2008) | `regularization_strength = sigma_d^2 / sigma_m^2` at fixed hyperparameters |
 
 ## Misfit statistics
 

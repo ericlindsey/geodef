@@ -84,8 +84,8 @@ def gnss_data():
 _THETA0_KWARGS = dict(
     n_length=_NL,
     n_width=_NW,
-    smoothing="laplacian",
-    smoothing_strength=1.0,
+    regularization="laplacian",
+    regularization_strength=1.0,
     components="dip",
 )
 

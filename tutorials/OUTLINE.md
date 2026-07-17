@@ -287,8 +287,8 @@ common regularization operators.
   "equations" with weight `√λ`.
 - Qualitative effect of `λ`: under- vs. over-smoothing (sets up Tutorial 05).
 
-**Key calls.** `geodef.invert.solve(..., smoothing='laplacian'|'damping'|'stresskernel',
-smoothing_strength=λ, smoothing_target=m_ref)`; `greens` Laplacian builder
+**Key calls.** `geodef.invert.solve(..., regularization='laplacian'|'damping'|'stresskernel',
+regularization_strength=λ, regularization_target=m_ref)`; `greens` Laplacian builder
 referenced conceptually.
 
 **Plots.** A small panel grid: recovered slip at several `λ` values from
@@ -316,7 +316,7 @@ guess a good value (then check it in Tutorial 05).
 - When the methods agree/disagree and how to choose between them.
 
 **Key calls.** `geodef.lcurve(...)`, `geodef.abic_curve(...)`,
-`geodef.compute_abic(...)`, and `geodef.invert.solve(..., smoothing_strength='abic'`
+`geodef.compute_abic(...)`, and `geodef.invert.solve(..., regularization_strength='abic'`
 `|'cv', cv_folds=...)`; their built-in curve plots.
 
 **Plots.** L-curve with marked corner; ABIC vs. `λ`; CV error vs. `λ`; the

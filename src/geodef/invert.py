@@ -35,11 +35,15 @@ from geodef.slip import from_plate, from_rake, magnitude, unpack
 from geodef.slip import rake as slip_rake
 
 _VALID_METHODS = {"wls", "nnls", "bounded_ls", "constrained"}
-_VALID_SMOOTHING_STRINGS = {"laplacian", "damping", "stresskernel"}
+_VALID_REGULARIZATION_STRINGS = {"laplacian", "damping", "stresskernel"}
 _VALID_STRENGTH_STRINGS = {"abic", "cv"}
 _VALID_COMPONENTS = {"both", "strike", "dip", "rake", "azimuth", "plate"}
-RESULT_SCHEMA_VERSION = 2
+RESULT_SCHEMA_VERSION = 3
 _RESULT_SCHEMA = "geodef.inversion_result"
+# Schema versions this build can still read. Version 2 named the
+# regularization fields ``smoothing*``; version 3 renamed them to
+# ``regularization*`` and its keys are migrated on load.
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({2, 3})
 
 # A bound may be a scalar (all parameters), an array of length n_components
 # (one value per slip component, broadcast over patches), or an array of
@@ -66,8 +70,8 @@ class InversionResult:
         rms: Root-mean-square of residuals.
         moment: Scalar seismic moment in N-m.
         Mw: Moment magnitude.
-        smoothing: Regularization type used, or None if unregularized.
-        smoothing_strength: Regularization weight used, or None if unregularized.
+        regularization: Regularization type used, or None if unregularized.
+        regularization_strength: Regularization weight used, or None if unregularized.
         components: Which slip components were solved for. One of
             ``'both'``, ``'strike'``, ``'dip'``, ``'rake'``, or
             ``'azimuth'``.
@@ -88,7 +92,7 @@ class InversionResult:
         solver: Solver selected for the completed inversion.
         success: Whether the solver completed successfully.
         message: Solver completion message.
-        smoothing_selection: ``'abic'`` or ``'cv'`` when selected
+        regularization_selection: ``'abic'`` or ``'cv'`` when selected
             automatically, otherwise ``None``.
         backend: Array backend active during the solve.
         precision: Floating-point precision active during the solve.
@@ -98,7 +102,7 @@ class InversionResult:
         system_hash: SHA-256 fingerprint of G, d, W, and L.
         lower_bounds: Expanded lower parameter bounds, if any.
         upper_bounds: Expanded upper parameter bounds, if any.
-        smoothing_target: Reference model used by regularization, if any.
+        regularization_target: Reference model used by regularization, if any.
         constraint_matrix: Linear inequality matrix, if any.
         constraint_bounds: Linear inequality right-hand side, if any.
         dataset_diagnostics: Solve-time diagnostics in dataset order.
@@ -112,8 +116,8 @@ class InversionResult:
     rms: float
     moment: float
     Mw: float
-    smoothing: str | np.ndarray | None
-    smoothing_strength: float | None
+    regularization: str | np.ndarray | None
+    regularization_strength: float | None
     components: str
     rake: float | None = None
     slip_azimuth: float | None = None
@@ -124,7 +128,7 @@ class InversionResult:
     solver: str = "unknown"
     success: bool = True
     message: str = ""
-    smoothing_selection: str | None = None
+    regularization_selection: str | None = None
     backend: str = "numpy"
     precision: str = "float64"
     warnings: tuple[str, ...] = ()
@@ -133,7 +137,7 @@ class InversionResult:
     system_hash: str = ""
     lower_bounds: np.ndarray | None = None
     upper_bounds: np.ndarray | None = None
-    smoothing_target: np.ndarray | None = None
+    regularization_target: np.ndarray | None = None
     constraint_matrix: np.ndarray | None = None
     constraint_bounds: np.ndarray | None = None
     dataset_diagnostics: tuple["DatasetDiagnostics", ...] = ()
@@ -273,12 +277,12 @@ def _result_arrays(result: InversionResult) -> dict[str, np.ndarray]:
         "local_rake": result.local_rake,
         "lower_bounds": result.lower_bounds,
         "upper_bounds": result.upper_bounds,
-        "smoothing_target": result.smoothing_target,
+        "regularization_target": result.regularization_target,
         "constraint_matrix": result.constraint_matrix,
         "constraint_bounds": result.constraint_bounds,
     }
-    if isinstance(result.smoothing, np.ndarray):
-        optional["smoothing"] = result.smoothing
+    if isinstance(result.regularization, np.ndarray):
+        optional["regularization"] = result.regularization
     for name, value in optional.items():
         if value is not None:
             arrays[name] = np.asarray(value)
@@ -306,21 +310,21 @@ def _build_manifest(
     arrays: Mapping[str, np.ndarray],
 ) -> dict[str, object]:
     """Build the versioned result manifest."""
-    smoothing: str | None
-    if isinstance(result.smoothing, np.ndarray):
-        smoothing = "__array__"
+    regularization: str | None
+    if isinstance(result.regularization, np.ndarray):
+        regularization = "__array__"
     else:
-        smoothing = result.smoothing
+        regularization = result.regularization
     result_metadata: dict[str, object] = {
         "reduced_chi2": _json_float(result.reduced_chi2),
         "rms": _json_float(result.rms),
         "moment": _json_float(result.moment),
         "Mw": _json_float(result.Mw),
-        "smoothing": smoothing,
-        "smoothing_strength": (
+        "regularization": regularization,
+        "regularization_strength": (
             None
-            if result.smoothing_strength is None
-            else _json_float(result.smoothing_strength)
+            if result.regularization_strength is None
+            else _json_float(result.regularization_strength)
         ),
         "components": result.components,
         "rake": None if result.rake is None else _json_float(result.rake),
@@ -334,7 +338,7 @@ def _build_manifest(
         "solver": result.solver,
         "success": result.success,
         "message": result.message,
-        "smoothing_selection": result.smoothing_selection,
+        "regularization_selection": result.regularization_selection,
         "backend": result.backend,
         "precision": result.precision,
         "warnings": list(result.warnings),
@@ -511,6 +515,41 @@ def _load_partitions(
     return tuple(cast(list[str], raw_names)), tuple(slices)
 
 
+def _migrate_v2_regularization_keys(
+    metadata: Mapping[str, object], arrays: Mapping[str, np.ndarray]
+) -> tuple[dict[str, object], dict[str, np.ndarray]]:
+    """Rename schema-version-2 ``smoothing*`` keys to ``regularization*``.
+
+    Version 2 stored the regularization type, strength, and selection under
+    ``smoothing`` names, with the custom operator and target arrays keyed by
+    ``smoothing`` and ``smoothing_target``. Version 3 renamed them; this
+    remaps a version-2 manifest so the shared loader can read it unchanged.
+
+    Args:
+        metadata: The version-2 ``result`` manifest mapping.
+        arrays: The version-2 archive arrays.
+
+    Returns:
+        The metadata and arrays with version-3 key names.
+    """
+    metadata = dict(metadata)
+    arrays = dict(arrays)
+    for old, new in (
+        ("smoothing", "regularization"),
+        ("smoothing_strength", "regularization_strength"),
+        ("smoothing_selection", "regularization_selection"),
+    ):
+        if old in metadata and new not in metadata:
+            metadata[new] = metadata.pop(old)
+    for old, new in (
+        ("smoothing", "regularization"),
+        ("smoothing_target", "regularization_target"),
+    ):
+        if old in arrays and new not in arrays:
+            arrays[new] = arrays.pop(old)
+    return metadata, arrays
+
+
 def _load_versioned(
     archive: Mapping[str, np.ndarray], manifest: Mapping[str, object]
 ) -> InversionResult:
@@ -518,24 +557,28 @@ def _load_versioned(
     if manifest.get("schema") != _RESULT_SCHEMA:
         raise ValueError(f"unknown result schema {manifest.get('schema')!r}")
     version = manifest.get("schema_version")
-    if version != RESULT_SCHEMA_VERSION:
+    if version not in _SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(
             f"unsupported result schema version {version!r}; "
-            f"this GeoDef supports version {RESULT_SCHEMA_VERSION}"
+            f"this GeoDef reads versions {sorted(_SUPPORTED_SCHEMA_VERSIONS)}"
         )
     arrays = _validated_arrays(archive, manifest)
     metadata = _as_mapping(manifest.get("result"), "result")
+    if version == 2:
+        metadata, arrays = _migrate_v2_regularization_keys(metadata, arrays)
     dataset_names, dataset_slices = _load_partitions(metadata, arrays["predicted"].size)
 
-    raw_smoothing = metadata.get("smoothing")
-    if raw_smoothing == "__array__":
-        smoothing: str | np.ndarray | None = _optional_array(arrays, "smoothing")
-        if smoothing is None:
-            raise ValueError("custom smoothing is missing its archive array")
-    elif raw_smoothing is None or isinstance(raw_smoothing, str):
-        smoothing = raw_smoothing
+    raw_regularization = metadata.get("regularization")
+    if raw_regularization == "__array__":
+        regularization: str | np.ndarray | None = _optional_array(
+            arrays, "regularization"
+        )
+        if regularization is None:
+            raise ValueError("custom regularization is missing its archive array")
+    elif raw_regularization is None or isinstance(raw_regularization, str):
+        regularization = raw_regularization
     else:
-        raise ValueError("manifest result.smoothing must be a string or null")
+        raise ValueError("manifest result.regularization must be a string or null")
 
     success = metadata.get("success")
     if not isinstance(success, bool):
@@ -545,9 +588,11 @@ def _load_versioned(
         isinstance(warning, str) for warning in raw_warnings
     ):
         raise ValueError("manifest result.warnings must be a string list")
-    smoothing_selection = metadata.get("smoothing_selection")
-    if smoothing_selection is not None and not isinstance(smoothing_selection, str):
-        raise ValueError("manifest smoothing_selection must be a string or null")
+    regularization_selection = metadata.get("regularization_selection")
+    if regularization_selection is not None and not isinstance(
+        regularization_selection, str
+    ):
+        raise ValueError("manifest regularization_selection must be a string or null")
 
     return InversionResult(
         slip=arrays["slip"],
@@ -558,8 +603,8 @@ def _load_versioned(
         rms=_manifest_float(metadata.get("rms")),
         moment=_manifest_float(metadata.get("moment")),
         Mw=_manifest_float(metadata.get("Mw")),
-        smoothing=smoothing,
-        smoothing_strength=_optional_float(metadata, "smoothing_strength"),
+        regularization=regularization,
+        regularization_strength=_optional_float(metadata, "regularization_strength"),
         components=_required_string(metadata, "components"),
         rake=_optional_float(metadata, "rake"),
         slip_azimuth=_optional_float(metadata, "slip_azimuth"),
@@ -570,7 +615,7 @@ def _load_versioned(
         solver=_required_string(metadata, "solver"),
         success=success,
         message=_required_string(metadata, "message"),
-        smoothing_selection=smoothing_selection,
+        regularization_selection=regularization_selection,
         backend=_required_string(metadata, "backend"),
         precision=_required_string(metadata, "precision"),
         warnings=tuple(cast(list[str], raw_warnings)),
@@ -579,7 +624,7 @@ def _load_versioned(
         system_hash=_required_string(metadata, "system_hash"),
         lower_bounds=_optional_array(arrays, "lower_bounds"),
         upper_bounds=_optional_array(arrays, "upper_bounds"),
-        smoothing_target=_optional_array(arrays, "smoothing_target"),
+        regularization_target=_optional_array(arrays, "regularization_target"),
         constraint_matrix=_optional_array(arrays, "constraint_matrix"),
         constraint_bounds=_optional_array(arrays, "constraint_bounds"),
         dataset_diagnostics=_load_diagnostics(metadata.get("dataset_diagnostics")),
@@ -614,15 +659,15 @@ def _load_legacy(archive: Mapping[str, np.ndarray]) -> InversionResult:
     missing = required - set(archive)
     if missing:
         raise ValueError(f"legacy result archive is missing {sorted(missing)}")
-    smoothing_name = str(archive["smoothing_str"][0])
-    if smoothing_name == "__none__":
-        smoothing: str | np.ndarray | None = None
-    elif smoothing_name == "__array__":
+    regularization_name = str(archive["smoothing_str"][0])
+    if regularization_name == "__none__":
+        regularization: str | np.ndarray | None = None
+    elif regularization_name == "__array__":
         if "smoothing_arr" not in archive:
-            raise ValueError("legacy custom smoothing array is missing")
-        smoothing = archive["smoothing_arr"].copy()
+            raise ValueError("legacy custom regularization array is missing")
+        regularization = archive["smoothing_arr"].copy()
     else:
-        smoothing = smoothing_name
+        regularization = regularization_name
     plate_rake = archive.get("plate_rake")
     local_rake = archive.get("local_rake")
     n_rows = archive["predicted"].size
@@ -635,8 +680,8 @@ def _load_legacy(archive: Mapping[str, np.ndarray]) -> InversionResult:
         rms=float(archive["rms"][0]),
         moment=float(archive["moment"][0]),
         Mw=float(archive["Mw"][0]),
-        smoothing=smoothing,
-        smoothing_strength=_legacy_optional_scalar(archive, "smoothing_strength"),
+        regularization=regularization,
+        regularization_strength=_legacy_optional_scalar(archive, "smoothing_strength"),
         components=str(archive["components"][0]),
         rake=_legacy_optional_scalar(archive, "rake"),
         slip_azimuth=_legacy_optional_scalar(archive, "slip_azimuth"),
@@ -697,20 +742,24 @@ def save_table(result: InversionResult, fname: str | Path, fault: Fault) -> None
             f"result has {result.n_patches} patches but fault has {fault.n_patches}"
         )
     slip_2d = result.slip if result.slip.ndim == 2 else result.slip[:, np.newaxis]
-    smoothing_desc = (
+    regularization_desc = (
         "none"
-        if result.smoothing is None
-        else (result.smoothing if isinstance(result.smoothing, str) else "custom")
+        if result.regularization is None
+        else (
+            result.regularization
+            if isinstance(result.regularization, str)
+            else "custom"
+        )
     )
     strength_desc = (
         "N/A"
-        if result.smoothing_strength is None
-        else f"{result.smoothing_strength:.6g}"
+        if result.regularization_strength is None
+        else f"{result.regularization_strength:.6g}"
     )
     header_lines = [
         "geodef InversionResult",
         f"components: {result.components}",
-        f"smoothing: {smoothing_desc}, strength: {strength_desc}",
+        f"regularization: {regularization_desc}, strength: {strength_desc}",
         f"reduced_chi2: {result.reduced_chi2:.6g}",
         f"rms: {result.rms:.6g} {result.units}",
         f"moment: {result.moment:.6g} N-m",
@@ -773,13 +822,13 @@ class LCurveResult:
     """Result of an L-curve analysis.
 
     Attributes:
-        smoothing_values: Array of lambda values swept.
+        regularization_values: Array of lambda values swept.
         misfits: Data misfit norm ||Gm - d|| at each lambda.
         model_norms: Regularized model norm ||Lm|| at each lambda.
         optimal: Lambda at the maximum-curvature corner.
     """
 
-    smoothing_values: np.ndarray
+    regularization_values: np.ndarray
     misfits: np.ndarray
     model_norms: np.ndarray
     optimal: float
@@ -799,7 +848,7 @@ class LCurveResult:
             line_kwargs: Extra kwargs for the curve line.
             marker_kwargs: Extra kwargs for the optimal-point marker.
             annotate: Whether to label the optimal point with its
-                smoothing-strength value (default ``True``).
+                regularization-strength value (default ``True``).
 
         Returns:
             The axes used for plotting.
@@ -817,7 +866,7 @@ class LCurveResult:
         mkw: dict = {"color": "r", "marker": "o", "markersize": 10, "linestyle": "none"}
         if marker_kwargs:
             mkw.update(marker_kwargs)
-        idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
+        idx = np.argmin(np.abs(self.regularization_values - self.optimal))
         ax.loglog(self.misfits[idx], self.model_norms[idx], **mkw)
 
         if annotate:
@@ -879,14 +928,14 @@ class ABICCurveResult:
     """Result of an ABIC curve analysis.
 
     Attributes:
-        smoothing_values: Array of lambda values swept.
+        regularization_values: Array of lambda values swept.
         abic_values: ABIC value at each lambda (lower is better).
         misfits: Data misfit norm ||Gm - d|| at each lambda.
         model_norms: Regularized model norm ||Lm|| at each lambda.
         optimal: Lambda at the minimum ABIC.
     """
 
-    smoothing_values: np.ndarray
+    regularization_values: np.ndarray
     abic_values: np.ndarray
     misfits: np.ndarray
     model_norms: np.ndarray
@@ -900,14 +949,14 @@ class ABICCurveResult:
         marker_kwargs: dict | None = None,
         annotate: bool = True,
     ) -> "matplotlib.axes.Axes":
-        """Plot ABIC vs smoothing strength with the optimal point marked.
+        """Plot ABIC vs regularization strength with the optimal point marked.
 
         Args:
             ax: Axes to plot on. Creates a new figure if ``None``.
             line_kwargs: Extra kwargs for the curve line.
             marker_kwargs: Extra kwargs for the optimal-point marker.
             annotate: Whether to label the optimal point with its
-                smoothing-strength value (default ``True``).
+                regularization-strength value (default ``True``).
 
         Returns:
             The axes used for plotting.
@@ -920,18 +969,18 @@ class ABICCurveResult:
         lkw = {"color": "b", "marker": ".", "linestyle": "-"}
         if line_kwargs:
             lkw.update(line_kwargs)
-        ax.semilogx(self.smoothing_values, self.abic_values, **lkw)
+        ax.semilogx(self.regularization_values, self.abic_values, **lkw)
 
         mkw: dict = {"color": "r", "marker": "o", "markersize": 10, "linestyle": "none"}
         if marker_kwargs:
             mkw.update(marker_kwargs)
-        idx = np.argmin(np.abs(self.smoothing_values - self.optimal))
-        ax.semilogx(self.smoothing_values[idx], self.abic_values[idx], **mkw)
+        idx = np.argmin(np.abs(self.regularization_values - self.optimal))
+        ax.semilogx(self.regularization_values[idx], self.abic_values[idx], **mkw)
 
         if annotate:
             ax.annotate(
                 f"λ = {self.optimal:.3g}",
-                xy=(self.smoothing_values[idx], self.abic_values[idx]),
+                xy=(self.regularization_values[idx], self.abic_values[idx]),
                 xytext=(0, 20),
                 textcoords="offset points",
                 fontsize=9,
@@ -939,7 +988,7 @@ class ABICCurveResult:
                 arrowprops={"arrowstyle": "->", "color": mkw.get("color", "r")},
             )
 
-        ax.set_xlabel("Smoothing strength (lambda)")
+        ax.set_xlabel("Regularization strength (lambda)")
         ax.set_ylabel("ABIC")
         ax.set_title("ABIC curve")
         return ax
@@ -954,7 +1003,7 @@ class LinearSystem:
     """Prepared linear system for fault slip inversion.
 
     Encapsulates the Green's matrix, data vector, weight matrix, and
-    smoothing matrix for a given fault-dataset pair.  Expensive derived
+    regularization matrix for a given fault-dataset pair.  Expensive derived
     products (G^T W G, L^T L, G^T W d) are computed on first access and
     cached, so they are shared across ``invert``, ``lcurve``,
     ``abic_curve``, and the post-inversion analysis methods.
@@ -968,7 +1017,7 @@ class LinearSystem:
     Args:
         fault: Fault geometry.
         datasets: One or more geodetic datasets.
-        smoothing: Regularization type — ``'laplacian'``, ``'damping'``,
+        regularization: Regularization type — ``'laplacian'``, ``'damping'``,
             ``'stresskernel'``, a custom matrix, or ``None``.
         components: Slip components to solve for: ``'both'`` (default),
             ``'strike'``, ``'dip'``, ``'rake'``, ``'azimuth'``, or ``'plate'``.
@@ -979,9 +1028,9 @@ class LinearSystem:
             coordinates for ``components='plate'``.
 
     Examples:
-        >>> sys = LinearSystem(fault, [gnss, insar], smoothing='laplacian')
+        >>> sys = LinearSystem(fault, [gnss, insar], regularization='laplacian')
         >>> lc = sys.lcurve()
-        >>> result = sys.invert(smoothing_strength=lc.optimal)
+        >>> result = sys.invert(regularization_strength=lc.optimal)
         >>> diag = sys.dataset_diagnostics(result)
     """
 
@@ -989,7 +1038,7 @@ class LinearSystem:
         self,
         fault: Fault,
         datasets: DataSet | list[DataSet],
-        smoothing: str | np.ndarray | None = None,
+        regularization: str | np.ndarray | None = None,
         components: str = "both",
         rake: float | None = None,
         slip_azimuth: float | None = None,
@@ -1071,7 +1120,7 @@ class LinearSystem:
         self.dataset_names = tuple(dataset_names)
         self.dataset_slices = tuple(dataset_slices)
         self.quantity, self.units = next(iter(semantics))
-        self.smoothing = smoothing
+        self.regularization = regularization
         self.components = components
         self.rake = rake
         self.slip_azimuth = slip_azimuth
@@ -1102,9 +1151,9 @@ class LinearSystem:
         )
         self.G_w, self.d_w = _apply_weights(self.G, self.d, self.W)
         self.L: np.ndarray | None = (
-            _build_smoothing_matrix(
+            _build_regularization_matrix(
                 fault,
-                smoothing,
+                regularization,
                 self._n_params,
                 n_components,
                 components,
@@ -1112,7 +1161,7 @@ class LinearSystem:
                 slip_azimuth,
                 self.plate_rake,
             )
-            if smoothing is not None
+            if regularization is not None
             else None
         )
 
@@ -1126,11 +1175,11 @@ class LinearSystem:
         """L^T L — regularization normal equations matrix.
 
         Raises:
-            AttributeError: If the system was constructed without smoothing.
+            AttributeError: If the system was constructed without regularization.
         """
         if self.L is None:
             raise AttributeError(
-                "LtL is not available: LinearSystem has no smoothing matrix"
+                "LtL is not available: LinearSystem has no regularization matrix"
             )
         return self.L.T @ self.L
 
@@ -1145,9 +1194,9 @@ class LinearSystem:
 
     def _abic_value(
         self,
-        smoothing_strength: float,
+        regularization_strength: float,
     ) -> tuple[float, float, float]:
-        """ABIC, misfit norm, and model norm at a given smoothing strength.
+        """ABIC, misfit norm, and model norm at a given regularization strength.
 
         Uses cached GtWG, LtL, and Gtwd.  ``eig_LtL`` (lambda-independent)
         is computed on the first call and cached in ``self.__dict__``.
@@ -1157,13 +1206,13 @@ class LinearSystem:
         unweighted ``||Gm - d||`` for consistent plotting against lcurve.
 
         Args:
-            smoothing_strength: Regularization weight lambda.
+            regularization_strength: Regularization weight lambda.
 
         Returns:
             (abic, misfit_norm, model_norm) where misfit_norm = ||Gm - d||
             and model_norm = ||Lm||.
         """
-        alpha2 = smoothing_strength
+        alpha2 = regularization_strength
         n_data = len(self.d)
 
         H = self.GtWG + alpha2 * self.LtL
@@ -1253,13 +1302,13 @@ class LinearSystem:
         return abic, misfits, model_norms
 
     def _optimal_abic(self) -> float:
-        """Find optimal smoothing strength by minimizing ABIC.
+        """Find optimal regularization strength by minimizing ABIC.
 
         Returns:
             Optimal lambda.
         """
         if self.L is None:
-            raise ValueError("ABIC requires a smoothing matrix")
+            raise ValueError("ABIC requires a regularization matrix")
 
         def objective(log10_lam: float) -> float:
             return self._abic_value(10.0**log10_lam)[0]
@@ -1277,7 +1326,7 @@ class LinearSystem:
         method: str | None,
         cv_folds: int,
     ) -> float:
-        """Find optimal smoothing strength by K-fold cross-validation.
+        """Find optimal regularization strength by K-fold cross-validation.
 
         Args:
             bounds: Expanded per-parameter slip bounds.
@@ -1288,7 +1337,7 @@ class LinearSystem:
             Optimal lambda.
         """
         if self.L is None:
-            raise ValueError("Cross-validation requires a smoothing matrix")
+            raise ValueError("Cross-validation requires a regularization matrix")
 
         n_obs = self.G_w.shape[0]
         solve_method = method if method is not None else _auto_select_method(bounds)
@@ -1316,11 +1365,11 @@ class LinearSystem:
 
         return float(lambdas[np.argmin(cv_errors)])
 
-    def _hat_diagonal(self, smoothing_strength: float | None) -> np.ndarray:
+    def _hat_diagonal(self, regularization_strength: float | None) -> np.ndarray:
         """Diagonal of the hat matrix H = G_w (G_w^T G_w + λ L^T L)^{-1} G_w^T.
 
         Args:
-            smoothing_strength: Regularization weight, or None.
+            regularization_strength: Regularization weight, or None.
 
         Returns:
             Leverage vector, shape (M,).
@@ -1328,10 +1377,10 @@ class LinearSystem:
         H = self.GtWG.copy()
         if (
             self.L is not None
-            and smoothing_strength is not None
-            and smoothing_strength > 0
+            and regularization_strength is not None
+            and regularization_strength > 0
         ):
-            H += smoothing_strength * self.LtL
+            H += regularization_strength * self.LtL
         A = np.linalg.solve(H.T, self.G_w.T).T
         return np.sum(A * self.G_w, axis=1)
 
@@ -1341,22 +1390,22 @@ class LinearSystem:
 
     def invert(
         self,
-        smoothing_strength: float | str = 0.0,
+        regularization_strength: float | str = 0.0,
         bounds: BoundsSpec = None,
         method: str | None = None,
-        smoothing_target: np.ndarray | None = None,
+        regularization_target: np.ndarray | None = None,
         constraints: tuple[np.ndarray, np.ndarray] | None = None,
         cv_folds: int = 5,
     ) -> InversionResult:
         """Invert for fault slip using this prepared system.
 
         Args:
-            smoothing_strength: Scalar regularization weight, or
+            regularization_strength: Scalar regularization weight, or
                 ``'abic'`` / ``'cv'`` for automatic tuning.
             bounds: Per-component slip bounds ``(lower, upper)``.
             method: Solver — ``'wls'``, ``'nnls'``, ``'bounded_ls'``,
                 or ``'constrained'``. Auto-selected from bounds if None.
-            smoothing_target: Reference vector, shape ``(n_params,)``.
+            regularization_target: Reference vector, shape ``(n_params,)``.
                 Regularizes toward this target instead of zero.
             constraints: Inequality constraints ``(C, d_ineq)`` such
                 that ``C @ m <= d_ineq``.
@@ -1371,11 +1420,11 @@ class LinearSystem:
         _validate_args(
             self.datasets,
             self.components,
-            self.smoothing,
-            smoothing_strength,
+            self.regularization,
+            regularization_strength,
             bounds,
             method,
-            smoothing_target,
+            regularization_target,
             self._n_params,
             self.rake,
             self.slip_azimuth,
@@ -1386,24 +1435,26 @@ class LinearSystem:
             bounds, self._n_patches, self._n_params // self._n_patches
         )
 
-        smoothing_selection = (
-            smoothing_strength if isinstance(smoothing_strength, str) else None
+        regularization_selection = (
+            regularization_strength
+            if isinstance(regularization_strength, str)
+            else None
         )
-        if isinstance(smoothing_strength, str):
-            if smoothing_strength == "abic":
+        if isinstance(regularization_strength, str):
+            if regularization_strength == "abic":
                 strength = self._optimal_abic()
-            elif smoothing_strength == "cv":
+            elif regularization_strength == "cv":
                 strength = self._optimal_cv(exp_bounds, method, cv_folds)
             else:
                 raise ValueError(
-                    "smoothing_strength string must be 'abic' or 'cv', "
-                    f"got {smoothing_strength!r}"
+                    "regularization_strength string must be 'abic' or 'cv', "
+                    f"got {regularization_strength!r}"
                 )
         else:
-            strength = float(smoothing_strength)
+            strength = float(regularization_strength)
 
         if self.L is not None and strength > 0:
-            d_reg = _build_reg_rhs(self.L, strength, smoothing_target)
+            d_reg = _build_reg_rhs(self.L, strength, regularization_target)
             G_aug = np.vstack([self.G_w, np.sqrt(strength) * self.L])
             d_aug = np.concatenate([self.d_w, d_reg])
             reg_strength: float | None = strength
@@ -1476,8 +1527,8 @@ class LinearSystem:
             rms=rms,
             moment=moment,
             Mw=mw,
-            smoothing=self.smoothing if reg_strength is not None else None,
-            smoothing_strength=reg_strength,
+            regularization=self.regularization if reg_strength is not None else None,
+            regularization_strength=reg_strength,
             components=self.components,
             rake=self.rake,
             slip_azimuth=self.slip_azimuth,
@@ -1492,7 +1543,7 @@ class LinearSystem:
             solver=method,
             success=True,
             message=f"{method} completed",
-            smoothing_selection=smoothing_selection,
+            regularization_selection=regularization_selection,
             backend=backend.get_backend(),
             precision=backend.get_precision(),
             warnings=tuple(result_warnings),
@@ -1501,10 +1552,10 @@ class LinearSystem:
             system_hash=system_hash,
             lower_bounds=lower_bounds,
             upper_bounds=upper_bounds,
-            smoothing_target=(
+            regularization_target=(
                 None
-                if smoothing_target is None
-                else np.asarray(smoothing_target, dtype=float).copy()
+                if regularization_target is None
+                else np.asarray(regularization_target, dtype=float).copy()
             ),
             constraint_matrix=constraint_matrix,
             constraint_bounds=constraint_bounds,
@@ -1513,12 +1564,12 @@ class LinearSystem:
 
     def lcurve(
         self,
-        smoothing_range: tuple[float, float] = (1e-2, 1e6),
+        regularization_range: tuple[float, float] = (1e-2, 1e6),
         n: int = 50,
         bounds: BoundsSpec = None,
         method: str | None = None,
     ) -> LCurveResult:
-        """Sweep smoothing strength and compute the L-curve.
+        """Sweep regularization strength and compute the L-curve.
 
         For unconstrained (``wls``) solves, GtWG, LtL, and Gtwd are used
         directly so each iteration is a single linear solve with no matrix
@@ -1527,7 +1578,7 @@ class LinearSystem:
         Misfits are the unweighted norm ``||Gm - d||``.
 
         Args:
-            smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+            regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
             n: Number of lambda values to evaluate.
             bounds: Per-component slip bounds.
             method: Solver method.
@@ -1536,12 +1587,12 @@ class LinearSystem:
             LCurveResult with sweep arrays and optimal lambda.
 
         Raises:
-            ValueError: If the system has no smoothing matrix.
+            ValueError: If the system has no regularization matrix.
         """
         if self.L is None:
-            raise ValueError("lcurve requires a smoothing matrix")
+            raise ValueError("lcurve requires a regularization matrix")
 
-        lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
+        lambdas = np.geomspace(regularization_range[0], regularization_range[1], n)
         misfits = np.empty(n)
         model_norms = np.empty(n)
 
@@ -1568,7 +1619,7 @@ class LinearSystem:
 
         optimal = _lcurve_corner(lambdas, misfits, model_norms)
         return LCurveResult(
-            smoothing_values=lambdas,
+            regularization_values=lambdas,
             misfits=misfits,
             model_norms=model_norms,
             optimal=optimal,
@@ -1576,29 +1627,29 @@ class LinearSystem:
 
     def abic_curve(
         self,
-        smoothing_range: tuple[float, float] = (1e-2, 1e6),
+        regularization_range: tuple[float, float] = (1e-2, 1e6),
         n: int = 50,
     ) -> ABICCurveResult:
-        """Sweep smoothing strength and compute the ABIC at each value.
+        """Sweep regularization strength and compute the ABIC at each value.
 
         GtWG, LtL, Gtwd, and eig_LtL are all computed once and reused
         across all iterations.  Misfits are the unweighted norm ``||Gm - d||``,
         consistent with ``lcurve``.
 
         Args:
-            smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+            regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
             n: Number of lambda values to evaluate.
 
         Returns:
             ABICCurveResult with sweep arrays and optimal lambda.
 
         Raises:
-            ValueError: If the system has no smoothing matrix.
+            ValueError: If the system has no regularization matrix.
         """
         if self.L is None:
-            raise ValueError("abic_curve requires a smoothing matrix")
+            raise ValueError("abic_curve requires a regularization matrix")
 
-        lambdas = np.geomspace(smoothing_range[0], smoothing_range[1], n)
+        lambdas = np.geomspace(regularization_range[0], regularization_range[1], n)
 
         if backend.get_backend() == "jax":
             abic_values, misfits, model_norms = self._abic_sweep_jax(lambdas)
@@ -1611,7 +1662,7 @@ class LinearSystem:
 
         optimal = float(lambdas[np.argmin(abic_values)])
         return ABICCurveResult(
-            smoothing_values=lambdas,
+            regularization_values=lambdas,
             abic_values=abic_values,
             misfits=misfits,
             model_norms=model_norms,
@@ -1631,16 +1682,16 @@ class LinearSystem:
             List of ``DatasetDiagnostics``, one per dataset.
         """
         return self._compute_dataset_diagnostics(
-            result.residuals, result.smoothing_strength
+            result.residuals, result.regularization_strength
         )
 
     def _compute_dataset_diagnostics(
         self,
         residuals: np.ndarray,
-        smoothing_strength: float | None,
+        regularization_strength: float | None,
     ) -> list[DatasetDiagnostics]:
         """Compute named-fit statistics from solve-time arrays."""
-        lev = self._hat_diagonal(smoothing_strength)
+        lev = self._hat_diagonal(regularization_strength)
 
         diags = []
         for ds, idx in zip(self.datasets, self.dataset_slices):
@@ -1703,8 +1754,8 @@ class LinearSystem:
         """
         if kind not in ("posterior", "estimator"):
             raise ValueError(f"kind must be 'posterior' or 'estimator', got {kind!r}")
-        if self.L is not None and result.smoothing_strength is not None:
-            H = self.GtWG + result.smoothing_strength * self.LtL
+        if self.L is not None and result.regularization_strength is not None:
+            H = self.GtWG + result.regularization_strength * self.LtL
             if kind == "posterior":
                 return np.linalg.inv(H)
             H_inv = np.linalg.inv(H)
@@ -1722,8 +1773,8 @@ class LinearSystem:
         Returns:
             Resolution matrix, shape (n_params, n_params).
         """
-        if self.L is not None and result.smoothing_strength is not None:
-            H = self.GtWG + result.smoothing_strength * self.LtL
+        if self.L is not None and result.regularization_strength is not None:
+            H = self.GtWG + result.regularization_strength * self.LtL
             return np.linalg.solve(H, self.GtWG)
         return np.linalg.solve(self.GtWG, self.GtWG)
 
@@ -1752,11 +1803,11 @@ class LinearSystem:
 def solve(
     fault: Fault,
     datasets: DataSet | list[DataSet],
-    smoothing: str | np.ndarray | None = None,
-    smoothing_strength: float | str = 0.0,
+    regularization: str | np.ndarray | None = None,
+    regularization_strength: float | str = 0.0,
     bounds: BoundsSpec = None,
     method: str | None = None,
-    smoothing_target: np.ndarray | None = None,
+    regularization_target: np.ndarray | None = None,
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
@@ -1769,18 +1820,18 @@ def solve(
     Args:
         fault: Fault geometry.
         datasets: One or more geodetic datasets.
-        smoothing: Regularization type. One of ``'laplacian'``,
+        regularization: Regularization type. One of ``'laplacian'``,
             ``'damping'``, ``'stresskernel'``, a custom matrix, or None.
-        smoothing_strength: Scalar weight on the regularization term,
+        regularization_strength: Scalar weight on the regularization term,
             or ``'abic'`` / ``'cv'`` for automatic tuning.
         bounds: Per-component slip bounds ``(lower, upper)``.
             Use None for unbounded side, e.g. ``(0, None)``.
         method: Solver — ``'wls'``, ``'nnls'``, ``'bounded_ls'``, or
             ``'constrained'``. Auto-selected from bounds if None.
-        smoothing_target: Reference model vector, shape
+        regularization_target: Reference model vector, shape
             (n_components * N,). Regularizes toward this target instead
             of zero: minimizes ``||L(m - m_ref)||^2``. Only valid when
-            smoothing is set.
+            regularization is set.
         components: Which slip components to solve for. One of
             ``'both'`` (default), ``'strike'``, ``'dip'``, ``'rake'``,
             or ``'azimuth'``.
@@ -1808,14 +1859,19 @@ def solve(
     sys = LinearSystem(
         fault,
         datasets,
-        smoothing,
+        regularization,
         components,
         rake,
         slip_azimuth,
         plate_rake,
     )
     return sys.invert(
-        smoothing_strength, bounds, method, smoothing_target, constraints, cv_folds
+        regularization_strength,
+        bounds,
+        method,
+        regularization_target,
+        constraints,
+        cv_folds,
     )
 
 
@@ -1824,9 +1880,9 @@ def compute_abic(
     d: np.ndarray,
     W: np.ndarray,
     L: np.ndarray,
-    smoothing_strength: float,
+    regularization_strength: float,
 ) -> float:
-    """Compute the ABIC value for a given smoothing strength.
+    """Compute the ABIC value for a given regularization strength.
 
     Implements the Akaike Bayesian Information Criterion following
     Fukuda & Johnson (2008, 2010).
@@ -1836,12 +1892,12 @@ def compute_abic(
         d: Data vector, shape (M,).
         W: Weight matrix, shape (M, M).
         L: Regularization matrix, shape (K, P).
-        smoothing_strength: Regularization weight (lambda = alpha^2).
+        regularization_strength: Regularization weight (lambda = alpha^2).
 
     Returns:
         ABIC scalar value (lower is better).
     """
-    alpha2 = smoothing_strength
+    alpha2 = regularization_strength
     n_data = len(d)
 
     GtWG = G.T @ W @ G
@@ -1867,8 +1923,8 @@ def compute_abic(
 def lcurve(
     fault: Fault,
     datasets: DataSet | list[DataSet],
-    smoothing: str | np.ndarray = "laplacian",
-    smoothing_range: tuple[float, float] = (1e-2, 1e6),
+    regularization: str | np.ndarray = "laplacian",
+    regularization_range: tuple[float, float] = (1e-2, 1e6),
     n: int = 50,
     bounds: BoundsSpec = None,
     method: str | None = None,
@@ -1877,13 +1933,13 @@ def lcurve(
     slip_azimuth: float | None = None,
     plate_rake: float | np.ndarray | None = None,
 ) -> LCurveResult:
-    """Sweep smoothing strength and compute the L-curve.
+    """Sweep regularization strength and compute the L-curve.
 
     Args:
         fault: Fault geometry.
         datasets: One or more geodetic datasets.
-        smoothing: Regularization type.
-        smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+        regularization: Regularization type.
+        regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
         n: Number of lambda values to evaluate.
         bounds: Per-component slip bounds.
         method: Solver method.
@@ -1899,23 +1955,23 @@ def lcurve(
         LCurveResult with sweep arrays and optimal lambda.
     """
     sys = LinearSystem(
-        fault, datasets, smoothing, components, rake, slip_azimuth, plate_rake
+        fault, datasets, regularization, components, rake, slip_azimuth, plate_rake
     )
-    return sys.lcurve(smoothing_range, n, bounds, method)
+    return sys.lcurve(regularization_range, n, bounds, method)
 
 
 def abic_curve(
     fault: Fault,
     datasets: DataSet | list[DataSet],
-    smoothing: str | np.ndarray = "laplacian",
-    smoothing_range: tuple[float, float] = (1e-2, 1e6),
+    regularization: str | np.ndarray = "laplacian",
+    regularization_range: tuple[float, float] = (1e-2, 1e6),
     n: int = 50,
     components: str = "both",
     rake: float | None = None,
     slip_azimuth: float | None = None,
     plate_rake: float | np.ndarray | None = None,
 ) -> ABICCurveResult:
-    """Sweep smoothing strength and compute the ABIC at each value.
+    """Sweep regularization strength and compute the ABIC at each value.
 
     Also records misfit and model norm for context. The optimal lambda
     is the one that minimizes ABIC.
@@ -1923,8 +1979,8 @@ def abic_curve(
     Args:
         fault: Fault geometry.
         datasets: One or more geodetic datasets.
-        smoothing: Regularization type.
-        smoothing_range: ``(min_lambda, max_lambda)`` range to sweep.
+        regularization: Regularization type.
+        regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
         n: Number of lambda values to evaluate.
         components: Which slip components to solve for.
         rake: Fixed rake angle in degrees, required when
@@ -1938,9 +1994,9 @@ def abic_curve(
         ABICCurveResult with sweep arrays and optimal lambda.
     """
     sys = LinearSystem(
-        fault, datasets, smoothing, components, rake, slip_azimuth, plate_rake
+        fault, datasets, regularization, components, rake, slip_azimuth, plate_rake
     )
-    return sys.abic_curve(smoothing_range, n)
+    return sys.abic_curve(regularization_range, n)
 
 
 def _projection_matrix(datasets: list[DataSet]) -> np.ndarray:
@@ -2078,8 +2134,8 @@ def geometry_search(
     n_length: int = 1,
     n_width: int = 1,
     components: str = "both",
-    smoothing: str | np.ndarray | None = None,
-    smoothing_strength: float = 0.0,
+    regularization: str | np.ndarray | None = None,
+    regularization_strength: float = 0.0,
     nu: float = 0.25,
 ) -> GeometrySearchResult:
     """Gradient-based nonlinear inversion for planar fault geometry.
@@ -2113,9 +2169,9 @@ def geometry_search(
         n_width: Number of patches down dip.
         components: Slip components for the inner solve: ``'both'``,
             ``'strike'``, or ``'dip'``.
-        smoothing: Regularization type for the inner solve (as in
+        regularization: Regularization type for the inner solve (as in
             ``invert()``), or None for no regularization.
-        smoothing_strength: Regularization weight lambda for the inner
+        regularization_strength: Regularization weight lambda for the inner
             solve (held fixed during the search).
         nu: Poisson's ratio.
 
@@ -2157,7 +2213,7 @@ def geometry_search(
     # Template system provides the stacked data, weights, and (fixed)
     # regularization operator; its Green's matrix is not used.
     template = _fault_from_planar_vector(theta0, frame, n_length, n_width)
-    sys = LinearSystem(template, datasets, smoothing, components)
+    sys = LinearSystem(template, datasets, regularization, components)
     n_patches = n_length * n_width
     col_start, col_stop = {
         "both": (0, 2 * n_patches),
@@ -2182,10 +2238,12 @@ def geometry_search(
     d_w = jnp.asarray(sys.d_w)
     theta_base = jnp.asarray(theta0)
     free_j = jnp.asarray(free_idx)
-    if smoothing_strength > 0.0:
+    if regularization_strength > 0.0:
         if sys.L is None:
-            raise ValueError("smoothing_strength > 0 requires a smoothing operator")
-        LtL = jnp.asarray(sys.LtL) * smoothing_strength
+            raise ValueError(
+                "regularization_strength > 0 requires a regularization operator"
+            )
+        LtL = jnp.asarray(sys.LtL) * regularization_strength
     else:
         LtL = jnp.zeros((sys.G.shape[1], sys.G.shape[1]))
 
@@ -2308,20 +2366,24 @@ def summary(result: InversionResult) -> str:
     Returns:
         Multi-line human-readable summary.
     """
-    smoothing = "none"
-    if result.smoothing is not None:
-        smoothing_name = (
-            result.smoothing if isinstance(result.smoothing, str) else "custom"
+    regularization = "none"
+    if result.regularization is not None:
+        regularization_name = (
+            result.regularization
+            if isinstance(result.regularization, str)
+            else "custom"
         )
-        smoothing = f"{smoothing_name} (lambda={result.smoothing_strength:.6g})"
-        if result.smoothing_selection is not None:
-            smoothing += f", selected by {result.smoothing_selection}"
+        regularization = (
+            f"{regularization_name} (lambda={result.regularization_strength:.6g})"
+        )
+        if result.regularization_selection is not None:
+            regularization += f", selected by {result.regularization_selection}"
     lines = [
         f"solver: {result.solver} ({'success' if result.success else 'failed'})",
         f"datasets: {', '.join(result.dataset_names) or 'data'}",
         f"quantity: {result.quantity} [{result.units}]",
         f"components: {result.components}",
-        f"regularization: {smoothing}",
+        f"regularization: {regularization}",
         f"reduced chi-squared: {result.reduced_chi2:.6g}",
         f"RMS: {result.rms:.6g} {result.units}",
         f"backend: {result.backend}/{result.precision}",
@@ -2365,7 +2427,7 @@ def model_covariance(
     sys = LinearSystem(
         fault,
         datasets,
-        result.smoothing,
+        result.regularization,
         result.components,
         result.rake,
         result.slip_azimuth,
@@ -2398,7 +2460,7 @@ def model_resolution(
     sys = LinearSystem(
         fault,
         datasets,
-        result.smoothing,
+        result.regularization,
         result.components,
         result.rake,
         result.slip_azimuth,
@@ -2430,7 +2492,7 @@ def model_uncertainty(
     sys = LinearSystem(
         fault,
         datasets,
-        result.smoothing,
+        result.regularization,
         result.components,
         result.rake,
         result.slip_azimuth,
@@ -2471,11 +2533,11 @@ def _physical_components(
 def _validate_args(
     datasets: list[DataSet],
     components: str,
-    smoothing: str | np.ndarray | None,
-    smoothing_strength: float | str,
+    regularization: str | np.ndarray | None,
+    regularization_strength: float | str,
     bounds: BoundsSpec,
     method: str | None,
-    smoothing_target: np.ndarray | None,
+    regularization_target: np.ndarray | None,
     n_params: int,
     rake: float | None = None,
     slip_azimuth: float | None = None,
@@ -2518,36 +2580,41 @@ def _validate_args(
     if method is not None and method not in _VALID_METHODS:
         raise ValueError(f"method must be one of {_VALID_METHODS}, got {method!r}")
 
-    if isinstance(smoothing, str) and smoothing not in _VALID_SMOOTHING_STRINGS:
+    if (
+        isinstance(regularization, str)
+        and regularization not in _VALID_REGULARIZATION_STRINGS
+    ):
         raise ValueError(
-            f"smoothing must be one of {_VALID_SMOOTHING_STRINGS} "
-            f"or a numpy array, got {smoothing!r}"
+            f"regularization must be one of {_VALID_REGULARIZATION_STRINGS} "
+            f"or a numpy array, got {regularization!r}"
         )
 
-    if isinstance(smoothing, np.ndarray) and smoothing.shape[1] != n_params:
+    if isinstance(regularization, np.ndarray) and regularization.shape[1] != n_params:
         raise ValueError(
-            f"smoothing matrix must have {n_params} columns, got {smoothing.shape[1]}"
+            f"regularization matrix must have {n_params} columns, "
+            f"got {regularization.shape[1]}"
         )
 
-    if isinstance(smoothing_strength, str):
-        if smoothing_strength not in _VALID_STRENGTH_STRINGS:
+    if isinstance(regularization_strength, str):
+        if regularization_strength not in _VALID_STRENGTH_STRINGS:
             raise ValueError(
-                f"smoothing_strength must be a float or one of "
-                f"{_VALID_STRENGTH_STRINGS}, got {smoothing_strength!r}"
+                f"regularization_strength must be a float or one of "
+                f"{_VALID_STRENGTH_STRINGS}, got {regularization_strength!r}"
             )
-        if smoothing is None:
+        if regularization is None:
             raise ValueError(
-                f"smoothing_strength='{smoothing_strength}' requires "
-                f"smoothing to be set"
+                f"regularization_strength='{regularization_strength}' requires "
+                f"regularization to be set"
             )
 
-    if smoothing_target is not None:
-        if smoothing is None and smoothing_strength == 0.0:
-            raise ValueError("smoothing_target requires smoothing to be set")
-        target = np.asarray(smoothing_target)
+    if regularization_target is not None:
+        if regularization is None and regularization_strength == 0.0:
+            raise ValueError("regularization_target requires regularization to be set")
+        target = np.asarray(regularization_target)
         if target.shape != (n_params,):
             raise ValueError(
-                f"smoothing_target must have shape ({n_params},), got {target.shape}"
+                f"regularization_target must have shape ({n_params},), "
+                f"got {target.shape}"
             )
 
 
@@ -2573,9 +2640,9 @@ def _apply_weights(
     return W_half @ G, W_half @ d
 
 
-def _build_smoothing_matrix(
+def _build_regularization_matrix(
     fault: Fault,
-    smoothing: str | np.ndarray,
+    regularization: str | np.ndarray,
     n_params: int,
     n_components: int,
     components: str,
@@ -2587,7 +2654,7 @@ def _build_smoothing_matrix(
 
     Args:
         fault: Fault geometry.
-        smoothing: Smoothing type or custom matrix.
+        regularization: Regularization type or custom matrix.
         n_params: Number of model parameters (n_components * n_patches).
         n_components: Number of slip components (1 or 2).
         components: Active slip parameterization.
@@ -2599,19 +2666,19 @@ def _build_smoothing_matrix(
     Returns:
         Regularization matrix with n_params columns.
     """
-    if isinstance(smoothing, np.ndarray):
-        return smoothing
+    if isinstance(regularization, np.ndarray):
+        return regularization
 
-    if smoothing == "damping":
+    if regularization == "damping":
         return np.eye(n_params)
 
-    if smoothing == "laplacian":
+    if regularization == "laplacian":
         L_patch = fault.laplacian
         if n_components == 1:
             return L_patch
         return scipy.linalg.block_diag(L_patch, L_patch)
 
-    if smoothing == "stresskernel":
+    if regularization == "stresskernel":
         K = fault.stress_kernel()
         return select_slip_columns(
             K,
@@ -2623,22 +2690,22 @@ def _build_smoothing_matrix(
             plate_rake=plate_rake,
         )
 
-    raise ValueError(f"Unknown smoothing type: {smoothing!r}")
+    raise ValueError(f"Unknown regularization type: {regularization!r}")
 
 
 def _build_reg_rhs(
     L: np.ndarray,
-    smoothing_strength: float,
-    smoothing_target: np.ndarray | None,
+    regularization_strength: float,
+    regularization_target: np.ndarray | None,
 ) -> np.ndarray:
     """Build the right-hand side for the regularization rows.
 
     For standard regularization (target=None): zeros.
     For target regularization: sqrt(lambda) * L @ m_ref.
     """
-    if smoothing_target is None:
+    if regularization_target is None:
         return np.zeros(L.shape[0])
-    return np.sqrt(smoothing_strength) * (L @ smoothing_target)
+    return np.sqrt(regularization_strength) * (L @ regularization_target)
 
 
 def _expand_bounds(
@@ -2821,7 +2888,7 @@ def _rank_positive_eigs(eigs: np.ndarray) -> np.ndarray:
     A graph Laplacian's zero modes come back from ``eigvalsh`` as values of
     order 1e-15 with either sign; a plain ``> 0`` filter keeps them, which
     injects a spurious ``n0 * log(lambda)`` term into ABIC and biases the
-    selected smoothing strength.
+    selected regularization strength.
     """
     eigs = np.abs(np.asarray(eigs, dtype=float))
     if eigs.size == 0:

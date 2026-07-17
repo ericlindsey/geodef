@@ -251,7 +251,7 @@ geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
 `LCurveResult` and `ABICCurveResult` have `.plot()` methods that follow the same pattern:
 
 ```python
-lc = geodef.lcurve(fault, data, smoothing='laplacian', smoothing_range=(1e-2, 1e6))
+lc = geodef.lcurve(fault, data, regularization='laplacian', regularization_range=(1e-2, 1e6))
 ax = lc.plot()           # optimal λ annotated automatically
 ax = lc.plot(ax=ax, color='navy')
 ```

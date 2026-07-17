@@ -153,7 +153,7 @@ def _posterior(fault, datasets, **overrides):
         datasets=datasets,
         components="dip",
         mode="hierarchical",
-        smoothing="laplacian",
+        regularization="laplacian",
     )
     kwargs.update(overrides)
     return bayes.SlipPosterior(**kwargs)
@@ -234,7 +234,9 @@ class TestConstruction:
         assert post.n_params == n_slip + 2
 
     def test_param_names_fixed(self, fault3x3, gnss_signed):
-        post = _posterior(fault3x3, gnss_signed, mode="fixed", smoothing_strength=1.0)
+        post = _posterior(
+            fault3x3, gnss_signed, mode="fixed", regularization_strength=1.0
+        )
         n_slip = _NL * _NW
         assert post.param_names == [f"z{i}" for i in range(n_slip)] + ["log10_sigma"]
 
@@ -243,7 +245,7 @@ class TestConstruction:
             fault3x3,
             gnss_signed,
             mode="weak",
-            smoothing=None,
+            regularization=None,
             slip_scale=5.0,
         )
         n_slip = _NL * _NW
@@ -321,28 +323,28 @@ class TestConstruction:
 
     def test_weak_requires_slip_scale(self, fault3x3, gnss_signed):
         with pytest.raises(ValueError, match="slip_scale"):
-            _posterior(fault3x3, gnss_signed, mode="weak", smoothing=None)
+            _posterior(fault3x3, gnss_signed, mode="weak", regularization=None)
 
-    def test_weak_requires_no_smoothing(self, fault3x3, gnss_signed):
-        with pytest.raises(ValueError, match="smoothing"):
+    def test_weak_requires_no_regularization(self, fault3x3, gnss_signed):
+        with pytest.raises(ValueError, match="regularization"):
             _posterior(fault3x3, gnss_signed, mode="weak", slip_scale=5.0)
 
-    def test_hierarchical_requires_smoothing(self, fault3x3, gnss_signed):
-        with pytest.raises(ValueError, match="smoothing"):
-            _posterior(fault3x3, gnss_signed, smoothing=None)
+    def test_hierarchical_requires_regularization(self, fault3x3, gnss_signed):
+        with pytest.raises(ValueError, match="regularization"):
+            _posterior(fault3x3, gnss_signed, regularization=None)
 
-    def test_fixed_requires_smoothing_strength(self, fault3x3, gnss_signed):
-        with pytest.raises(ValueError, match="smoothing_strength"):
+    def test_fixed_requires_regularization_strength(self, fault3x3, gnss_signed):
+        with pytest.raises(ValueError, match="regularization_strength"):
             _posterior(fault3x3, gnss_signed, mode="fixed")
 
-    def test_fixed_requires_smoothing(self, fault3x3, gnss_signed):
-        with pytest.raises(ValueError, match="smoothing"):
+    def test_fixed_requires_regularization(self, fault3x3, gnss_signed):
+        with pytest.raises(ValueError, match="regularization"):
             _posterior(
                 fault3x3,
                 gnss_signed,
                 mode="fixed",
-                smoothing=None,
-                smoothing_strength=1.0,
+                regularization=None,
+                regularization_strength=1.0,
             )
 
     def test_requires_jax_backend(self, fault3x3, gnss_signed):
@@ -364,7 +366,7 @@ class TestDensityIdentity:
                 mode="fixed",
                 positive="dip",
                 components="both",
-                smoothing_strength=2.0,
+                regularization_strength=2.0,
             ),
             dict(mode="hierarchical", positive=None, components="dip"),
         ],
@@ -501,7 +503,7 @@ class TestSamplerAgreement:
             n_width=_NW,
             components="dip",
             mode="hierarchical",
-            smoothing="laplacian",
+            regularization="laplacian",
         )
 
         slip_result = bayes.sample(
@@ -539,14 +541,14 @@ class TestPositivity:
     def test_positive_dip_matches_bounded_inversion(self, fault3x3, gnss_signed):
         pytest.importorskip("blackjax")
         sys = LinearSystem(
-            fault3x3, [gnss_signed], smoothing="laplacian", components="dip"
+            fault3x3, [gnss_signed], regularization="laplacian", components="dip"
         )
         lam = 1.0
 
-        wls = sys.invert(smoothing_strength=lam, method="wls")
+        wls = sys.invert(regularization_strength=lam, method="wls")
         assert np.any(wls.slip_vector < 0), "fixture must produce a negative wls slip"
 
-        bounded = sys.invert(smoothing_strength=lam, bounds=(0, None))
+        bounded = sys.invert(regularization_strength=lam, bounds=(0, None))
 
         post = _posterior(
             fault3x3,
@@ -554,7 +556,7 @@ class TestPositivity:
             mode="fixed",
             positive="dip",
             components="dip",
-            smoothing_strength=lam,
+            regularization_strength=lam,
         )
         result = bayes.sample(post, n_samples=800, n_warmup=800, n_chains=2, seed=2)
         draws = post.slip_draws(result.flat)
@@ -587,8 +589,8 @@ class TestEmceeCrossCheck:
             datasets=gnss_1x2_signed,
             components="dip",
             mode="fixed",
-            smoothing="damping",  # laplacian needs >= 3 patches per dimension
-            smoothing_strength=1.0,
+            regularization="damping",  # laplacian needs >= 3 patches per dimension
+            regularization_strength=1.0,
             positive="dip",
         )
         assert post.n_params == 3
@@ -747,8 +749,8 @@ def _rect(datasets, **overrides):
         n_width=_NW,
         components="dip",
         mode="profiled",
-        smoothing="laplacian",
-        smoothing_strength=1.0,
+        regularization="laplacian",
+        regularization_strength=1.0,
     )
     kwargs.update(overrides)
     return bayes.RectPosterior(**kwargs)
@@ -829,7 +831,10 @@ class TestRectPositiveConstruction:
 
     def test_hierarchical_layout_has_lambda(self, gnss_signed):
         post = _rect(
-            gnss_signed, positive="dip", mode="hierarchical", smoothing_strength=1.0
+            gnss_signed,
+            positive="dip",
+            mode="hierarchical",
+            regularization_strength=1.0,
         )
         n_slip = _NL * _NW
         assert post._n_hyper == 3
@@ -859,7 +864,7 @@ class TestRectPositiveDensity:
             n_width=_NW,
             components="dip",
             mode="hierarchical",
-            smoothing="laplacian",
+            regularization="laplacian",
         )
         coll = bayes.RectPosterior(**common)
         n_slip = _NL * _NW
@@ -923,8 +928,8 @@ class TestRectPositiveSampling:
             n_width=1,
             components="dip",
             mode="profiled",
-            smoothing="damping",
-            smoothing_strength=1.0,
+            regularization="damping",
+            regularization_strength=1.0,
             positive="dip",
         )
         assert post.n_params == 4  # dip, log10_sigma, z0, z1
