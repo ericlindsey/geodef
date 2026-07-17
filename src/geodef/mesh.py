@@ -974,7 +974,7 @@ def from_trace(
     Args:
         trace_lon: Surface trace longitudes, shape (K,).
         trace_lat: Surface trace latitudes, shape (K,).
-        max_depth: Maximum fault depth in km (positive down).
+        max_depth: Maximum fault depth in meters (positive down).
         dip: Dip angle. Either a scalar (constant dip in degrees) or a
             callable ``dip(depth_m) -> angle_deg`` for variable (listric)
             geometry. Users with array data can use
@@ -993,7 +993,7 @@ def from_trace(
     """
     trace_lon = np.asarray(trace_lon, dtype=float)
     trace_lat = np.asarray(trace_lat, dtype=float)
-    max_depth = float(max_depth) * 1000.0  # km → m
+    max_depth = float(max_depth)
 
     if target_length is not None and max_area is not None:
         raise ValueError("target_length and max_area are mutually exclusive")
@@ -1198,7 +1198,7 @@ def from_slab2(
     fname: str,
     bounds: tuple[float, float, float, float],
     *,
-    target_length: float = 50.0,
+    target_length: float = 50_000.0,
     depth_growth: float = 1.0,
     max_depth: float | None = None,
     surface_trace: tuple[np.ndarray, np.ndarray] | None = None,
@@ -1214,14 +1214,14 @@ def from_slab2(
     Args:
         fname: Path to slab2.0 ``.grd`` file (NetCDF format).
         bounds: ``(lon_min, lon_max, lat_min, lat_max)`` cropping region.
-        target_length: Target triangle edge length in km at the shallowest
-            point. Default 50 km.
+        target_length: Target triangle edge length in meters at the
+            shallowest point. Default 50,000 m (50 km).
         depth_growth: Ratio of edge length at the deepest point to edge
             length at the shallowest. Values > 1 produce coarser triangles
             at depth (e.g. 2.0 means twice as coarse). Default 1.0
             (uniform).
-        max_depth: Maximum slab depth in km (positive). Grid cells deeper
-            than this are excluded. If None (default), no depth clipping.
+        max_depth: Maximum slab depth in meters (positive). Grid cells
+            deeper than this are excluded. If None (default), no clipping.
         surface_trace: Optional ``(lon, lat)`` tuple of arrays defining
             the fault trace at the surface. The slab boundary is extended
             from its shallowest edge to this trace at depth = 0, with
@@ -1262,9 +1262,9 @@ def from_slab2(
     # Offset so shallowest point is at zero depth
     Zc = Zc - np.nanmax(Zc)
 
-    # Clip at max_depth (Zc is in km, negative = down)
+    # Clip at max_depth (Zc is in km, negative = down; max_depth is meters)
     if max_depth is not None:
-        Zc[Zc < -max_depth] = np.nan
+        Zc[Zc < -max_depth / 1000.0] = np.nan
 
     # Extract boundary from non-NaN region
     valid = ~np.isnan(Zc)
@@ -1295,7 +1295,7 @@ def from_slab2(
         data_max_depth = 1.0
 
     ref_lat = 0.5 * (lat_min + lat_max)
-    base_length_deg = _km_to_deg(target_length, ref_lat)
+    base_length_deg = _km_to_deg(target_length / 1000.0, ref_lat)
     sqrt3_4 = np.sqrt(3.0) / 4.0
     base_area = sqrt3_4 * base_length_deg**2
 
