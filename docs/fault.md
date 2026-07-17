@@ -100,7 +100,6 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `engine` | `str` | `"okada"` or `"tri"` |
 | `frame` | `LocalFrame` | Frame defining every local-coordinate view and triangular vertex |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
-| `centers` | `(N, 3)` | Patch centers as `[lat, lon, depth_m]` (legacy latitude-first order) |
 | `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |
 | `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` (lazy, cached) |
 | `strike` | `(N,)` | Patch strike angles in degrees clockwise from north |

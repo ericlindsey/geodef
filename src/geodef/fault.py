@@ -734,15 +734,6 @@ class Fault:
         return self._lat.shape[0]
 
     @property
-    def centers(self) -> np.ndarray:
-        """Patch centroids as (N, 3) array of [lat, lon, depth].
-
-        Note the legacy latitude-first order; prefer :attr:`centers_geo`
-        for the documented [lon, lat, depth] convention.
-        """
-        return np.column_stack([self._lat, self._lon, self._depth])
-
-    @property
     def centers_geo(self) -> np.ndarray:
         """Patch centroids as (N, 3) array of [lon, lat, depth].
 

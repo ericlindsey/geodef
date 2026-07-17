@@ -257,7 +257,7 @@ class TestProperties:
     """Test computed properties."""
 
     def test_centers_shape(self, simple_fault):
-        assert simple_fault.centers.shape == (50, 3)
+        assert simple_fault.centers_geo.shape == (50, 3)
 
     def test_centers_local_shape(self, simple_fault):
         assert simple_fault.centers_local.shape == (50, 3)
