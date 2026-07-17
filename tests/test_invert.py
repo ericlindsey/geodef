@@ -405,6 +405,12 @@ class TestBoundsSemantics:
 class TestRegularization:
     """Regularization matrix types and regularization_strength."""
 
+    def test_arguments_after_datasets_are_keyword_only(self, fault_4x3, obs_points):
+        """A positional third argument must not be read as regularization."""
+        gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
+        with pytest.raises(TypeError):
+            invert(fault_4x3, gnss, "laplacian")
+
     def test_laplacian_regularization(self, fault_4x3, obs_points):
         """Laplacian regularization gives a smoother result than unregularized."""
         rng = np.random.default_rng(42)

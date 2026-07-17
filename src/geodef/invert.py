@@ -1803,6 +1803,7 @@ class LinearSystem:
 def solve(
     fault: Fault,
     datasets: DataSet | list[DataSet],
+    *,
     regularization: str | np.ndarray | None = None,
     regularization_strength: float | str = 0.0,
     bounds: BoundsSpec = None,
