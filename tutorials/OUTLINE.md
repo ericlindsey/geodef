@@ -131,7 +131,7 @@ introduced at the moment its underlying concept is taught:
 | Plot | Introduced in | Because |
 |---|---|---|
 | `plot.slip`, `plot.patches` | 01 | first time slip-on-fault is shown |
-| `plot.map`, `plot.vectors` | 01 | surface displacement field |
+| `plot.map_view`, `plot.vectors` | 01 | surface displacement field |
 | `plot.fault3d` | 01 | fault geometry at depth |
 | `plot.fit` | 03 | observed vs. predicted diagnostic |
 | `plot.insar` | 06 | first InSAR dataset |
@@ -187,7 +187,7 @@ basic `Fault` attributes (`n_patches`, `grid_shape`, `centers`, `areas`).
 
 **Plots.** 3-D fault geometry colored by depth (`plot.fault3d`); slip on the
 fault (`plot.slip`); map-view surface displacement over the fault footprint
-(`plot.map` + `plot.vectors`: horizontal arrows plus vertical dots).
+(`plot.map_view` + `plot.vectors`: horizontal arrows plus vertical dots).
 
 **Exercises.** Vary dip and depth and predict the change in pattern and peak
 amplitude; switch the mechanism to pure strike-slip and interpret the new vector

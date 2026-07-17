@@ -145,7 +145,7 @@ transferred blindly between meshes.
 
 ## Resolution
 
-### `resolution(G) → np.ndarray`
+### `resolution_matrix(G) → np.ndarray`
 
 Model resolution matrix `R = pinv(G) @ G` for an unregularized system — how
 each true model parameter maps into the recovered one (`R = I` means perfect
