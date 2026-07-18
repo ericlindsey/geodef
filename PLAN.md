@@ -419,14 +419,14 @@ glossary, `docs/conventions.md`, and release notes.
 
 ### 2.1 Build a true “start here” path
 
-- [ ] Create a five-minute, copy-paste quickstart that performs forward
+- [x] Create a five-minute, copy-paste quickstart that performs forward
   modeling, adds synthetic noise, solves slip, and plots observations versus
   predictions without manual vector packing or slicing.
-- [ ] Add a visual workflow page linking the three levels of API:
+- [x] Add a visual workflow page linking the three levels of API:
   domain functions → matrices/operators → physics kernels.
-- [ ] Add a glossary of geophysical and inverse-theory terms, with package names
+- [x] Add a glossary of geophysical and inverse-theory terms, with package names
   beside the mathematical symbols.
-- [ ] Provide “which function do I use?” and “which assumption am I making?”
+- [x] Provide “which function do I use?” and “which assumption am I making?”
   decision guides for geometry, slip basis, regularization, covariance,
   constraints, geometry uncertainty, and Bayesian inference.
 
