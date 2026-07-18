@@ -301,6 +301,38 @@ def _read_metadata(
     )
 
 
+def _save_dat(
+    dataset: "DataSet",
+    fname: str | Path,
+    format: str,
+    columns: list[np.ndarray],
+    header_columns: str,
+) -> None:
+    """Write a whitespace-delimited .dat file with the shared metadata header."""
+    if format != "dat":
+        raise ValueError(f"Unknown format {format!r}; use 'dat'")
+    data = np.column_stack(columns)
+    header = _metadata_header(dataset) + header_columns
+    np.savetxt(Path(fname), data, header=header, fmt="%.8f")
+
+
+def _load_dat(fname: str | Path) -> tuple[np.ndarray, dict]:
+    """Read a .dat file's numeric columns plus the shared metadata kwargs."""
+    path = Path(fname)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    raw = np.loadtxt(path, comments="#", ndmin=2)
+    dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
+    metadata = {
+        "name": _read_names(path),
+        "dataset_name": dataset_name,
+        "quantity": quantity,
+        "units": units,
+        "epoch": epoch,
+        "time_span": time_span,
+    }
+    return raw, metadata
+
 class DataSet(ABC):
     """Abstract base class for geodetic data types.
 
@@ -729,25 +761,15 @@ class GNSS(DataSet):
         Raises:
             ValueError: If ``format`` is not ``"dat"``.
         """
-        if format != "dat":
-            raise ValueError(f"Unknown format {format!r}; use 'dat'")
-
         vu = self._vu if self._vu is not None else np.zeros(self.n_stations)
         su = self._su if self._su is not None else np.ones(self.n_stations)
-        data = np.column_stack(
-            [
-                self._lon,
-                self._lat,
-                self._ve,
-                self._vn,
-                vu,
-                self._se,
-                self._sn,
-                su,
-            ]
+        _save_dat(
+            self,
+            fname,
+            format,
+            [self._lon, self._lat, self._ve, self._vn, vu, self._se, self._sn, su],
+            "lon lat uE uN uZ sigE sigN sigZ",
         )
-        header = _metadata_header(self) + "lon lat uE uN uZ sigE sigN sigZ"
-        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save GNSS data in GMT-compatible format.
@@ -794,11 +816,7 @@ class GNSS(DataSet):
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        path = Path(fname)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
-
-        raw = np.loadtxt(path, comments="#", ndmin=2)
+        raw, metadata = _load_dat(fname)
         lon, lat = raw[:, 0], raw[:, 1]
         ve, vn = raw[:, 2], raw[:, 3]
         se, sn = raw[:, 5], raw[:, 6]
@@ -808,23 +826,8 @@ class GNSS(DataSet):
         if components == "en":
             vu, su = None, None
 
-        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
-
         return cls(
-            lon=lon,
-            lat=lat,
-            ve=ve,
-            vn=vn,
-            vu=vu,
-            se=se,
-            sn=sn,
-            su=su,
-            name=_read_names(path),
-            dataset_name=dataset_name,
-            quantity=quantity,
-            units=units,
-            epoch=epoch,
-            time_span=time_span,
+            lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su, **metadata
         )
 
 
@@ -982,9 +985,10 @@ class InSAR(DataSet):
         Raises:
             ValueError: If ``format`` is not ``"dat"``.
         """
-        if format != "dat":
-            raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack(
+        _save_dat(
+            self,
+            fname,
+            format,
             [
                 self._lon,
                 self._lat,
@@ -993,10 +997,9 @@ class InSAR(DataSet):
                 self._look_e,
                 self._look_n,
                 self._look_u,
-            ]
+            ],
+            "lon lat uLOS sigLOS losE losN losU",
         )
-        header = _metadata_header(self) + "lon lat uLOS sigLOS losE losN losU"
-        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save InSAR data in GMT-compatible format.
@@ -1030,15 +1033,10 @@ class InSAR(DataSet):
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        path = Path(fname)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
-
-        raw = np.loadtxt(path, comments="#", ndmin=2)
+        raw, metadata = _load_dat(fname)
         lon, lat = raw[:, 0], raw[:, 1]
         los, sigma = raw[:, 2], raw[:, 3]
         look_e, look_n, look_u = raw[:, 4], raw[:, 5], raw[:, 6]
-        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
 
         return cls(
             lon=lon,
@@ -1048,12 +1046,7 @@ class InSAR(DataSet):
             look_e=look_e,
             look_n=look_n,
             look_u=look_u,
-            name=_read_names(path),
-            dataset_name=dataset_name,
-            quantity=quantity,
-            units=units,
-            epoch=epoch,
-            time_span=time_span,
+            **metadata,
         )
 
 
@@ -1152,18 +1145,13 @@ class Vertical(DataSet):
         Raises:
             ValueError: If ``format`` is not ``"dat"``.
         """
-        if format != "dat":
-            raise ValueError(f"Unknown format {format!r}; use 'dat'")
-        data = np.column_stack(
-            [
-                self._lon,
-                self._lat,
-                self._displacement,
-                self._sigma,
-            ]
+        _save_dat(
+            self,
+            fname,
+            format,
+            [self._lon, self._lat, self._displacement, self._sigma],
+            "lon lat uZ sigZ",
         )
-        header = _metadata_header(self) + "lon lat uZ sigZ"
-        np.savetxt(Path(fname), data, header=header, fmt="%.8f")
 
     def to_gmt(self, fname: str | Path) -> None:
         """Save vertical data in GMT-compatible format.
@@ -1196,27 +1184,11 @@ class Vertical(DataSet):
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        path = Path(fname)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
-
-        raw = np.loadtxt(path, comments="#", ndmin=2)
+        raw, metadata = _load_dat(fname)
         lon, lat = raw[:, 0], raw[:, 1]
         displacement, sigma = raw[:, 2], raw[:, 3]
-        dataset_name, quantity, units, epoch, time_span = _read_metadata(path)
 
-        return cls(
-            lon=lon,
-            lat=lat,
-            displacement=displacement,
-            sigma=sigma,
-            name=_read_names(path),
-            dataset_name=dataset_name,
-            quantity=quantity,
-            units=units,
-            epoch=epoch,
-            time_span=time_span,
-        )
+        return cls(lon=lon, lat=lat, displacement=displacement, sigma=sigma, **metadata)
 
 
 def gnss(
