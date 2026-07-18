@@ -36,6 +36,7 @@ LAYERS = {
     "gradients": 3,
     # 4. Domain
     "fault": 4,
+    "_fault_io": 4,
     "data": 4,
     "mesh": 4,
     "euler": 4,
