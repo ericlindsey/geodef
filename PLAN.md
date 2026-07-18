@@ -496,6 +496,12 @@ glossary, `docs/conventions.md`, and release notes.
 
 ## Priority 3 — Legible and extensible internals
 
+`plans/PHASE3_INTERNALS.md` is the design document for this phase: it fixes
+the layer table, the file-level split layout for `invert`/`bayes`/`fault`/
+`plot`, the private engine-registry design, and the commit sequence. Like
+`tutorials/OUTLINE.md`, it is transient and is retired to git history when
+the phase ships.
+
 This work must be behavior-preserving and land in small extraction commits. Do
 not reorganize numerical reference ports merely to make their style conventional.
 
@@ -560,6 +566,11 @@ not reorganize numerical reference ports merely to make their style conventional
 
 ## Priority 4 — Scale to real geodetic datasets
 
+`plans/PHASE4_SCALE.md` is the design document for this phase (transient,
+like the others): whitening constructors and the one new `Whitening`
+record, operator/iterative solver paths, nuisance-basis integration, and
+the coupling parameterization, all as additive, non-breaking API.
+
 ### 4.1 Noise and whitening operators
 
 - [ ] Accept a whitening callable or `LinearOperator` and provide constructor
@@ -615,6 +626,13 @@ manually re-signing slip vectors.
 - [ ] Deliver the Priority 2 interseismic example through this API and promote
   it to a golden workflow once stable.
 
+## Priority 5 — Complete the JAX and Bayesian research surface
+
+`plans/PHASE5_INFERENCE.md` is the design document for this phase
+(transient): batched JAX sweeps, differentiable strain/stress kernels,
+backend-state hygiene, guided geometry-inference setup and diagnostics,
+and tempered SMC behind a sampler-independent result contract.
+
 ### 5.1 Close the remaining JAX gaps
 
 - [ ] Batch L-curve and cross-validation sweeps on JAX using the established
@@ -655,6 +673,11 @@ manually re-signing slip vectors.
 ---
 
 ## Priority 6 — New physics and research capabilities
+
+`plans/PHASE6_PHYSICS.md` is a tentative design sketch for this phase: it
+records the deliverable ladders, the experiments still needed (stress-kernel
+completeness, integrator choice, Meade port feasibility), and the open
+questions requiring user decisions before a committed plan is honest.
 
 These efforts should use the engine/operator interfaces above so new physics
 does not multiply special cases in beginner-facing code.
