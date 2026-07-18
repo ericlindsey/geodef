@@ -65,8 +65,8 @@ from geodef.invert import (
     LinearSystem,
     _fault_from_planar_vector,
     _projection_matrix,
-    _rank_positive_eigs,
 )
+from geodef.invert._solvers import _rank_positive_eigs
 
 _VALID_MODES = ("hierarchical", "weak", "profiled")
 _VALID_SLIP_MODES = ("hierarchical", "weak", "fixed")
