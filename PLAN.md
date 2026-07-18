@@ -405,6 +405,18 @@ is present.
 
 ## Priority 2 — Learning experience and documentation architecture
 
+`tutorials/OUTLINE.md` is the design document for this phase: it plans the
+textbook-depth course revision (fifteen chapters 00–14 after two merges and a
+one-time renumbering, chapter anatomy, solution notebooks), the homes for the
+2.1 "start here" artifacts (`docs/quickstart.md`, `docs/glossary.md`, and a
+combined workflow-map/decision-guides `docs/workflow.md`), and the
+`geodef.synthetic` helper module (with recovered-versus-input comparison as
+`invert.compare`, unaliased). Its §11 records the settled design decisions,
+including the backslip/coupling convention (the 4.4 convention sub-item,
+pulled forward so it is defined once) and the tutorial-suite CI budget. The
+outline is transient: when this phase ships, durable content migrates to the
+glossary, `docs/conventions.md`, and release notes.
+
 ### 2.1 Build a true “start here” path
 
 - [ ] Create a five-minute, copy-paste quickstart that performs forward
