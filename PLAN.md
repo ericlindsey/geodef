@@ -389,8 +389,11 @@ and examples; every one becomes a migration burden after v0.2.
   silently pass a strength where the regularization type belongs.
 - [x] Decide the API stability tiers now (beginner-public, expert-public,
   private) and trim the top-level `__all__` to the documented set, so
-  Priority 2 documents the final vocabulary. Publishing the map and the
-  dependency-direction and import-test work remain in 3.1.
+  Priority 2 documents the final vocabulary. The expert names stay importable
+  as `geodef.<name>` for now; removing those top-level re-exports is folded
+  into the 2.2 notebook rewrite so the affected cells are edited once.
+  Publishing the map and the dependency-direction and import-cycle test work
+  remain in 3.1.
 
 Settled naming decision: `greens.matrix` keeps its name. `design_matrix` was
 considered and rejected — the module path already says Green's, the package
@@ -434,6 +437,22 @@ is present.
   synthetic data generation with declared seeds, and recovered-versus-input
   comparison — so the resolution-testing workflow the tutorials teach is a
   supported API rather than notebook-only code.
+- [ ] Finish the 1.6 top-level export reduction here, while the same cells are
+  being rewritten, so each is edited once. 1.6 trimmed `geodef.__all__` to the
+  beginner vocabulary but left the expert names (`lcurve`, `abic_curve`,
+  `model_covariance`/`model_resolution`/`model_uncertainty`, `geometry_search`,
+  `compute_abic`, `LinearSystem`, the `*Result` types, `stack_obs`/
+  `stack_weights`/`select_slip_columns`, `spatial_covariance`, and the moment
+  conversions) importable as `geodef.<name>` via redundant aliases. Migrate the
+  notebooks, examples, and `docs/*.md` to the module path
+  (`geodef.invert.lcurve`, `geodef.greens.stack_obs`,
+  `geodef.data.spatial_covariance`, ...), then remove those top-level re-exports
+  from `geodef/__init__.py`. About two dozen executed code lines across ~8
+  notebooks change in lockstep, so land the removal and the migration in one
+  commit to keep the tutorial suite green; the public-API contract test in
+  `tests/test_public_api.py` moves those names from the "still importable"
+  assertion to a "no longer top-level" one. (Do this before any public `0.2`
+  tag, since a release makes the top level user-visible.)
 
 ### 2.3 Make real workflows reproducible
 
@@ -471,12 +490,13 @@ not reorganize numerical reference ports merely to make their style conventional
 ### 3.1 Establish package layers and public boundaries
 
 - [ ] Publish an API stability map: beginner-public, expert-public, and
-  private. The tier decision and top-level `__all__` trim happen in 1.6 so
-  documentation targets the final set; this item publishes the map and keeps
-  advanced modules importable. (The name collisions this item originally
-  covered — the `invert` function/module shadow, three `resolution`
-  callables, `plot.map` — were resolved directly in 1.2 and 1.6 while the
-  API had no users.)
+  private. The tier decision and top-level `__all__` trim happen in 1.6, and
+  the actual removal of the expert top-level re-exports is done in 2.2 with the
+  notebook rewrite, so documentation here targets the final set; this item
+  publishes the map and keeps advanced modules importable. (The name collisions
+  this item originally covered — the `invert` function/module shadow, three
+  `resolution` callables, `plot.map` — were resolved directly in 1.2 and 1.6
+  while the API had no users.)
 - [ ] Define dependency direction: domain types → operators/problem assembly →
   solvers/results, with plotting and I/O at the edges and kernels below all of
   them. Remove imports through `geodef.__init__` from internal modules.
