@@ -120,13 +120,13 @@ way.
 
 ### Pre-split checks (do once, first)
 
-- [ ] Confirm nothing persists class module paths: result I/O is
+- [x] Confirm nothing persists class module paths: result I/O is
   npz + JSON manifest (not pickle) — verify `save`/`load` and the cache
   payload format never store `__module__`/qualnames, so moving a class
   definition into a private submodule cannot break stored files. Add a
   round-trip test loading a result file saved before the split (a small
   fixture committed now, pre-split).
-- [ ] Snapshot the public surface: record `sorted(dir(geodef.<mod>))` for
+- [x] Snapshot the public surface: record `sorted(dir(geodef.<mod>))` for
   the four modules into a test fixture; after each split commit the
   snapshot must be unchanged (minus nothing, plus nothing public).
 

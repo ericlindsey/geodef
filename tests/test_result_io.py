@@ -1,6 +1,7 @@
 """Tests for safe, versioned inversion-result files."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 
@@ -148,3 +149,25 @@ def test_result_record_has_no_io_workflow_methods():
     assert not hasattr(InversionResult, "save")
     assert not hasattr(InversionResult, "load")
     assert not hasattr(InversionResult, "save_table")
+
+
+def test_presplit_fixture_loads():
+    """A result saved before the 3.2 module split must keep loading.
+
+    ``tests/reference_data/presplit_result.npz`` (and its manifest) were
+    written by the monolithic ``invert.py`` immediately before the module
+    was converted to a package; loading them proves the split changed no
+    stored-file semantics.
+    """
+    fixture = Path(__file__).parent / "reference_data" / "presplit_result.npz"
+
+    result = invert.load(fixture)
+
+    assert result.regularization == "laplacian"
+    assert result.regularization_strength == 10.0
+    assert result.solver == "wls"
+    assert result.dataset_names == ("gnss",)
+    assert result.dataset_slices == (slice(0, 3),)
+    np.testing.assert_array_equal(result.slip_vector, [1.0, 0.25])
+    np.testing.assert_array_equal(result.residuals, [0.1, -0.2, 0.3])
+    assert result.dataset_diagnostics[0].reduced_chi2 == 0.5

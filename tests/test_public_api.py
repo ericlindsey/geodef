@@ -10,6 +10,7 @@ parse it and fail when the map and the code disagree, in either direction.
 """
 
 import inspect
+import json
 import re
 from pathlib import Path
 
@@ -200,3 +201,30 @@ def test_map_kernel_entry_points_exist():
         mod_name, name = entry.split(".")
         assert mod_name in KERNEL_MODULES
         assert hasattr(getattr(geodef, mod_name), name), entry
+
+
+def test_surface_snapshot_matches():
+    """Transient guard for the 3.2 module splits (remove after Phase 3).
+
+    ``tests/reference_data/public_surface.json`` records the public
+    functions/classes defined in the modules being split; each extraction
+    commit must leave the surface exactly unchanged.
+    """
+    snapshot_path = (
+        Path(__file__).parent / "reference_data" / "public_surface.json"
+    )
+    snapshot = json.loads(snapshot_path.read_text())
+    for mod_name, expected in snapshot.items():
+        module = getattr(geodef, mod_name)
+        current = {}
+        prefix = module.__name__ + "."
+        for name, obj in vars(module).items():
+            if name.startswith("_"):
+                continue
+            if not (inspect.isfunction(obj) or inspect.isclass(obj)):
+                continue
+            defined_in = getattr(obj, "__module__", "") or ""
+            if defined_in != module.__name__ and not defined_in.startswith(prefix):
+                continue
+            current[name] = "class" if inspect.isclass(obj) else "function"
+        assert current == expected, f"geodef.{mod_name} surface changed"
