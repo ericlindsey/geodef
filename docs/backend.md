@@ -98,7 +98,7 @@ and rerun the final inversion in float64:
 
 ```python
 geodef.backend.set_precision("float32")
-ac = geodef.abic_curve(fault, data, regularization="laplacian")   # fast sweep
+ac = geodef.invert.abic_curve(fault, data, regularization="laplacian")   # fast sweep
 geodef.backend.set_precision("float64")
 result = geodef.invert.solve(fault, data, regularization="laplacian",
                              regularization_strength=ac.optimal)   # final solve

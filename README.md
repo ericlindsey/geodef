@@ -126,7 +126,7 @@ geodef.backend.set_backend("jax")      # pip install geodef[jax]
 theta0 = np.array([0.0, 0.0, 25e3, 90.0, 15.0, 100e3, 50e3])
 
 # Gradient-based nonlinear geometry inversion (variable projection + L-BFGS-B)
-gs = geodef.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+gs = geodef.invert.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
                             free=["dip", "depth"])
 print(gs.theta, gs.theta_cov)          # best-fit geometry + Gauss-Newton covariance
 
@@ -144,19 +144,16 @@ and [`docs/bayes.md`](docs/bayes.md) for the full APIs, and
 
 ## Tutorials
 
-An eleven-part course in geodetic inverse methods, taught with synthetic data and
-executed by the pytest suite so it stays aligned with the runtime API:
+A fifteen-chapter course develops the forward problem, inverse theory,
+regularization, multiple datasets, correlated noise, constraints, assessment,
+and nonlinear geometry. A skippable scientific-Python preflight and topic
+chapters on triangular faults, interseismic coupling, model misspecification,
+and Bayesian diagnostics broaden the path without burdening the base install.
 
-1. Forward model `d = G m` · 2. Discretization and the `G` matrix ·
-3. Unregularized inversion and overfitting · 4. Regularization ·
-5. Choosing the regularization strength (L-curve / ABIC / CV) ·
-6. Joint GNSS + InSAR · 7. Correlated InSAR noise ·
-8. Bounds and constraints · 9. Uncertainty and resolution ·
-10. Nonlinear geometry search · 11. Gradient-based geometry inversion on the
-JAX backend (requires `geodef[jax]`).
-
-Notebooks 1–10 run on the NumPy default path; notebook 11 is an advanced JAX
-extension. See [`tutorials/README.md`](tutorials/README.md) for the full path.
+The core course and topic chapters 11–13 use NumPy; gradient geometry and
+Bayesian sampling are clearly gated by `geodef[jax]` and `geodef[bayes]`.
+Every chapter has separate worked solutions. See
+[`tutorials/README.md`](tutorials/README.md) for prerequisites and times.
 `tutorials/reference_plots.ipynb` is an exhaustive gallery of the plot functions.
 
 ## Examples
@@ -177,9 +174,11 @@ Full API docs with examples are in `docs/`:
 
 | Doc | Module |
 |-----|--------|
+| [`docs/index.md`](docs/index.md) | Documentation navigation by workflow and API level |
 | [`docs/quickstart.md`](docs/quickstart.md) | Complete first forward model and inversion |
 | [`docs/workflow.md`](docs/workflow.md) | API-level map and scientific decision guides |
 | [`docs/glossary.md`](docs/glossary.md) | Geophysical and inverse-theory notation |
+| [`docs/usability.md`](docs/usability.md) | Golden beginner workflows and usability baselines |
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
 | [`docs/slip.md`](docs/slip.md) | Slip-vector functions, plate-motion coordinates, and patch ordering |
 | [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |

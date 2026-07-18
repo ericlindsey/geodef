@@ -123,8 +123,9 @@ or systematic model error.
 GNSS displacement/velocity vectors as quiver arrows.
 
 ```python
+predictions = geodef.invert.prediction(result)
 geodef.plot.vectors(gnss, fault,
-    predicted=result.predicted[:gnss.n_obs],   # optional overlay
+    predicted=predictions[gnss.dataset_name],  # optional overlay
     scale=10,
     obs_color='black', pred_color='red',
     components='both',          # 'horizontal', 'vertical', 'both'
@@ -151,7 +152,7 @@ InSAR LOS data as colored scatter points.
 
 ```python
 geodef.plot.insar(insar, fault,
-    predicted=result.predicted[gnss.n_obs:],
+    predicted=predictions[insar.dataset_name],
     layout='obs_pred_res',    # 'obs', 'pred', 'residual', 'obs_pred_res'
     cmap='RdBu_r',
     vmin=-0.1, vmax=0.1,
@@ -168,8 +169,8 @@ geodef.plot.insar(insar, fault,
 Observed vs. predicted scatter or residual histogram.
 
 ```python
-geodef.plot.fit(gnss.obs, result.predicted[:gnss.n_obs])
-geodef.plot.fit(gnss.obs, result.predicted[:gnss.n_obs],
+geodef.plot.fit(gnss.obs, predictions[gnss.dataset_name])
+geodef.plot.fit(gnss.obs, predictions[gnss.dataset_name],
     style='residual_histogram')
 ```
 
@@ -251,7 +252,7 @@ geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
 `LCurveResult` and `ABICCurveResult` have `.plot()` methods that follow the same pattern:
 
 ```python
-lc = geodef.lcurve(fault, data, regularization='laplacian', regularization_range=(1e-2, 1e6))
+lc = geodef.invert.lcurve(fault, data, regularization='laplacian', regularization_range=(1e-2, 1e6))
 ax = lc.plot()           # optimal λ annotated automatically
 ax = lc.plot(ax=ax, color='navy')
 ```

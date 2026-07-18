@@ -230,12 +230,12 @@ insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma, look_e=look_e,
 covariance, reconstruct it from the source arrays and pass `covariance=`.
 
 The covariance is used automatically by `geodef.invert.solve()` and
-`geodef.stack_weights()`.
+`geodef.greens.stack_weights()`.
 
 ### Building a spatially-correlated covariance
 
 InSAR noise (atmosphere, orbits) is spatially correlated, so a diagonal `C_d`
-underestimates its true structure. `geodef.spatial_covariance()` builds a full
+underestimates its true structure. `geodef.data.spatial_covariance()` builds a full
 `C_d` from an isotropic covariance model whose correlation decays with
 great-circle distance:
 

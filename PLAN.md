@@ -432,14 +432,14 @@ glossary, `docs/conventions.md`, and release notes.
 
 ### 2.2 Revise the course around the improved API
 
-- [ ] Preserve the equation-first pedagogy and manual `G @ m` demonstrations,
+- [x] Preserve the equation-first pedagogy and manual `G @ m` demonstrations,
   but use named results for routine operations so students only manipulate
   ordering when ordering is the lesson.
-- [ ] Add explicit learning objectives, prerequisites, estimated time, recap,
+- [x] Add explicit learning objectives, prerequisites, estimated time, recap,
   and tested exercises to every tutorial; publish solution notebooks separately.
-- [ ] Add a preflight notebook covering arrays, shapes, broadcasting, plotting,
+- [x] Add a preflight notebook covering arrays, shapes, broadcasting, plotting,
   units, and coordinate conventions for geophysicists new to scientific Python.
-- [ ] Add short conceptual notebooks or examples for triangular faults,
+- [x] Add short conceptual notebooks or examples for triangular faults,
   interseismic coupling, model misspecification, prior sensitivity, and
   posterior diagnostics. Keep advanced JAX/Bayesian material outside the core
   novice sequence unless it teaches a general concept.
@@ -468,7 +468,7 @@ glossary, `docs/conventions.md`, and release notes.
 
 ### 2.3 Make real workflows reproducible
 
-- [ ] Convert examples to a uniform structure: question, data provenance,
+- [x] Convert examples to a uniform structure: question, data provenance,
   assumptions, preprocessing, model setup, validation, interpretation, and a
   machine-executed reduced-size path.
 - [ ] Add one end-to-end interseismic coupling example and one earthquake
@@ -477,7 +477,7 @@ glossary, `docs/conventions.md`, and release notes.
   4.4 coupling vocabulary. Deliver the rest of Priority 2 against the
   post-1.6 API first and return for these once those pieces exist, rather
   than pulling all of Priority 4 forward.
-- [ ] Add reproducible environment metadata and deterministic seeds to every
+- [x] Add reproducible environment metadata and deterministic seeds to every
   executable example; distinguish downloaded data from bundled test fixtures.
 - [ ] Build a searchable documentation site from the existing Markdown and
   docstrings only after navigation and content hierarchy are settled.
@@ -486,7 +486,7 @@ glossary, `docs/conventions.md`, and release notes.
 
 - [ ] Define three golden workflows (first forward model, first inversion,
   joint GNSS+InSAR study) and test their complete public call sequences.
-- [ ] Track beginner-facing metrics: number of required concepts/imports,
+- [x] Track beginner-facing metrics: number of required concepts/imports,
   manual reshapes/slices, ambiguous unit-bearing arguments, warning quality,
   and time to a labeled diagnostic plot.
 - [ ] Run periodic observation sessions with novice geophysicists; convert each
