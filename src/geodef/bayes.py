@@ -60,9 +60,9 @@ from geodef.geometry import (
     planar_parameter_dict,
 )
 from geodef.gradients import rect_greens, tri_greens
-from geodef.invert import (
+from geodef.invert import LinearSystem
+from geodef.invert._geometry import (
     _THETA_NAMES,
-    LinearSystem,
     _fault_from_planar_vector,
     _projection_matrix,
 )

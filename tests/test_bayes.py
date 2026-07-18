@@ -14,7 +14,8 @@ from geodef import backend, bayes, gradients
 from geodef.data import GNSS
 from geodef.fault import Fault
 from geodef.geometry import LocalFrame
-from geodef.invert import LinearSystem, _projection_matrix
+from geodef.invert import LinearSystem
+from geodef.invert._geometry import _projection_matrix
 
 jax = pytest.importorskip("jax")
 
