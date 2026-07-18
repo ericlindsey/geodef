@@ -96,12 +96,12 @@ Known wrinkles, resolved as follows:
   beginner-tier name is in `geodef.__all__` and vice versa, (b) every
   expert-tier name imports from its stated module path. The map can then
   never silently drift from the code.
-- [ ] **Import-graph test** — `tests/test_layering.py`: walk
+- [x] **Import-graph test** — `tests/test_layering.py`: walk
   `src/geodef/*.py` with `ast`, extract runtime `geodef.*` imports
   (skipping `TYPE_CHECKING` blocks), and assert the edge set is a subset of
   the allowed matrix above. This is simultaneously the import-cycle test
   (the allowed matrix is acyclic by construction).
-- [ ] **Base-install / lazy-optional test** — in a subprocess: `import
+- [x] **Base-install / lazy-optional test** — in a subprocess: `import
   geodef` must succeed and must not import `jax`, `blackjax`, `cartopy`,
   `meshpy`, `pyproj`, or `matplotlib.pyplot`-at-import-time beyond what the
   current base install already does (measure first, then pin). Assert

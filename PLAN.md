@@ -515,10 +515,10 @@ not reorganize numerical reference ports merely to make their style conventional
   this item originally covered — the `invert` function/module shadow, three
   `resolution` callables, `plot.map` — were resolved directly in 1.2 and 1.6
   while the API had no users.)
-- [ ] Define dependency direction: domain types → operators/problem assembly →
+- [x] Define dependency direction: domain types → operators/problem assembly →
   solvers/results, with plotting and I/O at the edges and kernels below all of
   them. Remove imports through `geodef.__init__` from internal modules.
-- [ ] Add import-cycle, base-install, optional-import, and public-API snapshot
+- [x] Add import-cycle, base-install, optional-import, and public-API snapshot
   tests. Importing `geodef` must not initialize JAX or require optional stacks.
 
 ### 3.2 Split large modules behind stable re-exports
