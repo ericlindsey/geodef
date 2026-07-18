@@ -1,129 +1,304 @@
-# GeoDef Tutorial Notebooks — Master Outline
+# GeoDef Tutorial Course — Master Outline
 
-This document is the **design plan for the tutorial notebook series**. It is the
-single source of truth for what each notebook teaches, the order concepts are
-introduced, the math that must appear, and the (deliberately small) code each
-notebook uses. Write or revise notebooks against this outline; revise this
-outline first if the plan changes.
+This document is the **design plan for the tutorial course**. It is the single
+source of truth for what each chapter teaches, the order concepts are
+introduced, the math that must appear, and the code each chapter uses. Write or
+revise notebooks against this outline; revise this outline first if the plan
+changes.
 
-> **Status: delivered.** All ten notebooks (01–10) are written and executed by
-> `tests/test_tutorials.py`. The retired introduction-era notebooks have been
-> removed — their content migrated into tutorials 01–02, the plotting gallery
-> became `tutorials/reference_plots.ipynb`, and mesh generation moved to
-> `examples/mesh_generation.ipynb`. This outline is retained as the design
-> reference for future revisions.
+> **Status: revised 2026-07 for the v0.2 learning release** (`PLAN.md`
+> Priority 2). The first-generation eleven-notebook sequence (01–11) is
+> written, executed by `tests/test_tutorials.py`, and complete against the
+> v0.1 API. This revision plans the next generation: a deeper,
+> textbook-style treatment of every existing chapter, a new preflight
+> chapter (00), five new topics chapters (12–16), migration to the
+> post-1.6 module-path API, separately published solution notebooks, and
+> the surrounding "start here" documentation layer (quickstart, workflow
+> map, glossary, decision guides). Sections marked **[new]** or **Revision
+> deltas** describe work not yet done; everything else describes the
+> course as it should remain.
 
 ---
 
 ## 1. Purpose and Audience
 
-These notebooks are a **course in geodetic inverse methods**, taught through the
-GeoDef library — not a tour of its modules. A reader who finishes the series should understand
-how surface geodetic data (GNSS, InSAR) are turned into images of fault slip,
-*why* each step is done, and what the results can and cannot be trusted to say.
-GeoDef is the vehicle; the destination is the methods.
+These notebooks are a **course in geodetic inverse methods**, taught through
+the GeoDef library — not a tour of its modules. A reader who finishes the
+course should understand how surface geodetic data (GNSS, InSAR) are turned
+into images of fault slip, *why* each step is done, and what the results can
+and cannot be trusted to say. GeoDef is the vehicle; the destination is the
+methods.
 
-Concretely, every notebook is organized around **concepts and equations first,
-code second**:
+The course is written for two overlapping audiences:
 
-- **Theory is primary.** Each notebook develops the relevant math (forward
-  operator, least squares, regularization, resolution, …) with equations and
-  short conceptual prose. A student should be able to read the markdown alone
-  and learn the method.
-- **Code is minimal and illustrative.** Snippets are short — usually a few lines
-  — and exist to *demonstrate* the concept just explained, not to build a
-  production workflow. Favor one clear `geodef.*` call plus a labeled plot over
-  long scripts.
-- **Data is synthetic and reproducible.** Tutorials generate their own simple
-  geometries and noise with fixed random seeds so they run fast, execute under
-  pytest, and isolate the concept being taught.
-- **Plots are labeled and inline.** Visualization is woven throughout (see
-  §4) rather than taught as a separate topic.
-- **Each notebook ends with exercises** that push the reader to vary a parameter
-  and predict/observe the effect.
+- **Geophysics students and researchers** who know the physics vocabulary but
+  may be new to inverse theory, linear algebra in practice, or scientific
+  Python. Chapter 00 exists for them.
+- **Quantitative scientists from other fields** who know least squares but not
+  faults. The geophysical context (dislocations, moment, coupling) is
+  developed rather than assumed.
+
+### A course, not a demo gallery
+
+The target register is a **textbook chapter, not a README**: each chapter
+should read as a self-contained lesson that develops its subject with enough
+prose, derivation, and worked interpretation that the markdown alone teaches
+the method. This is a deliberate deepening relative to the first generation of
+the notebooks. Concretely:
+
+- **Theory is primary and developed, not stated.** Key results are derived
+  (e.g. the weighted-least-squares estimator from the objective's gradient,
+  the posterior covariance, the resolution matrix), with the intuition for
+  *why* the result looks the way it does, not just the formula. Where a full
+  derivation would derail the chapter, a boxed sketch plus a reference is
+  acceptable — but "here is the equation, here is the call" is not.
+- **Interpretation is taught.** Every worked demonstration ends with prose
+  interpreting the figure: what the reader should see, why it looks that way,
+  and what would change it. Plots are never left to speak for themselves.
+- **Code is minimal and illustrative.** Snippets stay short — usually a few
+  lines — and exist to *demonstrate* the concept just explained, not to build
+  a production workflow. Depth goes into markdown, math, and figures, **not**
+  into longer scripts or heavier computation.
+- **Each chapter targets roughly 45–90 minutes of engaged study** (reading,
+  running, exercises). Topics chapters (Part VI) may be shorter (30–60
+  minutes). If a chapter outgrows ~90 minutes it should be split or material
+  moved to `examples/`.
+- **Data is synthetic and reproducible.** Chapters generate their own small
+  geometries and noise with fixed seeds so they run fast, execute under
+  pytest, and isolate the concept being taught. Depth must never come from
+  compute: the full tutorial suite stays executable in a few minutes.
+- **Each chapter ends with exercises**, now backed by separately published
+  solution notebooks (§9).
 
 ### Tutorials vs. Examples
 
 | | `tutorials/` | `examples/` |
 |---|---|---|
-| Goal | Teach one method per notebook | Show a complete real workflow |
+| Goal | Teach one method per chapter | Show a complete real workflow |
 | Data | Synthetic, tiny, seeded | Real, bundled or downloaded |
 | Code | Short snippets | Full end-to-end scripts |
 | Math | Developed in detail | Assumed; referenced |
-| Tested | Executed by `tests/test_tutorials.py` | Smoke-tested at most |
+| Tested | Executed by `tests/test_tutorials.py` | Reduced-size executed path |
 
-Longer worked examples (e.g. the Gorkha earthquake) stay under `examples/`.
-When a tutorial would balloon into a full case study, the case study moves to
-`examples/` and the tutorial keeps only the minimal teaching version.
-
----
-
-## 2. Disposition of the Existing Notebooks (01–04)
-
-The current `01_forward_model`, `02_caching`, `03_plotting`, and
-`04_mesh_generation` notebooks date to an earlier, module-introduction framing.
-They are **retired in their current form** and their content is redistributed:
-
-| Old notebook | Disposition |
-|---|---|
-| `01_forward_model` | Rebuilt as the new **Tutorial 01** with dislocation theory added; the joint GNSS+InSAR section moves forward to **Tutorial 06**. |
-| `02_caching` | Demoted to a short **sidebar in Tutorial 02** ("computing G is expensive; GeoDef caches it") — now implemented there. Not a standalone tutorial. |
-| `03_plotting` | Dissolved. Each plot type is introduced in the tutorial where its concept first appears (see §4). The exhaustive gallery survives as its own unnumbered `reference_plots.ipynb`, not a numbered tutorial. |
-| `04_mesh_generation` | Moved out of the teaching sequence. Basic rectangular vs. triangular discretization is covered conceptually in **Tutorial 02**; real mesh building (traces, polygons, slab2.0) becomes an **`examples/` worked example**, since it is data/IO-heavy rather than a method. |
-
-Net effect: the numbered tutorials become the 10-part methods sequence below,
-and utility material (caching, plotting gallery, mesh IO) is either absorbed as
-supporting detail or relocated to `examples/`.
+Longer worked examples (e.g. the Gorkha earthquake, Bayesian geometry) stay
+under `examples/`. When a tutorial would balloon into a full case study, the
+case study moves to `examples/` and the tutorial keeps only the minimal
+teaching version.
 
 ---
 
-## 3. Shared Conventions
+## 2. The "Start Here" Documentation Layer
 
-So notebooks stay consistent and composable:
+Priority 2.1 adds a small set of orientation documents that live **outside**
+the notebooks but are designed together with them. The course links into this
+layer constantly; the layer links back to specific chapters. Planned homes
+(final file names may be adjusted when the docs site structure is settled in
+2.3):
 
-- **Coordinates.** Local Cartesian `x = East`, `y = North`, `z = Up`; geographic
-  `lat`/`lon` where geometry is built. State units on every quantity (m, km, °).
-- **Slip vector blocking.** `m = [s_strike(0..N-1), s_dip(0..N-1)]`, i.e. the
-  first `N` entries are strike-slip, the next `N` are dip-slip.
-- **Forward operator.** Always written `d = G m` (data = Green's matrix × slip).
-- **Notation (used across all notebooks).**
-  - `d` — data vector, `m` — model (slip) vector, `G` — Green's/design matrix.
-  - `C_d` — data covariance, `C_m` — posterior model covariance.
-  - `W = C_d^{-1}` — data weight matrix; `λ` — regularization weight.
-  - `L` — regularization operator (Laplacian, identity, stress kernel).
-  - `N` — number of patches; `2N` — number of slip parameters (both components).
-  - `R` — model resolution matrix.
-- **No special characters in code.** Greek letters and other symbols (`λ`,
-  `χ²`, `θ`, …) are fine in markdown and equations, but **code uses plain ASCII
-  names** that students can type easily — e.g. `lambda` (or `lam` / `smoothing_
-  strength`) for the regularization weight, `chi2` for misfit, `theta` for
-  geometry parameters. Match the names GeoDef already exposes.
-- **Recurring synthetic scenario.** A single small fault is reused across
-  notebooks so readers track one problem end to end. Default teaching geometry:
-  a planar fault via `Fault.planar(...)` discretized coarsely (e.g. `n_length`
-  ≈ 8, `n_width` ≈ 5) so `G` is small and inversions are instant. A prescribed
-  "true" slip patch (a smooth bump) generates synthetic data; seeded Gaussian
-  noise is added. Notebooks reuse this setup via a short copied cell rather than
-  a shared import, so each notebook stays self-contained. Tutorials 01–02
-  (forward modeling, no inversion) instead use per-lesson illustrative
-  geometries; the single recurring scenario with seeded noise is established
-  from Tutorial 03 onward.
-- **Random seeds.** Every notebook sets `rng = np.random.default_rng(0)` (or a
-  stated seed) for reproducible noise and pytest stability.
-- **Standard imports.** `import numpy as np`, `import matplotlib.pyplot as plt`,
-  `import geodef`.
-- **Double-demo (used sparingly).** When it genuinely clarifies *what GeoDef is
-  doing*, show the underlying calculation by hand first (a few lines of NumPy)
-  and then the one-line GeoDef equivalent, asserting the two agree with
-  `np.allclose(...)`. This demystifies the API without hiding it. Reserve it for
-  the rare spots where the manual version is itself instructive — e.g. `d = G @ m`
-  vs. `fault.displacement()` in Tutorial 01, or building `G` column by column vs.
-  `greens.matrix()` in Tutorial 02. Skip it everywhere else: the default remains
-  one clear `geodef.*` call plus a labeled plot.
+| Artifact | Home | Relationship to the course |
+|---|---|---|
+| **Five-minute quickstart** — copy-paste forward model → noise → solve → observed-vs-predicted plot, no manual packing/slicing | `README.md` (short form) and `docs/quickstart.md` (annotated form) | The *same code* appears as the closing preview of Chapter 00 and is exercised by a golden-workflow test (2.4), so the README can never silently rot. |
+| **Workflow map** — one visual page linking the three API levels: domain functions → matrices/operators → physics kernels | `docs/workflow.md` | Introduced in Chapter 00; Chapters 01–02 walk down the levels explicitly (the double-demo *is* the map in action). |
+| **Glossary** — geophysical and inverse-theory terms with the math symbol and the package name side by side (e.g. *regularization strength*, `λ`, `regularization_strength=`) | `docs/glossary.md` | Every chapter links glossary terms on first use instead of re-defining them inconsistently. The glossary's notation column and §5's notation table must agree. |
+| **Decision guides** — "which function do I use?" and "which assumption am I making?" for geometry, slip basis, regularization, covariance, constraints, geometry uncertainty, Bayesian inference | `docs/decision_guides.md` | Each guide ends by naming the chapter that teaches the underlying method; chapters end their recap with a pointer to the relevant guide. |
+
+Rules of engagement between the layers:
+
+- The quickstart is **not** a tutorial and teaches nothing; it exists to give
+  a complete, working, satisfying result in five minutes and to name the
+  chapters where each line is explained.
+- The glossary is the only place a term is *defined*; chapters may restate a
+  definition when pedagogically necessary but must link it.
+- Decision guides never contain method exposition — they route to chapters.
 
 ---
 
-## 4. Visualization Strategy
+## 3. Course Map
+
+| # | Chapter | Part | Status | Time | Requires |
+|---|---|---|---|---|---|
+| 00 | Preflight: scientific Python for geodesy | 0 | **[new]** | 60–90 min (skippable) | — |
+| 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 60–90 min | — |
+| 02 | Discretization and the Green's matrix | I | revise & deepen | 60–90 min | 01 |
+| 03 | Least squares and the failure of naive inversion | II — The inverse problem | revise & deepen | 60–90 min | 02 |
+| 04 | Regularization | II | revise & deepen | 60–90 min | 03 |
+| 05 | Choosing the regularization strength | II | revise & deepen | 60–90 min | 04 |
+| 06 | Multiple datasets: GNSS + InSAR | III — Real data | revise & deepen | 60–90 min | 05 |
+| 07 | Correlated noise | III | revise & deepen | 45–75 min | 06 |
+| 08 | Bounds, constraints, and slip bases | III | revise & deepen | 60–90 min | 04 |
+| 09 | Uncertainty, resolution, and synthetic tests | IV — Assessment | revise & deepen | 60–90 min | 05 |
+| 10 | Nonlinear geometry search | V — Geometry | revise & deepen | 60 min | 09 |
+| 11 | Gradient-based geometry inversion (JAX) | V | revise & deepen | 60 min | 10; `geodef[jax]` |
+| 12 | Triangular faults | VI — Topics | **[new]** | 30–60 min | 02 |
+| 13 | Interseismic coupling | VI | **[new]** — see §12 OQ-3 | 45–60 min | 08 |
+| 14 | Model misspecification | VI | **[new]** | 45–60 min | 09, 10 |
+| 15 | Bayesian inversion and prior sensitivity | VI | **[new]** | 60 min | 09; `geodef[bayes]` |
+| 16 | Posterior diagnostics | VI | **[new]** | 45–60 min | 15; `geodef[bayes]` |
+
+Numbering is stable: existing notebooks keep their numbers and file names; new
+chapters extend the sequence. Chapters 11, 15, and 16 depend on optional
+extras and are gated in CI the way 11 already is; they are clearly marked
+optional in `tutorials/README.md` so the core course (00–10, 12–14) never
+requires more than the base install.
+
+Part VI chapters are **conceptual topics**, not a continuation of the linear
+narrative: each is entered from the chapter listed in "Requires" and they may
+be read in any order. Advanced JAX/Bayesian machinery stays out of Parts
+0–V; 15–16 earn their place because prior sensitivity and posterior checking
+are general inverse-theory concepts, not library features.
+
+---
+
+## 4. Chapter Anatomy
+
+Every chapter follows this template, in order. The first-generation notebooks
+already follow an informal version; the revision makes it explicit and
+complete.
+
+1. **Header block:** title; one-sentence promise; **learning objectives**
+   (3–6, observable: "derive…", "predict…", "diagnose…"); **prerequisites**
+   (chapters + concepts); **estimated time** (a band, not false precision).
+2. **Motivation** — the geophysical question this method answers, and what
+   goes wrong without it (1–3 paragraphs; where possible, a figure of the
+   failure the chapter will fix).
+3. **Theory** — the mathematical development, in sections. Derivations
+   follow the notation table (§5); every symbol is introduced before use;
+   assumptions are stated when made, not discovered later.
+4. **Worked demonstration(s)** — short code interleaved with the theory it
+   illustrates, each followed by written interpretation of the output.
+   Double-demos (§5) appear here where prescribed.
+5. **Checkpoint questions** — 2–4 quick self-test questions with answers
+   revealed inline (collapsed or footnoted), testing the theory before the
+   exercises apply it.
+6. **Common mistakes** — the 2–4 errors novices actually make with this
+   method (wrong units, wrong ordering, misread diagnostics), each with the
+   symptom the reader would observe.
+7. **Recap** — bullet summary of the objectives, now restated as facts the
+   reader can verify they know; a pointer to the relevant decision guide
+   (§2); explicit hand-off to the next chapter.
+8. **Exercises** — 3–6, ordered from parameter-variation ("change dip,
+   predict the pattern before running") to a final challenge exercise that
+   requires combining the chapter with an earlier one. Every exercise is
+   answerable with the material taught so far and has a worked solution in
+   the solutions notebook (§9).
+9. **Further reading** — 2–5 references: the primary sources (Okada 1985/92,
+   Nikkhoo & Walter 2015, Savage 1983, …) and standard texts (Menke; Aster,
+   Borchers & Thurber; Tarantola; Segall 2010), each with one line on what
+   it adds.
+
+---
+
+## 5. Shared Conventions
+
+So chapters stay consistent and composable:
+
+- **Coordinates and units.** Local Cartesian `x = East`, `y = North`,
+  `z = Up`; geographic `lon`/`lat` (in that order for named APIs) where
+  geometry is built; depth positive down; SI units with degrees for angles.
+  `docs/conventions.md` is the single authority — chapters link it rather
+  than re-deriving it, and Chapter 00 teaches it.
+- **Slip vector blocking.** `m = [s_strike(0..N-1), s_dip(0..N-1)]`: the
+  first `N` entries are strike-slip, the next `N` dip-slip. Taught explicitly
+  in Chapters 01–02 where ordering *is* the lesson.
+- **Named views by default, blocked vectors when ordering is the lesson.**
+  Routine operations use the named API: `result.strike_slip`,
+  `result.dip_slip`, `result.slip_magnitude`, `result.slip_rake`,
+  `result.reduced_chi2`, `geodef.invert.prediction(result)` /
+  `residual` / `diagnostics` / `summary`, and `slip.pack`/`slip.unpack` at
+  the boundary. The blocked `result.slip_vector` and hand-stacked systems
+  appear only where the linear algebra is itself the subject (01–04, 09) —
+  students manipulate ordering only when ordering is being taught.
+- **Module-path API policy.** Beginner-public names are used bare
+  (`geodef.Fault`, `geodef.solve`, `geodef.GNSS`); everything else is spelled
+  through its module (`geodef.invert.lcurve`, `geodef.greens.matrix`,
+  `geodef.data.spatial_covariance`, `geodef.slip.pack`). The notebooks'
+  migration off the legacy top-level aliases (`geodef.lcurve`,
+  `geodef.model_covariance`, …) lands **in one commit with** the removal of
+  those aliases from `geodef/__init__.py` and the corresponding
+  `tests/test_public_api.py` flip, per PLAN.md 2.2 — do not mix old and new
+  spellings across chapters in between.
+- **The elastic medium is declared, not implicit.** Chapters that use `μ` or
+  `ν` (01 moment, 04 stress kernel, 14 misspecification) construct or name an
+  `ElasticMedium` so students see where material parameters live.
+- **Forward operator.** Always written `d = G m` (data = Green's matrix ×
+  slip); the regularized objective is always
+  `Φ(m) = (Gm − d)ᵀ W (Gm − d) + λ ‖L (m − m_ref)‖²`, with augmented rows
+  `√λ L`. No `λ²` or `α` variants; published sources that use them are mapped
+  in `docs/conventions.md`.
+- **Notation (used across all chapters, mirrored in the glossary).**
+  - `d` — data vector, `m` — model (slip) vector, `G` — Green's matrix.
+  - `ε` — noise; `C_d` — data covariance; `W = C_d^{-1}` — weight matrix.
+  - `λ` — regularization strength; `L` — regularization operator;
+    `m_ref` — reference model.
+  - `C_m` — posterior model covariance; `R` — model resolution matrix.
+  - `N` — number of patches; `2N` — slip parameters (both components).
+  - `χ²` — unreduced weighted misfit; `χ²_ν` — reduced (`reduced_chi2`).
+  - `μ`, `ν` — shear modulus, Poisson's ratio; `M_0`, `M_w` — moment,
+    moment magnitude; `θ` — nonlinear geometry parameters.
+- **No special characters in code.** Greek letters (`λ`, `χ²`, `θ`) are fine
+  in markdown; code uses the plain ASCII names GeoDef exposes
+  (`regularization_strength`, `reduced_chi2`, `theta`).
+- **Recurring synthetic scenario.** One small planar thrust fault
+  (`Fault.planar(...)`, coarse grid, e.g. `n_length ≈ 8`, `n_width ≈ 5`) with
+  a smooth "true" slip bump and seeded Gaussian noise is tracked from Chapter
+  03 through 09 (and reused by 12–16), so readers follow a single problem end
+  to end. Chapters 01–02 use per-lesson illustrative geometries instead.
+- **Scenario delivery — explicit first, then the builder.** Chapters 03 and
+  04 construct the scenario **explicitly** (fault, true slip, noisy data,
+  visible seed) so students have built it by hand. From Chapter 05 onward,
+  chapters call the documented scenario builder (§6) in one cell, with a
+  standing sidebar in 05 showing the builder and the explicit cells are
+  equivalent. This replaces the first-generation "always copy/paste" rule —
+  standalone-ness is preserved because the builder is a documented public
+  function, not a notebook-local import.
+- **Random seeds.** Every chapter sets `rng = np.random.default_rng(0)` (or a
+  stated seed) and passes seeds explicitly to the synthetic helpers.
+- **Standard imports.** `import numpy as np`,
+  `import matplotlib.pyplot as plt`, `import geodef`.
+- **Double-demo (used sparingly).** When it genuinely clarifies *what GeoDef
+  is doing*, show the underlying calculation by hand first (a few lines of
+  NumPy), then the one-line GeoDef equivalent, asserting agreement with
+  `np.allclose(...)`. Prescribed instances: `G @ m` vs.
+  `fault.displacement()` (01); building `G` column by column vs.
+  `geodef.greens.matrix()` (02); normal equations by hand vs.
+  `geodef.solve()` (03); the augmented system vs.
+  `regularization=` (04). Everywhere else the default remains one clear
+  `geodef.*` call plus a labeled, interpreted plot.
+
+---
+
+## 6. Scenario Builder and Synthetic-Test Helpers **[new API]**
+
+PLAN.md 2.2 requires that the synthetic workflows the course teaches become
+supported API rather than notebook-only code. Proposed home: a new
+**`geodef.synthetic`** module (functions only, per the object-budget policy;
+name to be confirmed in API review — see §12 OQ-2):
+
+- `synthetic.scenario(...)` — the documented builder for the recurring
+  teaching scenario: returns a named record of `fault`, `true_slip`,
+  `datasets` (with declared seed, noise level, station layout, and geometry
+  keywords all overridable). Used by Chapters 05+ and by the golden-workflow
+  tests.
+- `synthetic.checkerboard(fault, ...)` / `synthetic.spike(fault, ...)` —
+  patterned slip vectors for resolution tests (checker size / spike location
+  as keywords, both components supported).
+- `synthetic.noisy_data(fault, slip, datasets_or_layout, *, seed, ...)` —
+  forward-model plus seeded noise consistent with each dataset's declared
+  uncertainties.
+- `synthetic.compare(true_slip, result)` — recovered-versus-input comparison
+  metrics (per-patch difference, recovery fraction within a mask) backing the
+  checkerboard/spike workflow in Chapter 09.
+
+Design constraints: pure functions, NumPy default, seeds explicit and
+required for anything random, returns are ordinary arrays/records that the
+rest of the API accepts, and each helper is what the corresponding chapter
+would otherwise write inline — the tutorials are the acceptance test for
+their ergonomics. TDD as usual; document in `docs/` with the same executable-
+example policy as other modules.
+
+---
+
+## 7. Visualization Strategy
 
 There is no standalone plotting tutorial. Each `geodef.plot` function is
 introduced at the moment its underlying concept is taught:
@@ -133,388 +308,919 @@ introduced at the moment its underlying concept is taught:
 | `plot.slip`, `plot.patches` | 01 | first time slip-on-fault is shown |
 | `plot.map_view`, `plot.vectors` | 01 | surface displacement field |
 | `plot.fault3d` | 01 | fault geometry at depth |
-| `plot.fit` | 03 | observed vs. predicted diagnostic |
+| `plot.fit`, `plot.prediction`, `plot.residual` | 03 | observed vs. predicted diagnostics |
+| L-curve / ABIC / CV curve plots | 05 | hyperparameter selection |
 | `plot.insar` | 06 | first InSAR dataset |
-| L-curve / ABIC curve plots | 05 | hyperparameter selection |
+| `plot.diagnostics`, `plot.summary` | 06 | per-dataset fit reporting |
 | `plot.resolution`, `plot.uncertainty` | 09 | model assessment |
+| `plot.slip_interpolated` | 12 | smooth slip on triangular meshes |
 
-The retired plotting gallery lives on as its own unnumbered
-`tutorials/reference_plots.ipynb` (not part of the numbered methods path).
-
----
-
-## 5. The Ten Tutorials
-
-Each entry below specifies: **Goal**, **Concepts & Math** (what equations/theory
-must appear), **Key calls** (the small set of `geodef` calls used), **Plots**, and
-**Exercises**. Notebooks should follow this structure literally.
-
-> **Reuse existing material.** Some of this content already exists in another
-> repository and will be made available during the generation step for each
-> notebook. **Before writing a notebook, check whether partial material is
-> available in the `shakeout` folder** (e.g. `related/shakeout_v2/`); if it is,
-> adapt and reuse it rather than starting from scratch. If the folder or the
-> relevant material is not present, proceed from this outline.
+The exhaustive gallery survives as its own unnumbered
+`tutorials/reference_plots.ipynb` (not part of the numbered course path).
+Every figure in every chapter carries titles, axis labels, units, and
+colorbars — and, per §4, a written interpretation.
 
 ---
 
-### Tutorial 01 — Forward Model Basics
-*The elastic dislocation forward problem.*
+## 8. The Chapters
 
-**Goal.** Understand how slip on a buried fault produces surface displacement,
-and compute it for a discretized rectangular source.
+Each entry specifies: **Goal**, **Concepts & math** (the theory that must
+appear, at textbook depth), **Key calls**, **Plots**, and **Exercises**.
+Chapters that already exist additionally carry **Revision deltas** — the
+concrete changes this revision makes to the shipped notebook. The template of
+§4 (objectives, motivation, checkpoints, common mistakes, recap, further
+reading) applies to every chapter and is not repeated below.
 
-**Concepts & Math.**
-- Faulting as a *dislocation* in an elastic half-space (homogeneous, isotropic,
-  linear elasticity); the Okada (1985) rectangular source is the analytic
-  building block GeoDef evaluates from geometry (`strike`, `dip`, `length`,
-  `width`, `depth`) and slip.
-- Forward vs. inverse problems, tied by the linear relation `d = G m + e`. For
-  *fixed* geometry the surface displacement is **linear in slip** — the hinge
-  for Tutorials 02–09.
-- Slip has two in-plane components; GeoDef stores them as one **blocked** vector
-  `m = [strike-slip | dip-slip]` of length `2N`.
-- Reading the prediction: rows of `G` are interleaved `[e, n, u]` per station,
-  so `d = G m` unpacks directly to East/North/Up fields.
-- Seismic moment `M0 = μ Σ s_k A_k` and the moment magnitude `M_w` of a slip
-  distribution.
-- **Double-demo:** the forward map by hand (`G @ m`, then unpack) and via the
-  one-liner `fault.displacement(...)`, shown to be identical.
-
-**Key calls.** `Fault.planar(...)`, `fault.greens_matrix(...)` with a blocked
-slip vector and `fault.displacement(...)`, `fault.moment` / `fault.magnitude`,
-basic `Fault` attributes (`n_patches`, `grid_shape`, `centers`, `areas`).
-
-**Plots.** 3-D fault geometry colored by depth (`plot.fault3d`); slip on the
-fault (`plot.slip`); map-view surface displacement over the fault footprint
-(`plot.map_view` + `plot.vectors`: horizontal arrows plus vertical dots).
-
-**Exercises.** Vary dip and depth and predict the change in pattern and peak
-amplitude; switch the mechanism to pure strike-slip and interpret the new vector
-field; refine the patch grid (foreshadowing Tutorial 02).
+> **Reuse existing material.** The shipped notebooks 01–11 are the starting
+> point for their own revisions — deepen and migrate them; do not rewrite
+> from scratch. For new chapters, check `related/` (e.g.
+> `related/shakeout_v2/`, `related/stress-shadows/`) for adaptable material
+> before starting fresh.
 
 ---
 
-### Tutorial 02 — Fault Discretization and the G Matrix
+### Chapter 00 — Preflight: Scientific Python for Geodesy **[new]**
+*The array, plotting, and convention skills the course assumes.*
+
+**Goal.** Equip geophysicists new to scientific Python with exactly the NumPy,
+matplotlib, and convention knowledge the course uses — and let everyone else
+verify they can skip ahead.
+
+**Concepts & math.**
+- A **self-test up front**: five questions (shape of a broadcast result, what
+  a slice views vs. copies, reading a colorbar, converting km→m, depth sign);
+  readers who pass are told to jump to Chapter 01.
+- Arrays: `shape`, `dtype`, 1-D vs 2-D vs `(N, 3)` layouts; why GeoDef
+  returns plain arrays and what "vector of length 2N" means concretely.
+- Indexing and slicing: views, fancy indexing, boolean masks — enough to read
+  `m[:N]` and `d[2::3]` fluently.
+- **Broadcasting** and vectorization: elementwise rules, `np.newaxis`, why
+  loops over patches/stations don't appear in this course.
+- Linear algebra: `@`, `np.linalg.solve` vs. explicit inverses, `lstsq` — a
+  first look at the machinery Chapters 02–03 build on.
+- Matplotlib anatomy: figure/axes, labels, colorbars, subplots — the elements
+  every course figure carries.
+- **Units and conventions:** SI defaults, degree-bearing names, ENU axes,
+  depth positive down, `lon, lat` order, `LocalFrame` in one paragraph — a
+  guided reading of `docs/conventions.md`.
+- Floating point in two paragraphs: roundoff, why `np.allclose` not `==`.
+- Reproducibility: `np.random.default_rng(seed)`; reading GeoDef's validation
+  errors and `.validate()` reports as a feature, not a failure.
+- **Closing preview:** the five-minute quickstart (§2) run top to bottom,
+  with one sentence per line naming the chapter that explains it.
+
+**Key calls.** NumPy/matplotlib primitives; `geodef.Fault.planar(...).validate()`
+as the error-message showcase; the quickstart sequence verbatim.
+
+**Plots.** A deliberately unlabeled figure fixed into a fully labeled one;
+broadcasting diagram; the quickstart's observed-vs-predicted map.
+
+**Exercises.** Reshape and re-block a fake `2N` vector; vectorize a small
+loop; convert a `lat, lon, depth-in-km` table to convention; fix three
+intentionally broken calls using only the error messages.
+
+---
+
+### Chapter 01 — The Elastic Dislocation Forward Model
+*How slip on a buried fault produces surface displacement.*
+
+**Goal.** Understand the dislocation forward problem and compute surface
+displacement for a rectangular source.
+
+**Concepts & math.**
+- Elastic rebound and why geodesy sees faults at all; the **half-space
+  idealization** (homogeneous, isotropic, linear-elastic) and a first honest
+  statement of when it fails (layering, topography, inelasticity) —
+  foreshadowing Chapter 14.
+- A **dislocation** as a displacement discontinuity across a surface;
+  Volterra's construction in words and pictures; from Steketee to the Okada
+  (1985) closed form. No full derivation — a boxed lineage with references —
+  but the *structure* of the solution (source geometry in, three displacement
+  components out, linear in slip) is developed carefully.
+- Fault geometry vocabulary with a labeled 3-D diagram: `strike`, `dip`,
+  `rake`, `length`, `width`, `depth`; hanging wall/footwall; mechanism types
+  as regions of rake.
+- Forward vs. inverse problems, tied by `d = G m + ε`. For *fixed* geometry
+  displacement is **linear in slip** — the hinge for Chapters 02–09,
+  demonstrated numerically (double a slip patch, watch the field double).
+- Slip's two in-plane components and the **blocked** vector
+  `m = [strike-slip | dip-slip]` of length `2N`; `slip.pack`/`unpack` as the
+  named boundary.
+- Reading predictions: interleaved `[e, n, u]` rows and the three-array
+  return of `fault.displacement(...)`.
+- The **elastic medium**: `ElasticMedium(mu, nu)` as the declared home of
+  material parameters; how `μ` enters moment and `ν` enters the kernels.
+- Seismic moment `M_0 = μ Σ s_k A_k`, moment magnitude `M_w` (Hanks &
+  Kanamori), with a worked "how big is a metre of slip?" calculation.
+- **Double-demo:** `G @ m` unpacked by hand vs. `fault.displacement(...)`.
+
+**Revision deltas.** Add the elasticity/motivation development and geometry
+diagram; introduce `ElasticMedium` explicitly (was implicit); replace
+`fault.centers` with `centers_geo`/`centers_local`; adopt named views and
+`slip.pack`; add checkpoints/common-mistakes/further-reading per §4; expand
+moment section with the worked magnitude calculation.
+
+**Key calls.** `Fault.planar(...)` (keyword geometry), `fault.greens_matrix(...)`,
+`fault.displacement(...)`, `slip.pack(...)`, `fault.moment(slip)` /
+`fault.magnitude(slip)`, `ElasticMedium`, attributes `n_patches`,
+`grid_shape`, `centers_geo`, `centers_local`, `areas`.
+
+**Plots.** `plot.fault3d` geometry colored by depth; `plot.slip`;
+`plot.map_view` + `plot.vectors` (horizontal arrows, vertical dots) over the
+fault footprint.
+
+**Exercises.** Vary dip and depth, predicting pattern and peak amplitude
+before running; switch to pure strike-slip and interpret the quadrant
+pattern; compute `M_w` for a published earthquake's dimensions; challenge —
+superpose two sources by hand and verify linearity.
+
+---
+
+### Chapter 02 — Discretization and the Green's Matrix
 *From a continuous fault to a linear system.*
 
 **Goal.** Build the Green's matrix for a multi-patch fault and understand its
 structure as the discrete forward operator.
 
-**Concepts & Math.**
-- `G` as a **design matrix**: warm up with the two-column line fit `y = a x + b`
-  before generalizing to fault slip.
-- Discretizing a fault surface into `N` patches; slip approximated as
-  piecewise-constant per patch.
-- Superposition (from linearity): total displacement is the sum of each patch's
-  unit-slip response ⇒ the discrete forward problem `d = G m`.
-- Anatomy of `G`: column `j` is the surface response to **unit slip on patch
-  `j`**; rows are observation components. Block layout: first `N` columns
-  strike-slip, next `N` columns dip-slip. Units of `G` entries.
-- How dataset projection turns the raw 3-component response into observed rows
-  (interleaved E/N/U for GNSS; foreshadow LOS for InSAR in Tut 06).
-- **Double-demo:** build `G` column by column (unit slip per patch) and confirm
-  it equals `fault.greens_matrix(...)` / `geodef.greens.matrix(...)`.
-- **Sidebar (absorbs old caching notebook):** assembling `G` is expensive and
-  often repeated, so GeoDef hashes its inputs and caches `G` to disk; one short
-  timing demo (first call computes, second loads).
-- Why finer discretization trades resolution for stability — an ill-posedness
-  teaser for Tutorials 03–04.
+**Concepts & math.**
+- `G` as a **design matrix**: warm up with the two-column line fit
+  `y = a x + b` before generalizing to fault slip.
+- Discretization as **function approximation**: slip as a piecewise-constant
+  expansion over `N` patch basis functions; what refinement does and does not
+  buy (convergence of the field vs. explosion of unknowns).
+- Superposition from linearity ⇒ `d = G m`; column `j` of `G` is the surface
+  response to **unit slip on patch `j`**; the blocked column layout and
+  interleaved row layout; **units of `G` entries** (dimensionless m/m) and
+  why that matters when mixing datasets later.
+- How dataset **projection** turns the raw 3-component response into observed
+  rows (E/N/U for GNSS; LOS foreshadowed for Chapter 06).
+- Patch ordering made concrete with `fault.reshape_patches` /
+  `fault.flatten_patches` — students never memorize which grid axis varies
+  fastest.
+- **Double-demo:** `G` built column by column (unit slip per patch) vs.
+  `fault.greens_matrix(...)` / `geodef.greens.matrix(...)`.
+- **Sidebar — caching as a trust feature:** assembling `G` is expensive and
+  repeated, so GeoDef hashes *every* input that affects the result (geometry,
+  stations, medium, precision, kernel version) and caches to disk; a short
+  timing demo, plus one paragraph on why incomplete cache keys would be
+  dangerous.
+- Why finer discretization trades resolution for stability — the
+  ill-posedness teaser, now stated via the growth of the condition number
+  with refinement (computed, plotted, deferred to Chapter 03 for theory).
 
-**Key calls.** `Fault.planar(...)` with multiple patches, `fault.greens_matrix`
-and `geodef.greens.matrix(fault, dataset)` (shown to agree with a hand-built
-`G`), `np.linalg.lstsq` for the warm-up, `fault.patch_index`, the
-`geodef.cache.info()` / `set_dir()` sidebar, `plot.slip`, `plot.vectors`.
+**Revision deltas.** Add the function-approximation framing and the
+condition-number-vs-refinement figure; add `reshape_patches`/
+`flatten_patches`; expand the caching sidebar with the cache-key trust
+paragraph; state units of `G`; §4 template sections.
 
-**Plots.** The line-fit design matrix; `G` rendered with `imshow` (the
-strike/dip column blocks); a single column of `G` drawn as one patch's surface
-response; a two-asperity slip model and its predicted displacements.
+**Key calls.** `Fault.planar(...)` with multiple patches,
+`fault.greens_matrix`, `geodef.greens.matrix(fault, dataset)`,
+`np.linalg.lstsq` (warm-up), `fault.patch_index`, `fault.reshape_patches`,
+`geodef.cache.info()` / `set_dir()`.
 
-**Exercises.** Refine `n_length`/`n_width` and watch `G.shape` and the column
-count grow; plot a strike-slip column vs. the dip-slip column for the same
-patch; compare adjacent deep vs. shallow patch columns and relate their
-similarity to resolvability.
+**Plots.** Line-fit design matrix; `G` via `imshow` with the block structure
+annotated; one column of `G` as a surface response map; condition number vs.
+refinement; a two-asperity model and its predicted field.
+
+**Exercises.** Refine the grid and track `G.shape` and conditioning; compare
+a strike-slip vs. dip-slip column for one patch; compare deep vs. shallow
+patch columns and relate similarity to resolvability; challenge — build the
+projection rows for a made-up instrument that measures only East.
 
 ---
 
-### Tutorial 03 — Unregularized Inversion
-*Least squares, and why raw inversion fails.*
+### Chapter 03 — Least Squares and the Failure of Naive Inversion
+*Estimation theory meets an ill-posed problem.*
 
-**Goal.** Estimate slip from data by (weighted) least squares, and see ill-posed
-inversion overfit noise.
+**Goal.** Estimate slip by (weighted) least squares, understand the estimator
+as statistics rather than recipe, and watch unregularized inversion overfit.
 
-**Concepts & Math.**
-- The linear inverse problem `d = G m + ε`, noise `ε` with covariance `C_d`.
-- Ordinary least squares: minimize `‖G m − d‖²`; the normal equations.
+**Concepts & math.**
+- The linear inverse problem `d = G m + ε`; the noise model `ε ~ N(0, C_d)`
+  stated as an *assumption* with consequences.
+- Ordinary least squares **derived**: objective, gradient, normal equations.
 - **Weighted** least squares with `W = C_d^{-1}`:
-  `m̂ = (Gᵀ W G)^{-1} Gᵀ W d`. Why weighting by data uncertainty matters.
-- Over- vs. under-determined systems; rank deficiency and the role of the
-  condition number of `Gᵀ W G`.
-- Goodness of fit: residuals, weighted misfit `χ²`, reduced `χ²`.
-- **Overfitting demo:** invert noisy synthetic data with no regularization and
-  watch the recovered slip oscillate wildly while fitting the data "too well."
-  Motivates Tutorial 04.
+  `m̂ = (Gᵀ W G)^{-1} Gᵀ W d`, derived; why weighting is not optional when
+  uncertainties differ; Gauss–Markov (BLUE) stated in one box.
+- The **SVD picture of ill-conditioning**: singular values of the (whitened)
+  `G`, noise amplification by `1/σ_i`, condition number; the spectrum of the
+  teaching scenario plotted and interpreted. This is the chapter's new
+  theoretical core and the foundation Chapters 04–05 and 09 build on.
+- Over- vs. under-determined systems; rank deficiency.
+- Goodness of fit: residuals, `χ²`, **reduced `χ²_ν`** and its expected value
+  under a correct model — the vocabulary (`chi2` unreduced, `reduced_chi2`
+  reduced) fixed once here.
+- **The overfitting catastrophe:** invert noisy data unregularized; wild
+  oscillation, excellent fit; why "fits better" is not "is better".
+- **Double-demo:** normal equations by hand vs. `geodef.solve(...)`.
 
-**Key calls.** `geodef.invert.solve(fault, dataset)` (default WLS),
-`InversionResult` (`.slip_vector`, `.predicted`, misfit fields), `plot.fit`,
-`plot.slip`.
+**Revision deltas.** Add the WLS derivation, Gauss–Markov box, and the SVD
+section with spectrum figure; adopt named result views (`strike_slip`,
+`reduced_chi2`) and `geodef.invert.prediction`/`residual`/`summary` — the
+blocked `slip_vector` appears only inside the double-demo; explicit scenario
+construction stays here (§5); §4 template sections.
 
-**Plots.** True vs. recovered slip side by side; observed-vs-predicted scatter
-(`plot.fit`); the noisy/oscillatory unregularized solution.
+**Key calls.** `geodef.solve(fault, datasets)` (beginner spelling of
+`geodef.invert.solve`), `InversionResult` named views,
+`geodef.invert.prediction` / `residual` / `summary`, `np.linalg.svd`,
+`plot.fit`, `plot.slip`.
 
-**Exercises.** Increase the noise level and re-invert; reduce the number of
-stations below the number of patches and observe instability.
+**Plots.** True vs. recovered slip; observed-vs-predicted (`plot.fit`);
+singular-value spectrum; the oscillatory unregularized solution.
+
+**Exercises.** Increase noise and re-invert, tracking `reduced_chi2`; drop
+stations below `N` and observe instability; whiten by hand and verify against
+`solve`; challenge — relate the largest oscillation pattern to the smallest
+singular vectors.
 
 ---
 
-### Tutorial 04 — Regularization
+### Chapter 04 — Regularization
 *Making the inverse problem well-posed.*
 
-**Goal.** Stabilize the inversion with prior information and understand the
-common regularization operators.
+**Goal.** Stabilize the inversion with prior information and understand what
+each regularization operator assumes.
 
-**Concepts & Math.**
-- Ill-posedness ⇒ need for prior constraints (Tikhonov regularization).
-- The regularized objective:
-  `min_m ‖G m − d‖²_{C_d} + λ ‖L (m − m_ref)‖²`.
-- Choices of `L`:
-  - **Smoothing** — discrete Laplacian; penalizes slip *roughness*.
-  - **Damping** — `L = I`; penalizes slip *magnitude* (minimum norm / moment).
-  - **Stress-kernel** — physically motivated operator from inter-patch stress
-    interactions.
-  - Role of `m_ref` (regularize toward a reference model, default zero).
-- The augmented/stacked linear system view: regularization = adding synthetic
-  "equations" with weight `√λ`.
-- Qualitative effect of `λ`: under- vs. over-smoothing (sets up Tutorial 05).
+**Concepts & math.**
+- Ill-posedness ⇒ additional information is required; Tikhonov's idea.
+- The regularized objective
+  `Φ(m) = (Gm − d)ᵀ W (Gm − d) + λ ‖L (m − m_ref)‖²`, minimized in closed
+  form; the augmented/stacked system view (`√λ L` rows) **derived**, not
+  asserted.
+- **The filter-factor view**: on the SVD of Chapter 03, Tikhonov damping
+  multiplies each mode by `σ_i²/(σ_i² + λ)` (damping case worked; smoothing
+  case described) — under- and over-smoothing become visible in mode space.
+- Choices of `L` and the prior each encodes:
+  - **Smoothing** — discrete Laplacian; the 5-point stencil written out,
+    boundary handling stated; penalizes roughness.
+  - **Damping** — `L = I`; penalizes magnitude/moment; when that is and is
+    not a sensible prior.
+  - **Stress-kernel** — inter-patch elastic interactions; penalizes stress
+    heterogeneity; one paragraph of physics and the `ElasticMedium`
+    dependency.
+  - `m_ref` — regularizing toward a nonzero reference and when to use it.
+- **The Bayesian reading** (one section, foreshadowing Chapter 15):
+  regularization ⇔ Gaussian prior, `λ` ⇔ prior precision, the regularized
+  estimate ⇔ MAP. Planted here so Chapter 15 is a continuation, not a leap.
+- Bias–variance: what `λ` buys and what it costs (sets up Chapters 05, 09).
+- **Double-demo:** the augmented system solved by `lstsq` vs.
+  `regularization='laplacian'`.
 
-**Key calls.** `geodef.invert.solve(..., regularization='laplacian'|'damping'|'stresskernel',
-regularization_strength=λ, regularization_target=m_ref)`; `greens` Laplacian builder
-referenced conceptually.
+**Revision deltas.** Add the filter-factor development, Laplacian stencil,
+stress-kernel physics paragraph, and Bayesian-reading section; explicit
+scenario construction retained here (last time, per §5); §4 template
+sections.
 
-**Plots.** A small panel grid: recovered slip at several `λ` values from
-under- to over-smoothed.
+**Key calls.** `geodef.solve(..., regularization='laplacian'|'damping'|'stresskernel',
+regularization_strength=..., regularization_target=...)`;
+`geodef.greens.laplacian` referenced conceptually.
 
-**Exercises.** Swap Laplacian for damping and compare; sweep `λ` by eye and
-guess a good value (then check it in Tutorial 05).
+**Plots.** Panel grid of recovered slip across `λ` from under- to
+over-smoothed; filter factors vs. `σ_i` for several `λ`; smoothing vs.
+damping comparison at matched misfit.
+
+**Exercises.** Swap Laplacian for damping and explain the differences from
+the priors; sweep `λ` by eye and record a guess (checked in Chapter 05);
+regularize toward a nonzero `m_ref` and interpret; challenge — implement a
+custom `L` (e.g. gradient operator) and pass it as a matrix.
 
 ---
 
-### Tutorial 05 — Choosing Regularization Strength
+### Chapter 05 — Choosing the Regularization Strength
 *Principled selection of λ.*
 
-**Goal.** Replace eyeballing `λ` with quantitative criteria.
+**Goal.** Replace eyeballing `λ` with quantitative criteria, and understand
+what each criterion optimizes.
 
-**Concepts & Math.**
-- The misfit–roughness trade-off as `λ` varies.
-- **L-curve:** plot model norm vs. data misfit (log–log); the corner balances
-  the two. How the corner is located.
-- **ABIC** (Akaike Bayesian Information Criterion): the Bayesian/marginal-
-  likelihood view of regularization as a prior, with `λ` a hyperparameter;
-  minimize ABIC.
-- **Cross-validation:** hold out data, predict it, pick `λ` minimizing
-  prediction error; `k`-fold mechanics.
-- When the methods agree/disagree and how to choose between them.
+**Concepts & math.**
+- The misfit–roughness trade-off curve as `λ` varies; why there is no
+  assumption-free "right" answer.
+- **L-curve:** model norm vs. misfit (log–log); corner as curvature maximum;
+  what the corner balances and known failure modes.
+- **ABIC** developed properly: the hierarchical model (prior with
+  hyperparameter `λ`), marginal likelihood integrating slip out, Occam's
+  razor intuition, and the effective-degrees-of-freedom reading; minimize
+  ABIC. (This is the course's first marginalization — flagged as such, and
+  reused in Chapter 15.)
+- **Cross-validation:** hold-out prediction error, `k`-fold mechanics,
+  spatial caveats (correlated neighbors leak — foreshadows Chapter 07).
+- When the criteria agree/disagree, and reporting sensitivity to the choice
+  rather than hiding it.
+- **Scenario builder introduced** (§5, §6): the one-cell
+  `synthetic.scenario(...)` sidebar showing equivalence to Chapters 03–04's
+  explicit construction.
 
-**Key calls.** `geodef.lcurve(...)`, `geodef.abic_curve(...)`,
-`geodef.compute_abic(...)`, and `geodef.invert.solve(..., regularization_strength='abic'`
-`|'cv', cv_folds=...)`; their built-in curve plots.
+**Revision deltas.** Migrate `geodef.lcurve`/`geodef.abic_curve`/
+`geodef.compute_abic` to `geodef.invert.*` module paths (with the 2.2 export
+removal); add the ABIC derivation section and effective-DOF discussion; add
+the CV spatial caveat; introduce the scenario builder; §4 template sections.
+
+**Key calls.** `geodef.invert.lcurve(...)`, `geodef.invert.abic_curve(...)`,
+`geodef.invert.compute_abic(...)`,
+`geodef.solve(..., regularization_strength='abic'|'cv', cv_folds=...)`,
+`geodef.synthetic.scenario(...)`.
 
 **Plots.** L-curve with marked corner; ABIC vs. `λ`; CV error vs. `λ`; the
-chosen solution.
+three chosen solutions side by side.
 
-**Exercises.** Compare the `λ` chosen by L-curve, ABIC, and CV on the same
-problem; change noise level and see which criterion is most stable.
+**Exercises.** Compare `λ` from L-curve, ABIC, and CV on one problem; change
+the noise level and find which criterion is most stable; run ABIC selection
+under damping vs. smoothing; challenge — break CV with strongly correlated
+synthetic noise and explain the failure.
 
 ---
 
-### Tutorial 06 — Multiple Datasets
-*Joint inversion of GNSS and InSAR.*
+### Chapter 06 — Multiple Datasets: GNSS + InSAR
+*Joint inversion and relative weighting.*
 
-**Goal.** Combine complementary datasets in one inversion and handle their
-relative weighting.
+**Goal.** Combine complementary datasets in one inversion, with the data
+built through the friendly constructors and the results read per dataset.
 
-**Concepts & Math.**
+**Concepts & math.**
 - Why joint: GNSS (sparse, 3-component, absolute) vs. InSAR (dense, 1-D
-  line-of-sight, relative). Complementary spatial sampling.
-- **InSAR line-of-sight projection:** scalar LOS = `u · l̂`, the look-vector
-  geometry (`look_e`, `look_n`, `look_u`); ascending vs. descending.
-- Stacking the forward problem: vertically concatenate `G` and `d`; block data
-  covariance `C_d`.
-- **Relative weighting** between datasets and its effect on the solution;
-  connection to the regularization hyperparameter (foreshadow multi-λ).
+  line-of-sight, relative); complementary sampling in space and component.
+- **InSAR viewing geometry developed**: from satellite heading and incidence
+  angle to the unit look vector; `LOS = u · l̂`; ascending vs. descending;
+  the sign convention stated against `docs/conventions.md` and the
+  ground-to-satellite reversal diagnostic.
+- Building datasets the named way: `data.gnss(...)`, `data.insar(...)` with
+  keyword components and per-dataset **names** as first-class identifiers.
+- Stacking the forward problem: concatenated `G` and `d`, block `C_d`; shown
+  once by hand (`greens.stack_obs`) and thereafter left to `solve`.
+- **Relative weighting**: weights as covariance scaling; what over-weighting
+  a dataset does; per-dataset `reduced_chi2` via
+  `geodef.invert.diagnostics(result)` as the balance check; honest
+  reporting when one dataset is systematically misfit.
+- Velocity vs. displacement semantics (interseismic foreshadow for
+  Chapter 13): the metadata distinction in one paragraph.
 
-**Key calls.** `geodef.GNSS(...)`, `geodef.InSAR(...)` with look vectors,
-`geodef.invert.solve(fault, [gnss, insar], ...)`, `plot.insar`, `plot.vectors`.
+**Revision deltas.** Migrate dataset construction to `data.gnss`/`data.insar`
+with names; use `dataset_slices`/named per-dataset predictions instead of
+manual slicing; add the viewing-geometry derivation and weighting-balance
+section; add `plot.diagnostics`/`plot.summary`; §4 template sections.
 
-**Plots.** GNSS vectors and InSAR LOS for the same scenario; joint-inversion
-slip vs. single-dataset slip; per-dataset fit panels.
+**Key calls.** `geodef.data.gnss(...)`, `geodef.data.insar(...)`,
+`geodef.solve(fault, [gnss, insar], ...)`, `geodef.invert.diagnostics`,
+`plot.insar`, `plot.vectors`, `plot.diagnostics`.
 
-**Exercises.** Down-weight one dataset and watch the slip migrate toward the
-other; add a second (descending) InSAR track.
+**Plots.** GNSS vectors and InSAR LOS for one scenario; joint vs.
+single-dataset slip; per-dataset fit panels (`plot.diagnostics`).
+
+**Exercises.** Down-weight one dataset and watch slip migrate; add a
+descending track and quantify the vertical/east separation it buys; misname a
+look-vector sign and diagnose it from residuals; challenge — reproduce the
+joint solution by hand-stacking with `greens.stack_obs`/`stack_weights`.
 
 ---
 
-### Tutorial 07 — Correlated Noise and InSAR
+### Chapter 07 — Correlated Noise
 *Beyond diagonal data covariance.*
 
-> **Blocked.** The `InSAR` dataset has no good way to specify a full covariance
-> matrix `C_d` yet (see `PLAN.md` TODO and §7.4). Do not write this notebook
-> until that support lands.
+**Goal.** Represent spatially correlated noise — especially InSAR
+atmosphere — and see what ignoring it costs.
 
-**Goal.** Represent and exploit spatially correlated noise, especially in
-InSAR.
+**Concepts & math.**
+- Why InSAR noise is **spatially correlated** (atmosphere, orbits); the
+  diagonal-`C_d` assumption of earlier chapters examined and rejected here.
+- Covariance **functions** (exponential, Gaussian) with variance and
+  correlation length; building a full `C_d` with
+  `geodef.data.spatial_covariance(...)`; positive-definiteness as a real
+  constraint (validation catches violations).
+- **Whitening**: the Cholesky view `C_d = F Fᵀ`, transforming to independent
+  data; the effective number of independent observations, computed and
+  plotted against correlation length.
+- Consequences: how off-diagonal terms change the estimate *and* its
+  uncertainty; why ignoring correlation gives overconfident error bars
+  (quantified on the scenario).
+- Practical note: dense-`C_d` cost scaling, downsampling, and a pointer to
+  the operator-based noise roadmap (PLAN.md 4.1) — taught honestly as a
+  current limitation.
+- Estimating covariance from data (variograms) as an outlook paragraph.
 
-**Concepts & Math.**
-- Why InSAR noise is **spatially correlated** (atmosphere, orbits) — the
-  diagonal-`C_d` assumption of earlier notebooks is wrong here.
-- Building a full covariance matrix from a covariance function
-  (exponential/Gaussian) with a **correlation length** and variance.
-- Effect of the off-diagonal terms: data "whitening", effective number of
-  independent observations, and the impact on both the slip estimate and its
-  uncertainty.
-- Practical down-sampling of dense InSAR as a related concern (brief).
+**Revision deltas.** Remove the historical "blocked" status (the
+`spatial_covariance` support landed); migrate to the
+`geodef.data.spatial_covariance` module path; add the whitening development,
+effective-N figure, and overconfidence quantification; §4 template sections.
 
-**Key calls.** `geodef.InSAR(...)` with a full covariance / covariance-function
-specification; `geodef.invert.solve(...)` with the resulting `C_d`.
+**Key calls.** `geodef.data.spatial_covariance(...)`, `geodef.data.insar(...)`
+with full covariance, `geodef.solve(...)`.
 
-**Plots.** A covariance matrix / covariance function; inversion with diagonal
-vs. full `C_d` and the difference in recovered slip and uncertainty.
+**Plots.** Covariance function and matrix; diagonal vs. full-`C_d` inversions
+with uncertainties; effective-N vs. correlation length.
 
-**Exercises.** Vary the correlation length from ~0 (white) to large; observe how
-the solution and its error bars respond.
+**Exercises.** Sweep correlation length from ~0 to fault-scale and track the
+solution and error bars; deliberately invert with the wrong correlation
+length both ways; challenge — build a two-length-scale covariance and predict
+which scale dominates the estimate.
 
 ---
 
-### Tutorial 08 — Bounds and Constraints
+### Chapter 08 — Bounds, Constraints, and Slip Bases
 *Enforcing physically admissible slip.*
 
-**Goal.** Add inequality and sign constraints, and reduce parameters by fixing
-slip direction.
+**Goal.** Add inequality and sign constraints, reduce parameters with fixed
+slip directions, and understand the cost of each.
 
-**Concepts & Math.**
-- Why constraints: slip should not reverse sense; magnitude bounds; geologic
-  priors. These cannot be expressed by quadratic regularization alone.
-- **Non-negative least squares (NNLS):** `m ≥ 0`.
-- **Bounded least squares:** general `lb ≤ m ≤ ub`.
-- **Linear inequality constraints:** `C m ≤ d` as a quadratic program (QP).
-- **Fixed-direction bases** (dimensionality reduction): solve one amplitude per
-  patch at a fixed `rake` (`components='rake'`) or fixed geographic `azimuth`
-  (`components='azimuth'`), which also encodes a sign/sense prior cleanly.
-- Trade-offs: constraints vs. smoothing; bias vs. admissibility.
+**Concepts & math.**
+- Why constraints: rupture does not reverse sense mid-fault; magnitude
+  bounds; geologic priors. Why quadratic regularization cannot express them.
+- **Non-negative least squares** `m ≥ 0`: active-set intuition in a short
+  boxed sketch (which patches end up pinned at zero and why).
+- **Bounded least squares** `lb ≤ m ≤ ub`; scalar, per-component, and
+  per-parameter bounds.
+- **Linear inequality constraints** `C m ≤ d` as a quadratic program; one
+  worked example (e.g. total-moment cap).
+- **Fixed-direction bases derived**: the reduction matrix that maps one
+  amplitude per patch at fixed `rake` (or geographic `slip_azimuth`, or
+  `plate_rake` for plate-motion-aligned problems) into the blocked `2N`
+  space; how a basis encodes a sense prior *exactly* rather than softly.
+  The plate basis is planted here as the vocabulary Chapter 13 builds on.
+- Constraints vs. regularization: admissibility, bias, and the danger of
+  constraint-induced artifacts (positivity piling slip at edges) —
+  demonstrated.
+- A one-paragraph bridge: positivity as a *prior* has a principled Bayesian
+  treatment (Chapter 15).
 
-**Key calls.** `geodef.invert.solve(..., bounds=(0, None))` (auto-NNLS),
-`bounds=(lb, ub)` (bounded LS), `method='constrained', constraints=(C, d)`,
-`components='rake', rake=...`, `components='azimuth', slip_azimuth=...`.
+**Revision deltas.** Add the fixed-basis derivation and the
+`components='plate'`/`plate_rake` option; add the constraint-artifact
+demonstration and Bayesian bridge; §4 template sections.
+
+**Key calls.** `geodef.solve(..., bounds=(0, None))` (auto-NNLS),
+`bounds=(lb, ub)`, `method='constrained', constraints=(C, d)`,
+`components='rake', rake=...`, `components='azimuth', slip_azimuth=...`,
+`components='plate', plate_rake=...`; `geodef.slip.from_rake` /
+`from_azimuth` / `from_plate` for the by-hand basis.
 
 **Plots.** Unconstrained vs. non-negative slip (spurious back-slip removed);
-fixed-rake one-component slip vectors.
+fixed-rake vectors; a constraint-artifact example.
 
-**Exercises.** Compare WLS, NNLS, and a fixed-rake inversion on the same data;
-add an upper bound and find where it begins to bias the fit.
+**Exercises.** Compare WLS, NNLS, and fixed-rake on one dataset; tighten an
+upper bound until it visibly biases the fit and find that threshold;
+challenge — build the rake-basis reduction matrix by hand and verify against
+`components='rake'`.
 
 ---
 
-### Tutorial 09 — Uncertainty and Assessment
+### Chapter 09 — Uncertainty, Resolution, and Synthetic Tests
 *How well is the slip actually resolved?*
 
-**Goal.** Quantify and visualize model uncertainty and resolution, and report
-derived quantities.
+**Goal.** Quantify and visualize uncertainty and resolution, run principled
+synthetic tests, and report derived quantities with error bars.
 
-**Concepts & Math.**
-- **Posterior model covariance:**
-  `C_m = (Gᵀ W G + λ LᵀL)^{-1}` (linear-Gaussian result); diagonal ⇒
-  per-patch slip uncertainty.
-- **Model resolution matrix** `R = G^{-g} G` (generalized inverse times `G`):
-  each recovered patch is a *weighted average* of the truth; rows of `R` are
-  resolution kernels.
-- The **resolution–uncertainty trade-off** as a function of regularization.
-- **Checkerboard / restitution tests:** recover a known synthetic pattern to
-  map where the data resolve slip.
-- Derived quantities: scalar **moment** and **moment magnitude** from the slip
-  estimate, with uncertainty.
+**Concepts & math.**
+- **Posterior model covariance** derived from the linear-Gaussian model:
+  `C_m = (Gᵀ W G + λ LᵀL)^{-1}`; the diagonal as per-patch uncertainty; what
+  the off-diagonals mean (and why neighboring patches anti-correlate under
+  smoothing).
+- **Model resolution matrix** `R = G^{-g} G` derived; recovered model =
+  `R m_true` + noise term; rows as averaging kernels, diagonal as a
+  resolution map; connection to the SVD/filter factors of Chapters 03–04.
+- The **resolution–uncertainty trade-off** as `λ` varies — the same
+  trade-off from Chapter 05 seen from the model side, plotted as paired maps.
+- **Synthetic tests as supported API** (§6): checkerboard and spike tests via
+  `synthetic.checkerboard`/`spike` + `noisy_data` + `compare`; what
+  checkerboards do and do not establish (linearity caveat, pattern-scale
+  dependence) — an honest-assessment discussion, not just the ritual.
+- Derived quantities with uncertainty: moment and `M_w` error propagation
+  from `C_m` through the linear moment functional.
 
-**Key calls.** `geodef.model_covariance(...)`, `geodef.model_resolution(...)`,
-`geodef.model_uncertainty(...)`, `geodef.invert.diagnostics(...)`,
-`fault.moment(...)` / magnitude; `plot.resolution`, `plot.uncertainty`.
+**Revision deltas.** Migrate `geodef.model_*` calls to the `geodef.invert.*`
+module paths; replace notebook-local checkerboard code with the new
+`geodef.synthetic` helpers; add the `C_m` and `R` derivations, off-diagonal
+discussion, and the checkerboard-caveat section; add moment error
+propagation; §4 template sections.
 
-**Plots.** Per-patch uncertainty map; resolution diagonal map; a checkerboard
-input/recovered pair.
+**Key calls.** `geodef.invert.model_covariance(...)`,
+`geodef.invert.model_resolution(...)`, `geodef.invert.model_uncertainty(...)`,
+`geodef.invert.diagnostics(...)`, `geodef.synthetic.checkerboard` / `spike` /
+`noisy_data` / `compare`, `fault.moment` / `fault.magnitude`,
+`plot.resolution`, `plot.uncertainty`.
 
-**Exercises.** Run a checkerboard test at two `λ` values and relate the
-recoverable checker size to the resolution map; report `M_w` ± uncertainty.
+**Plots.** Per-patch uncertainty map; resolution-diagonal map; one full
+resolution row as an averaging kernel; checkerboard input/recovered pair;
+paired resolution/uncertainty maps at two `λ`.
+
+**Exercises.** Run checkerboards at two scales and two `λ` and tabulate
+recovery; find the depth below which spikes are unrecoverable; report
+`M_w ± σ`; challenge — show numerically that `R → I` as noise → 0 and
+regularization → 0.
 
 ---
 
-### Tutorial 10 — Nonlinear Geometry Search
+### Chapter 10 — Nonlinear Geometry Search
 *When the geometry itself is unknown.*
 
 **Goal.** Estimate nonlinear fault parameters (location, strike, dip, depth)
 on top of the linear slip inversion.
 
-**Concepts & Math.**
-- Why geometry is **nonlinear**: `G` depends nonlinearly on fault position and
-  orientation, so `d = G(θ) m` is not linear in `θ`.
-- **Separable (variable-projection) structure:** for any trial geometry `θ`,
-  slip `m` is still a *linear* inversion (Tutorials 03–08); the outer search is
-  over the few nonlinear parameters only.
-- Objective surface over `θ`; local minima; the value of a coarse **grid
-  search** before gradient/quasi-Newton refinement.
-- Optimization with `scipy.optimize`: defining the misfit-as-function-of-θ,
-  starting points, bounds.
-- **Outlook (no heavy code):** fully Bayesian sampling of `θ` with MCMC
-  (`emcee`) for posterior uncertainty on geometry — pointer to a future
-  `examples/` study.
+**Concepts & math.**
+- Why geometry is **nonlinear**: `G(θ)` depends nonlinearly on position and
+  orientation; `d = G(θ) m` is bilinear at best.
+- **Variable projection** developed: for any trial `θ`, the inner slip
+  problem is the linear inversion of Chapters 03–08, so the outer search is
+  over few parameters; the projected objective `Φ(θ) = min_m Φ(θ, m)`;
+  reference to Golub & Pereyra.
+- **Identifiability and trade-offs**: depth–size–slip covariance shown via
+  2-D misfit surfaces; why single-dataset geometries can be poorly
+  constrained.
+- The objective surface over `θ`: local minima, the value of a coarse grid
+  search before local refinement; `scipy.optimize.minimize` mechanics
+  (starting points, bounds, convergence flags read critically).
+- **Outlook:** gradient-based search (Chapter 11) and full Bayesian geometry
+  posteriors (`geodef.bayes`, worked in `examples/bayesian_geometry.ipynb`).
 
-**Key calls.** A small Python objective wrapping `geodef.invert.solve(...)` inside
-`scipy.optimize.minimize` / a grid loop; reuse of earlier inversion calls.
+**Revision deltas.** Replace the stale `emcee`/"future study" outlook with
+pointers to Chapter 11 and the existing `geodef.bayes` example; add the
+variable-projection development and misfit-surface/trade-off section; §4
+template sections.
 
-**Plots.** Misfit vs. a scanned geometry parameter (e.g. dip); recovered vs.
-true geometry and slip.
+**Key calls.** A small objective wrapping `geodef.solve(...)` inside
+`scipy.optimize.minimize` / a grid loop; `geodef.synthetic.scenario` with a
+perturbed starting geometry.
 
-**Exercises.** Grid-search dip, then refine with `minimize`; perturb the
-starting geometry to find a local minimum and discuss mitigation.
+**Plots.** Misfit vs. one scanned parameter (dip); a 2-D misfit surface
+(depth vs. width) with the trade-off valley; recovered vs. true geometry and
+slip.
 
----
-
-## 6. Authoring Checklist (per notebook)
-
-Before a notebook is considered done:
-
-- [ ] Opens with a title + goal + bullet list of what the reader will learn.
-- [ ] Develops the math/theory in markdown **before** the code that uses it.
-- [ ] Reuses the shared conventions and (where relevant) the recurring synthetic
-      scenario from §3.
-- [ ] Keeps code cells short and focused; no hidden complexity.
-- [ ] Sets a fixed random seed; runs top-to-bottom under
-      `tests/test_tutorials.py` in seconds.
-- [ ] All plots are labeled (titles, axis labels, units, colorbars).
-- [ ] Ends with 2–4 exercises that vary a parameter and ask for a prediction.
-- [ ] `tutorials/README.md` updated to list the notebook.
+**Exercises.** Grid-search dip then refine with `minimize`; start from a
+wrong basin and document the local minimum; scan misfit vs. depth at two
+noise levels; challenge — map the depth–width trade-off and explain it
+physically.
 
 ---
 
-## 7. Design Decisions
+### Chapter 11 — Gradient-Based Geometry Inversion (JAX)
+*Differentiable forward models for geometry search.*
 
-These were open questions during planning; the decisions are now settled and
-recorded here.
+Optional: requires `geodef[jax]`; CI-gated like the JAX test modules.
 
-1. **Shared scenario delivery — decided: copy/paste.** Every notebook is fully
-   **standalone**. Copy the setup cell into each notebook rather than importing
-   a shared helper, even at the cost of duplication.
-2. **Plotting gallery — decided: own notebook.** Keep the exhaustive plot
-   gallery as its own unnumbered `tutorials/reference_plots.ipynb`, separate
-   from the numbered methods path (it is not migrated into `docs/`).
-3. **Mesh generation home — decided: `examples/`.** The trace/polygon/slab2.0
-   meshing workflow becomes an `examples/` study, not a tutorial. However, later
-   tutorials **may generate a simple triangular mesh on the fly** in an example
-   so students see that this capability exists — without teaching the full
-   meshing workflow.
-4. **Tutorial 07 covariance support — blocked, decided to defer.** The `InSAR`
-   dataset object does **not yet have a good way to define a covariance
-   matrix** `C_d`. This is now a TODO in `PLAN.md`. **Do not write Tutorial 07
-   until that support lands.** If asked to start Tutorial 07 before then, first
-   remind that the `InSAR` `C_d` specification must be added.
-5. **Numbering during transition — decided: `old_` prefix.** Rename the existing
-   notebooks to `old_01_…`, `old_02_…`, etc. while the new series is built, and
-   **delete each `old_*` notebook once its content has been migrated** into the
-   new tutorials or `examples/`.
+**Goal.** Use automatic differentiation to make geometry search fast and to
+attach curvature-based uncertainties.
+
+**Concepts & math.**
+- What **automatic differentiation** is (forward/reverse in two paragraphs,
+  no implementation detail) and why an analytic-kernel forward model is
+  differentiable end to end.
+- The differentiable variable-projection objective; gradients of `Φ(θ)`;
+  L-BFGS-B refinement vs. Chapter 10's derivative-free search (iteration
+  counts compared on the same problem).
+- Multi-parameter recovery: scaling of search difficulty with `dim(θ)`;
+  parameter scaling/preconditioning in practice.
+- **Gauss–Newton curvature ⇒ approximate geometry covariance**: error bars
+  on `θ` from the Jacobian at the optimum; when the Gaussian approximation
+  is trustworthy (connects to Chapters 15–16).
+- Backend mechanics kept to one section: `set_backend('jax')`, float64,
+  compilation vs. execution time (measured once), and NumPy parity asserted.
+- Sequencing note: this chapter stays deliberately independent of Parts
+  0–IV's core path; nothing later requires it except as an alternative to
+  Chapter 10's search.
+
+**Revision deltas.** The shipped notebook predates this outline's inclusion
+of an 11th chapter: bring it under the §4 template (it currently lacks the
+formal spec), add the AD-concepts and trustworthiness sections, and align
+its API spellings with the module-path policy.
+
+**Key calls.** `geodef.backend.set_backend('jax')`,
+`geodef.invert.geometry_search(...)`, its result record (optimized `Fault`,
+`theta`, covariance), `geodef.gradients` referenced conceptually.
+
+**Plots.** Convergence paths (gradient vs. grid+simplex); recovered geometry
+with error ellipses on `θ` pairs; timing bar (compile vs. solve).
+
+**Exercises.** Recover 3, then 5, then 7 geometry parameters and track
+difficulty; compare wall-clock and iteration count against Chapter 10;
+challenge — verify one gradient component by finite differences.
+
+---
+
+### Chapter 12 — Triangular Faults **[new]**
+*The same linear system on an unstructured mesh.*
+
+**Goal.** Show that everything in Chapters 02–09 carries over unchanged to
+triangular dislocations, and when triangles are worth the trouble.
+
+**Concepts & math.**
+- Why triangles: curved fault surfaces, slab interfaces, trace-following
+  geometry; what rectangles cannot represent without gaps/overlaps.
+- The Nikkhoo & Walter (2015) triangular dislocation element in one boxed
+  paragraph (artefact-free construction; same half-space assumptions).
+- A small mesh built **on the fly** (a handful of triangles via
+  `Fault.from_triangles` or a one-call `geodef.mesh` helper) — real meshing
+  workflows (traces, polygons, slab2.0) stay in `examples/mesh_generation.ipynb`.
+- The invariance lesson: `G` assembly, solve, regularization, and assessment
+  calls are *identical*; the Laplacian on an unstructured mesh
+  (adjacency-based) contrasted with the structured stencil of Chapter 04.
+- Rake vs. azimuth bases on curved surfaces: why `slip_azimuth` (or
+  `plate_rake`) is the meaningful fixed direction when strike varies —
+  reusing Chapter 08's basis machinery.
+- Rect vs. tri on the same scenario: agreement where geometry is planar;
+  what changes on a curved geometry.
+
+**Key calls.** `Fault.from_triangles(..., frame=...)`, a minimal
+`geodef.mesh` construction, `geodef.solve(...)` unchanged,
+`plot.slip_interpolated`, `plot.fault3d`.
+
+**Plots.** The triangular mesh in 3-D; interpolated slip; rect-vs-tri
+solution comparison on matched geometry.
+
+**Exercises.** Refine the mesh and re-run the Chapter 09 assessment; fix slip
+azimuth on a curved mesh and compare against per-patch rake; challenge —
+build a two-segment fault with a bend and discuss the Laplacian across the
+join.
+
+---
+
+### Chapter 13 — Interseismic Coupling **[new]**
+*Imaging locked faults with the backslip idea.*
+
+> **Sequencing note (see §12 OQ-3).** The *sign and convention* decision from
+> PLAN.md 4.4 — how backslip maps onto the slip basis and bounds machinery —
+> must be settled and written into `docs/conventions.md` **before** this
+> chapter is authored, so the convention is defined once. The chapter itself
+> does **not** wait for the rest of 4.4 (coupling-fraction API, moment
+> deficit): it teaches the concept with today's basis-and-bounds vocabulary
+> and is revised when the coupling API lands. The full real-data coupling
+> example (PLAN.md 2.3) remains deferred until 4.1/4.3/4.4 exist.
+
+**Goal.** Understand the interseismic velocity field of a locked fault and
+pose coupling estimation as the same linear inversion with a different
+parameterization.
+
+**Concepts & math.**
+- Elastic rebound across the earthquake cycle; what GNSS velocities look
+  like near locked strike-slip and subduction faults (the arctangent profile
+  derived for the infinite strike-slip screw dislocation — the course's one
+  closed-form inversion-free result).
+- **Backslip** (Savage 1983): steady plate motion + hypothetical normal-sense
+  slip on the locked patch = interseismic velocity field; the assumptions
+  and their limits stated honestly (kinematic device, not mechanics).
+- Velocity data vs. displacement data: the units/epoch semantics from
+  Chapter 06 now doing real work.
+- **Coupling** as the fraction of plate motion not being accommodated by
+  creep; the plate basis (`components='plate'`, `plate_rake` from an
+  `euler` pole) and `[0, 1]`-scaled bounds as today's expression of a
+  coupling inversion; moment-deficit rate computed by hand from the result.
+- Rigid-block context: where the plate rate comes from
+  (`geodef.euler`), and why block motion and coupling must share one
+  vocabulary (roadmap 4.4).
+
+**Key calls.** `geodef.data.gnss(...)` velocities,
+`geodef.slip.plate_rake_from_euler(...)`,
+`geodef.solve(..., components='plate', plate_rake=..., bounds=...)`,
+`geodef.euler` for the plate rate.
+
+**Plots.** The arctangent profile vs. locking depth; synthetic interseismic
+velocity field; recovered coupling map; moment-deficit accumulation vs.
+time.
+
+**Exercises.** Vary locking depth and fit the profile; invert a synthetic
+coupling pattern and run the Chapter 09 checkerboard on it (coupling
+resolution is usually poor at depth — see it); challenge — express the same
+problem in raw strike/dip components and show why the plate basis is the
+honest parameterization.
+
+---
+
+### Chapter 14 — Model Misspecification **[new]**
+*What happens when the assumed model is wrong.*
+
+**Goal.** Develop the habit of asking "wrong how?": see how errors in fixed
+assumptions bias slip estimates in ways formal uncertainties do not capture.
+
+**Concepts & math.**
+- The uncomfortable theorem of Chapter 09: `C_m` and `R` are computed *under
+  the model*; they say nothing about being wrong about `G` itself.
+- Systematic experiments on the scenario, each: truth generated with one
+  model, inverted with another, bias mapped and compared against the formal
+  `σ`:
+  - wrong **dip** / **depth** (geometry misspecification; connects to
+    Chapter 10 — this is why geometry search matters);
+  - wrong **elastic medium** (`ν`, layering-vs-half-space stand-in;
+    `ElasticMedium` finally varied);
+  - wrong **discretization** (too-coarse patches aliasing slip);
+  - wrong **noise model** (Chapter 07's correlated noise treated as white).
+- **Residual forensics**: spatially coherent residuals as the misspecification
+  signal; per-dataset diagnostics re-read with suspicion.
+- What to report: sensitivity analyses alongside formal errors; the
+  difference between precision and accuracy in published slip models.
+
+**Key calls.** Nothing new — `geodef.synthetic.*`, `geodef.solve`,
+`geodef.invert.diagnostics`, `plot.residual`; the chapter's novelty is
+methodological.
+
+**Plots.** Bias maps per experiment with formal-`σ` contours overlaid;
+coherent-residual maps; a summary table of bias/`σ` ratios.
+
+**Exercises.** Find the dip error that biases `M_w` by 0.1; determine which
+misspecification the residuals detect most easily and which is nearly
+invisible; challenge — design the station geometry that best *exposes* a
+depth error.
+
+---
+
+### Chapter 15 — Bayesian Inversion and Prior Sensitivity **[new]**
+*From regularization to posterior distributions.*
+
+Optional: requires `geodef[bayes]` (JAX + BlackJAX); CI-gated.
+
+**Goal.** Recast the regularized inversion as Bayesian inference, obtain
+posterior distributions instead of point estimates, and test how conclusions
+depend on the prior.
+
+**Concepts & math.**
+- Bayes' theorem for the linear-Gaussian model; the Chapter 04 bridge paid
+  off: Tikhonov solution = posterior mean, `C_m` = posterior covariance,
+  ABIC = marginal likelihood — nothing new, *reorganized*.
+- Where sampling earns its keep: **positivity** (Chapter 08's bounds as a
+  truncated prior via `SlipPosterior`), hyperparameter uncertainty, and
+  nonlinear geometry (`RectPosterior`, marginalizing slip — the collapsed
+  construction in one boxed sketch).
+- NUTS in two paragraphs (what a sampler produces; treat internals as
+  Chapter 16's subject); credible intervals vs. confidence intervals, said
+  carefully once.
+- **Prior sensitivity as a first-class practice**: re-run with defensible
+  alternative priors (smoothness scale, positivity on/off, geometry prior
+  widths); a sensitivity table of the quantities of interest (`M_w`, peak
+  slip, depth); which conclusions are robust and which are prior-driven.
+- Keep runs tiny (coarse fault, short chains, fixed seeds) — the point is
+  the workflow, not converged science; convergence rigor is Chapter 16.
+
+**Key calls.** `geodef.bayes.SlipPosterior` / `RectPosterior`, the NUTS
+sampling entry point, credible-interval and conditional-draw utilities,
+`geodef.backend.set_backend('jax')`.
+
+**Plots.** Posterior slip mean vs. Tikhonov solution; per-patch credible
+intervals vs. Chapter 09's `σ`; prior-vs-posterior overlays for two geometry
+parameters; the prior-sensitivity table as a figure.
+
+**Exercises.** Verify the analytic correspondence (posterior mean vs.
+regularized solution) numerically; switch positivity on/off and compare
+shallow-slip conclusions; halve and double the prior smoothness scale and
+report which findings move; challenge — compute ABIC's `λ` and the
+hierarchical posterior's `λ` distribution and reconcile them.
+
+---
+
+### Chapter 16 — Posterior Diagnostics **[new]**
+*Trusting (or rejecting) a sampled posterior.*
+
+Optional: requires `geodef[bayes]`; CI-gated.
+
+**Goal.** Learn to audit MCMC output before believing it: convergence,
+sampler pathologies, and posterior predictive checking.
+
+**Concepts & math.**
+- What can go wrong silently: unconverged chains that look smooth; the
+  danger of single-chain, single-seed results.
+- **Convergence diagnostics** developed at working depth: trace plots read
+  critically, split-`R̂`, effective sample size (why correlated draws count
+  less), divergences and what they signal about geometry (with the concrete
+  remedy list: reparameterize, tighten priors, more warmup).
+- **Posterior predictive checks**: draw → predict → compare against held-out
+  and in-sample data; discrepancy statistics; PPC as the Bayesian cousin of
+  Chapter 14's residual forensics.
+- Prior predictive checks as the cheap *pre*-sampling sanity test (geometry
+  draws that break the half-space are found before burning compute).
+- A worked pathology: a deliberately hard posterior (e.g. near-surface patch
+  with weak data) sampled badly, diagnosed, fixed, re-diagnosed.
+- Roadmap honesty: some diagnostic conveniences (rank plots, automated
+  warnings with remedies) arrive with PLAN.md 5.2; the chapter teaches the
+  concepts with the diagnostics `geodef.bayes` exposes today and is upgraded
+  when 5.2 lands.
+
+**Key calls.** `geodef.bayes` sampling + its convergence-diagnostic outputs,
+posterior predictive draws via the prediction utilities, `geodef.synthetic`
+for held-out data.
+
+**Plots.** Good vs. bad trace plots; `R̂`/ESS summary table; divergence
+locations in parameter space; PPC panels (data vs. predictive envelope).
+
+**Exercises.** Shorten warmup until `R̂` fails and find the threshold; run
+four chains from dispersed starts and compare to one long chain; construct a
+PPC that *passes* while the model is wrong (tie back to Chapter 14);
+challenge — diagnose and fix the worked pathology with a different remedy
+than the chapter used.
+
+---
+
+## 9. Solution Notebooks **[new]**
+
+Every chapter's exercises get worked solutions, published separately so the
+course pages stay spoiler-free:
+
+- **Location:** `tutorials/solutions/NN_<same_stem>_solutions.ipynb`, one per
+  chapter, listed at the bottom of `tutorials/README.md` under their own
+  heading (not interleaved with the course table).
+- **Content:** each exercise restated, then a worked solution with the same
+  interpretation standard as the chapters — the *reasoning*, not just the
+  output. Challenge exercises may include discussion of alternative
+  approaches.
+- **Tested:** executed by `tests/test_tutorials.py` alongside their chapters
+  (same optional-dependency gating), so solutions cannot drift from the API.
+  Solutions reuse the scenario builder and chapter setup verbatim.
+- **Authoring rule:** a chapter and its solutions notebook are one unit of
+  work — an exercise may not land without its solution.
+
+---
+
+## 10. Authoring Checklist (per chapter)
+
+Before a chapter is considered done:
+
+- [ ] Header block: title, promise, learning objectives, prerequisites,
+      estimated time band (§4).
+- [ ] Motivation section before any math; theory before the code that uses
+      it; assumptions stated when introduced.
+- [ ] Notation matches §5 and the glossary; glossary terms linked on first
+      use; conventions cited to `docs/conventions.md`, not restated.
+- [ ] API spellings follow the module-path policy (§5); no legacy top-level
+      expert aliases.
+- [ ] Named result views for routine operations; blocked vectors only where
+      ordering is the lesson.
+- [ ] Uses the recurring scenario (03–09) or the builder (05+) per §5; seeds
+      fixed and visible.
+- [ ] Every figure labeled (titles, axes, units, colorbars) **and**
+      interpreted in prose.
+- [ ] Checkpoint questions with inline answers; common-mistakes section;
+      recap with decision-guide pointer; further reading with annotations.
+- [ ] 3–6 exercises ending in a challenge; solutions notebook complete and
+      executing (§9).
+- [ ] Runs top-to-bottom under `tests/test_tutorials.py` quickly; optional-
+      dependency chapters correctly gated.
+- [ ] `tutorials/README.md` updated (course table, time, extras flags).
+
+---
+
+## 11. Design Decisions (settled)
+
+Recorded so they are not re-litigated; historical decisions from the first
+generation are retained where they still bind.
+
+1. **Numbering is stable; the course grows at both ends.** Existing notebooks
+   keep numbers and file names; preflight is `00`; topics are `12–16`. No
+   renumbering.
+2. **Quickstart lives in the docs layer, previewed in Chapter 00.** The
+   five-minute quickstart's home is `README.md` + `docs/quickstart.md`; the
+   identical code closes Chapter 00 and is pinned by a golden-workflow test
+   (2.4). There is no separate "quickstart notebook."
+3. **Scenario delivery — explicit first, builder after.** Supersedes the
+   first-generation "always copy/paste" rule; see §5. Chapters 03–04 build
+   the scenario by hand; 05+ use `synthetic.scenario(...)`.
+4. **Depth in prose, not compute.** The textbook deepening must not slow the
+   executed suite materially; heavy demonstrations are shrunk or moved to
+   `examples/`.
+5. **Bayesian topics are chapters, not core.** 15–16 teach general concepts
+   (priors, sensitivity, convergence, predictive checking) and are therefore
+   in the course, but optional-extra-gated and outside the 00–10 spine.
+6. **Old-generation dispositions stand.** Caching is a Chapter 02 sidebar;
+   the plotting gallery is unnumbered `reference_plots.ipynb`; real mesh
+   generation is an `examples/` study (Chapter 12 may build a small mesh
+   inline); the Tutorial-07 covariance blocker is resolved and the notebook
+   exists.
+7. **Module-path migration is atomic.** Notebook/example/docs migration off
+   the legacy top-level expert aliases lands in one commit with the
+   `geodef/__init__.py` removal and the `tests/test_public_api.py` flip
+   (PLAN.md 2.2).
+
+---
+
+## 12. Open Questions for This Phase
+
+Tracked here so the answers get recorded as design decisions (§11) when
+settled.
+
+- **OQ-1 — Docs-layer file names and site structure.** §2 proposes
+  `docs/quickstart.md`, `docs/workflow.md`, `docs/glossary.md`,
+  `docs/decision_guides.md`. PLAN.md 2.3 defers the documentation *site* until
+  navigation is settled; confirm these flat-file homes are acceptable in the
+  interim so chapters can link them now.
+- **OQ-2 — Name and scope of the synthetic module.** §6 proposes
+  `geodef.synthetic` (alternatives: `geodef.scenarios`, `geodef.testing` —
+  the latter collides with pytest connotations). Needs the API review
+  required for any new public surface, including whether `scenario()` returns
+  a plain named record (proposed) and whether `compare()` belongs here or in
+  `invert`.
+- **OQ-3 — Backslip convention timing.** Chapter 13 requires the backslip
+  sign/basis convention (a PLAN.md 4.4 sub-item) to be settled *first* and
+  documented in `docs/conventions.md`, without pulling the rest of 4.4
+  forward. Confirm this partial pull-forward, or defer Chapter 13 to the 4.4
+  phase entirely (the outline assumes the pull-forward).
+- **OQ-4 — CI budget for the deepened course.** Eighteen executed notebooks
+  (00–16 plus solutions) will lengthen the tutorial job even with tiny
+  problems, and 15–16 add short NUTS runs on the JAX-gated path. Set an
+  explicit wall-clock budget for `tests/test_tutorials.py` (suggested: keep
+  the base-install path under ~5 minutes; gated path under ~10) and decide
+  whether solutions execute in the same job or a second one.
+- **OQ-5 — Checkpoint-answer mechanics.** Inline collapsed answers
+  (`<details>` blocks) render well on GitHub/Jupyter but not identically
+  everywhere; confirm this mechanism before writing dozens of them, or
+  choose end-of-notebook answer cells instead.
+- **OQ-6 — One Bayesian chapter or two.** The outline splits formulation +
+  prior sensitivity (15) from sampling diagnostics (16) for depth and
+  because their "Requires" differ in spirit. If course length becomes a
+  concern, they merge cleanly into one longer chapter; decide before
+  authoring 15.
+- **OQ-7 — Glossary/notation single-sourcing.** §5's notation table and the
+  glossary's symbol column must not drift. Decide whether the glossary is
+  generated from a table shared with this outline, or kept in sync by the
+  API-doc drift check from PLAN.md 0.3.

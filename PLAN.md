@@ -405,6 +405,13 @@ is present.
 
 ## Priority 2 — Learning experience and documentation architecture
 
+`tutorials/OUTLINE.md` is the design document for this phase: it plans the
+textbook-depth course revision (chapters 00–16, chapter anatomy, solution
+notebooks), the homes for the 2.1 "start here" artifacts, the
+`geodef.synthetic` helper module, and records the open questions (docs-layer
+file names, synthetic-module naming, backslip-convention timing, CI budget)
+that must be settled as work lands.
+
 ### 2.1 Build a true “start here” path
 
 - [ ] Create a five-minute, copy-paste quickstart that performs forward
