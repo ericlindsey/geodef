@@ -161,21 +161,21 @@ class TestGetPatchVerticesLocal:
     """Tests for _get_patch_vertices_local."""
 
     def test_rect_shape(self, rect_fault):
-        from geodef.plot import _get_patch_vertices_local
+        from geodef.plot._shared import _get_patch_vertices_local
 
         verts = _get_patch_vertices_local(rect_fault)
         assert len(verts) == rect_fault.n_patches
         assert verts[0].shape == (4, 2)
 
     def test_tri_shape(self, tri_fault):
-        from geodef.plot import _get_patch_vertices_local
+        from geodef.plot._shared import _get_patch_vertices_local
 
         verts = _get_patch_vertices_local(tri_fault)
         assert len(verts) == tri_fault.n_patches
         assert verts[0].shape == (3, 2)
 
     def test_rect_units_km(self, rect_fault):
-        from geodef.plot import _get_patch_vertices_local
+        from geodef.plot._shared import _get_patch_vertices_local
 
         verts = _get_patch_vertices_local(rect_fault)
         all_x = np.concatenate([v[:, 0] for v in verts])
@@ -186,7 +186,7 @@ class TestGetPatchVerticesLocal:
         assert np.ptp(all_y) < 100.0
 
     def test_tri_units_km(self, tri_fault):
-        from geodef.plot import _get_patch_vertices_local
+        from geodef.plot._shared import _get_patch_vertices_local
 
         verts = _get_patch_vertices_local(tri_fault)
         all_x = np.concatenate([v[:, 0] for v in verts])
@@ -197,7 +197,7 @@ class TestGetSlipComponent:
     """Tests for _get_slip_component."""
 
     def test_magnitude(self, rect_fault, slip_magnitude):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "magnitude")
@@ -206,7 +206,7 @@ class TestGetSlipComponent:
         np.testing.assert_allclose(vals, expected)
 
     def test_strike(self, rect_fault, slip_magnitude):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "strike")
@@ -214,7 +214,7 @@ class TestGetSlipComponent:
         np.testing.assert_allclose(vals, 0.5)
 
     def test_dip(self, rect_fault, slip_magnitude):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         n = rect_fault.n_patches
         vals = _get_slip_component(slip_magnitude, n, "dip")
@@ -222,20 +222,20 @@ class TestGetSlipComponent:
         np.testing.assert_allclose(vals, 1.0)
 
     def test_invalid_component(self, rect_fault, slip_magnitude):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         with pytest.raises(ValueError, match="component"):
             _get_slip_component(slip_magnitude, rect_fault.n_patches, "invalid")
 
     def test_single_component(self, rect_fault):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         n = rect_fault.n_patches
         vals = _get_slip_component(np.ones(n) * 2.0, n, "magnitude")
         np.testing.assert_allclose(vals, 2.0)
 
     def test_wrong_slip_length(self, rect_fault):
-        from geodef.plot import _get_slip_component
+        from geodef.plot._shared import _get_slip_component
 
         with pytest.raises(ValueError, match="length"):
             _get_slip_component(np.ones(5), rect_fault.n_patches, "magnitude")
@@ -245,14 +245,14 @@ class TestStationsToLocal:
     """Tests for _stations_to_local_km."""
 
     def test_returns_two_arrays(self, rect_fault, gnss_3comp):
-        from geodef.plot import _stations_to_local_km
+        from geodef.plot._shared import _stations_to_local_km
 
         x, y = _stations_to_local_km(gnss_3comp, rect_fault)
         assert x.shape == (gnss_3comp.n_stations,)
         assert y.shape == (gnss_3comp.n_stations,)
 
     def test_units_km(self, rect_fault, gnss_3comp):
-        from geodef.plot import _stations_to_local_km
+        from geodef.plot._shared import _stations_to_local_km
 
         x, y = _stations_to_local_km(gnss_3comp, rect_fault)
         assert np.all(np.abs(x) < 50)
@@ -622,7 +622,7 @@ class TestPlotVectors:
         ellipses = [p for p in ax.patches if isinstance(p, Ellipse)]
         assert len(ellipses) == gnss_3comp.n_stations
         # Check that the first ellipse center differs from the station
-        from geodef.plot import _stations_to_local_km
+        from geodef.plot._shared import _stations_to_local_km
 
         x_km, y_km = _stations_to_local_km(gnss_3comp, rect_fault)
         ell0_center = ellipses[0].center
@@ -1039,7 +1039,7 @@ class TestPlotMap:
 
     def test_surface_trace_smooth(self, rect_fault):
         """Surface trace should be a smooth line, not a zigzag."""
-        from geodef.plot import _get_surface_trace
+        from geodef.plot._shared import _get_surface_trace
 
         trace = _get_surface_trace(rect_fault)
         assert trace.shape[0] >= 2
