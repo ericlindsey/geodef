@@ -1609,7 +1609,7 @@ def fault3d(
     return ax
 
 
-def map(
+def map_view(
     fault: Fault,
     *,
     datasets: DataSet | list[DataSet] | None = None,

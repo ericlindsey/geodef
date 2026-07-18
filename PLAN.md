@@ -354,6 +354,53 @@ computations; ordinary transformations and one-shot workflows are functions.
 - [x] Introduce dataset names as first-class identifiers so joint results and
   plots are stable and readable.
 
+### 1.6 Pre-documentation breaking-change batch
+
+The draft API still has no users, so these remaining renames and unit fixes
+land directly, without deprecation shims — the precedent set in 1.2. They must
+be complete before Priority 2 bakes today's names into the quickstart, course,
+and examples; every one becomes a migration burden after v0.2.
+
+- [x] Resolve the remaining name collisions from the structural audit: rename
+  `greens.resolution` to `greens.resolution_matrix`; keep
+  `invert.model_resolution` as the primary assessment call and
+  `plot.resolution` as the plotting name (no longer ambiguous once the
+  `greens` name is specific). Rename `plot.map`, which shadows the builtin
+  and reads like the `geomap` module, to `plot.map_view`.
+- [x] Standardize regularization vocabulary on the math the tutorials teach
+  (`Phi = r.T @ W @ r + lambda * ||L(m - m_ref)||^2`): rename the
+  `smoothing=` keyword to `regularization=`, `smoothing_strength=` to
+  `regularization_strength=`, and `smoothing_target=` to
+  `regularization_target=` across `invert`, `bayes`, and `plot`, including
+  the `InversionResult` field and the result-file schema (bump the schema
+  version and migrate the old key on load). The values `'laplacian'`,
+  `'damping'`, and `'stresskernel'` are unchanged; `'damping'` is no longer
+  described as a kind of smoothing.
+- [x] Remove the legacy latitude-first `Fault.centers`; `centers_geo` and
+  `centers_local` remain as the two documented accessors. Update the notebook
+  cells that still use it.
+- [x] Unify mesh units on meters: `mesh.from_slab2` takes `target_length` and
+  `max_depth` in kilometers while `from_polygon`/`from_trace` take meters, and
+  `from_trace` mixes a kilometer `max_depth` with a meters-argument `dip`
+  callable in one signature. Convert every public mesh length/depth argument
+  to meters, per the enduring unit convention.
+- [x] Make `invert.solve` arguments keyword-only after `fault` and `datasets`,
+  matching the `Fault.planar` policy, so `solve(fault, data, 0.5)` cannot
+  silently pass a strength where the regularization type belongs.
+- [x] Decide the API stability tiers now (beginner-public, expert-public,
+  private) and trim the top-level `__all__` to the documented set, so
+  Priority 2 documents the final vocabulary. The expert names stay importable
+  as `geodef.<name>` for now; removing those top-level re-exports is folded
+  into the 2.2 notebook rewrite so the affected cells are edited once.
+  Publishing the map and the dependency-direction and import-cycle test work
+  remain in 3.1.
+
+Settled naming decision: `greens.matrix` keeps its name. `design_matrix` was
+considered and rejected — the module path already says Green's, the package
+prefers geophysical vocabulary over statistics vocabulary, and
+`Fault.greens_matrix` provides the spelled-out form where no module qualifier
+is present.
+
 ---
 
 ## Priority 2 — Learning experience and documentation architecture
@@ -390,6 +437,22 @@ computations; ordinary transformations and one-shot workflows are functions.
   synthetic data generation with declared seeds, and recovered-versus-input
   comparison — so the resolution-testing workflow the tutorials teach is a
   supported API rather than notebook-only code.
+- [ ] Finish the 1.6 top-level export reduction here, while the same cells are
+  being rewritten, so each is edited once. 1.6 trimmed `geodef.__all__` to the
+  beginner vocabulary but left the expert names (`lcurve`, `abic_curve`,
+  `model_covariance`/`model_resolution`/`model_uncertainty`, `geometry_search`,
+  `compute_abic`, `LinearSystem`, the `*Result` types, `stack_obs`/
+  `stack_weights`/`select_slip_columns`, `spatial_covariance`, and the moment
+  conversions) importable as `geodef.<name>` via redundant aliases. Migrate the
+  notebooks, examples, and `docs/*.md` to the module path
+  (`geodef.invert.lcurve`, `geodef.greens.stack_obs`,
+  `geodef.data.spatial_covariance`, ...), then remove those top-level re-exports
+  from `geodef/__init__.py`. About two dozen executed code lines across ~8
+  notebooks change in lockstep, so land the removal and the migration in one
+  commit to keep the tutorial suite green; the public-API contract test in
+  `tests/test_public_api.py` moves those names from the "still importable"
+  assertion to a "no longer top-level" one. (Do this before any public `0.2`
+  tag, since a release makes the top level user-visible.)
 
 ### 2.3 Make real workflows reproducible
 
@@ -397,7 +460,11 @@ computations; ordinary transformations and one-shot workflows are functions.
   assumptions, preprocessing, model setup, validation, interpretation, and a
   machine-executed reduced-size path.
 - [ ] Add one end-to-end interseismic coupling example and one earthquake
-  example with nuisance parameters and correlated noise.
+  example with nuisance parameters and correlated noise. Sequencing: these
+  two examples depend on the 4.1 noise operators, 4.3 nuisance bases, and
+  4.4 coupling vocabulary. Deliver the rest of Priority 2 against the
+  post-1.6 API first and return for these once those pieces exist, rather
+  than pulling all of Priority 4 forward.
 - [ ] Add reproducible environment metadata and deterministic seeds to every
   executable example; distinguish downloaded data from bundled test fixtures.
 - [ ] Build a searchable documentation site from the existing Markdown and
@@ -422,15 +489,14 @@ not reorganize numerical reference ports merely to make their style conventional
 
 ### 3.1 Establish package layers and public boundaries
 
-- [ ] Publish an API stability map: beginner-public, expert-public, and private.
-  Reduce top-level exports to a deliberately documented set over a deprecation
-  cycle; advanced modules remain importable.
-- [ ] Resolve top-level name collisions as part of that map: the `invert`
-  function currently shadows the `invert` module on the `geodef` namespace
-  while `data` and `fault` remain modules; three callables are named
-  `resolution`; `plot.map` shadows a builtin. Fix with renames or module
-  reorganization behind deprecation shims, never by silently changing what an
-  existing name returns.
+- [ ] Publish an API stability map: beginner-public, expert-public, and
+  private. The tier decision and top-level `__all__` trim happen in 1.6, and
+  the actual removal of the expert top-level re-exports is done in 2.2 with the
+  notebook rewrite, so documentation here targets the final set; this item
+  publishes the map and keeps advanced modules importable. (The name collisions
+  this item originally covered — the `invert` function/module shadow, three
+  `resolution` callables, `plot.map` — were resolved directly in 1.2 and 1.6
+  while the API had no users.)
 - [ ] Define dependency direction: domain types → operators/problem assembly →
   solvers/results, with plotting and I/O at the edges and kernels below all of
   them. Remove imports through `geodef.__init__` from internal modules.

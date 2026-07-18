@@ -7,6 +7,33 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the regularization keyword family for a single, math-aligned
+  vocabulary: `smoothing` → `regularization`, `smoothing_strength` →
+  `regularization_strength`, and `smoothing_target` → `regularization_target`
+  across `invert`, `bayes`, and the `InversionResult` record. The operator
+  values `'laplacian'`, `'damping'`, and `'stresskernel'` are unchanged.
+- Renamed `greens.resolution` to `greens.resolution_matrix` and `plot.map` to
+  `plot.map_view` to remove name collisions and builtin shadowing.
+- `invert.solve` now takes only `fault` and `datasets` positionally; all other
+  arguments are keyword-only.
+- Every public `mesh` length/depth argument is now in **meters**. `from_slab2`
+  previously took `target_length` and `max_depth` in kilometers (default
+  `target_length=50000.0` replaces `50.0`); `from_trace`'s `max_depth` is now
+  meters, matching its meters-based `dip` callback.
+- The result-file schema is now version 3; version-2 archives (which used the
+  `smoothing*` field names) are migrated automatically on load.
+- `geodef.__all__` is trimmed to the beginner-public vocabulary. Expert names
+  (`lcurve`, `LinearSystem`, `model_*`, `stack_*`, `spatial_covariance`, the
+  moment conversions, and result types) remain importable as `geodef.<name>`
+  but are excluded from `__all__` and should be reached through their module.
+
+### Removed
+
+- The legacy latitude-first `Fault.centers` property; use `Fault.centers_geo`
+  (`[lon, lat, depth]`) or `Fault.centers_local` (ENU meters).
+
 ## [0.1.0] - 2026-07-15
 
 ### Added

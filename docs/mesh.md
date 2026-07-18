@@ -58,7 +58,7 @@ mesh = Mesh.load("out", coord_order="lonlat")
 
 ## Factory functions
 
-### `from_slab2(fname, bounds, *, target_length=50.0, depth_growth=1.0, max_depth=None, surface_trace=None, ...)`
+### `from_slab2(fname, bounds, *, target_length=50_000.0, depth_growth=1.0, max_depth=None, surface_trace=None, ...)`
 
 Generate a mesh from a slab2.0 NetCDF depth grid.
 
@@ -67,9 +67,9 @@ from geodef.mesh import from_slab2
 
 mesh = from_slab2("cas_slab2_dep.grd",
     bounds=(235, 245, 42, 50),   # (lon_min, lon_max, lat_min, lat_max) in degrees
-    target_length=30.0,          # target edge length in km (default 50 km)
+    target_length=30_000.0,      # target edge length in meters (default 50 km)
     depth_growth=2.0,            # edge length ratio deep/shallow (1.0 = uniform)
-    max_depth=100.0,             # clip slab at this depth in km (None = no clip)
+    max_depth=100_000.0,         # clip slab at this depth in meters (None = no clip)
     surface_trace=None,          # optional (trace_lon, trace_lat) arrays
 )
 ```
@@ -82,7 +82,7 @@ Generate a mesh from a surface trace and constant dip.
 from geodef.mesh import from_trace
 
 mesh = from_trace(trace_lon, trace_lat,
-    max_depth=30.0,          # maximum fault depth in km
+    max_depth=30_000.0,      # maximum fault depth in meters
     dip=15.0,                # degrees
     dip_direction=180.0,     # azimuth of dip direction (degrees)
     n_downdip=20,            # down-dip profile resolution

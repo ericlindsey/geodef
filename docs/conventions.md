@@ -12,8 +12,8 @@ mapping is given here.
   coordinates, the documented order for named/new APIs is **`lon, lat`**
   (x, y order, as in GMT and GIS). Calls with several positional coordinate
   arrays are keyword-only precisely so the order cannot be confused.
-  (`Fault.centers` predates this policy and stores `[lat, lon, depth]`;
-  use `Fault.centers_geo` for the documented `[lon, lat, depth]` order.)
+  (`Fault.centers_geo` and `Mesh.centers_geo` follow this `[lon, lat, depth]`
+  order; `Fault.centers_local` gives the same centroids in ENU meters.)
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
   to a `LocalFrame` that records origin latitude, longitude, altitude, and
   projection. The current projection identifier is `"wgs84-enu"` (WGS84
@@ -89,7 +89,7 @@ modes):
 Phi(m) = (d - G m)^T W (d - G m)  +  lambda * ||L (m - m_ref)||^2
 ```
 
-- `lambda` is the value of `smoothing_strength`. It multiplies the
+- `lambda` is the value of `regularization_strength`. It multiplies the
   *squared* seminorm — never `lambda^2`.
 - The equivalent augmented least-squares system appends rows
   `sqrt(lambda) * L` (and data `sqrt(lambda) * L m_ref`).
@@ -101,9 +101,9 @@ Mapping from published sources:
 
 | Source's convention | GeoDef equivalent |
 |---|---|
-| `alpha * \|\|L m\|\|^2` (e.g. Tikhonov texts) | `smoothing_strength = alpha` |
-| `alpha^2` or `lambda^2 * \|\|L m\|\|^2` (e.g. Aster et al.; earlier GeoDef tutorial drafts) | `smoothing_strength = alpha^2` (their `alpha` is our `sqrt(lambda)`) |
-| `(1/beta^2)` precision weighting (Bayesian, e.g. Fukuda & Johnson 2008) | `smoothing_strength = sigma_d^2 / sigma_m^2` at fixed hyperparameters |
+| `alpha * \|\|L m\|\|^2` (e.g. Tikhonov texts) | `regularization_strength = alpha` |
+| `alpha^2` or `lambda^2 * \|\|L m\|\|^2` (e.g. Aster et al.; earlier GeoDef tutorial drafts) | `regularization_strength = alpha^2` (their `alpha` is our `sqrt(lambda)`) |
+| `(1/beta^2)` precision weighting (Bayesian, e.g. Fukuda & Johnson 2008) | `regularization_strength = sigma_d^2 / sigma_m^2` at fixed hyperparameters |
 
 ## Misfit statistics
 

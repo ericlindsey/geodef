@@ -211,12 +211,12 @@ layout and a padded colorbar so depth labels and the colorbar do not collide.
 
 ---
 
-## `plot.map(fault, **kwargs)`
+## `plot.map_view(fault, **kwargs)`
 
 2-D map view of fault patches with optional station overlay.
 
 ```python
-geodef.plot.map(fault,
+geodef.plot.map_view(fault,
     datasets=[gnss, insar],
     slip_vector=result.slip_vector,
     components='magnitude',
@@ -251,7 +251,7 @@ geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
 `LCurveResult` and `ABICCurveResult` have `.plot()` methods that follow the same pattern:
 
 ```python
-lc = geodef.lcurve(fault, data, smoothing='laplacian', smoothing_range=(1e-2, 1e6))
+lc = geodef.lcurve(fault, data, regularization='laplacian', regularization_range=(1e-2, 1e6))
 ax = lc.plot()           # optimal λ annotated automatically
 ax = lc.plot(ax=ax, color='navy')
 ```

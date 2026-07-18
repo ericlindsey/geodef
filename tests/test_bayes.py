@@ -102,8 +102,8 @@ def _posterior(gnss_data, **overrides):
         n_width=_NW,
         components="dip",
         mode="hierarchical",
-        smoothing="laplacian",
-        smoothing_strength=1.0,
+        regularization="laplacian",
+        regularization_strength=1.0,
     )
     kwargs.update(overrides)
     return bayes.RectPosterior(**kwargs)
@@ -145,8 +145,8 @@ class TestConstruction:
         post = _posterior(
             gnss_data,
             mode="weak",
-            smoothing=None,
-            smoothing_strength=None,
+            regularization=None,
+            regularization_strength=None,
             slip_scale=10.0,
         )
         assert post.param_names == ["dip", "depth", "log10_sigma"]
@@ -178,11 +178,16 @@ class TestConstruction:
 
     def test_weak_requires_slip_scale(self, gnss_data):
         with pytest.raises(ValueError, match="slip_scale"):
-            _posterior(gnss_data, mode="weak", smoothing=None, smoothing_strength=None)
+            _posterior(
+                gnss_data,
+                mode="weak",
+                regularization=None,
+                regularization_strength=None,
+            )
 
-    def test_hierarchical_requires_smoothing(self, gnss_data):
-        with pytest.raises(ValueError, match="smoothing"):
-            _posterior(gnss_data, smoothing=None)
+    def test_hierarchical_requires_regularization(self, gnss_data):
+        with pytest.raises(ValueError, match="regularization"):
+            _posterior(gnss_data, regularization=None)
 
 
 # ======================================================================
@@ -217,8 +222,8 @@ class TestMarginalLikelihood:
         post = _posterior(
             gnss_data,
             mode="weak",
-            smoothing=None,
-            smoothing_strength=None,
+            regularization=None,
+            regularization_strength=None,
             slip_scale=5.0,
         )
         for dip, depth, log10_sigma in [
@@ -236,7 +241,7 @@ class TestMarginalLikelihood:
     def test_hierarchical_matches_dense_gaussian_with_damping(self, gnss_data):
         """Hierarchical mode with a full-rank damping operator also
         admits the dense reference; exercises the sampled-lambda path."""
-        post = _posterior(gnss_data, smoothing="damping")
+        post = _posterior(gnss_data, regularization="damping")
         for log10_lam in (-1.0, 0.0, 2.0):
             x = np.array([15.0, 25e3, 0.1, log10_lam])
             ll = float(post.log_likelihood(x))
@@ -260,7 +265,7 @@ class TestMarginalLikelihood:
             n_width=_NW,
         )
         sys = LinearSystem(
-            template, [gnss_data], smoothing="laplacian", components="dip"
+            template, [gnss_data], regularization="laplacian", components="dip"
         )
         # Inject the flat-Cartesian G used by the posterior so the two
         # pipelines see identical linear systems.
@@ -290,7 +295,7 @@ class TestMarginalLikelihood:
     def test_profiled_mode_matches_manual_solve(self, gnss_data):
         """Profiled mode: -N/2 log(2 pi sigma^2) - S/(2 sigma^2) with S
         from the regularized normal equations, no Occam terms."""
-        post = _posterior(gnss_data, mode="profiled", smoothing_strength=2.0)
+        post = _posterior(gnss_data, mode="profiled", regularization_strength=2.0)
         x = np.array([17.0, 27e3, 0.2])
         ll = float(post.log_likelihood(x))
 
@@ -439,7 +444,7 @@ def single_patch_result(gnss_single_patch):
         free=["dip"],
         theta_prior={"dip": (15.0, 70.0)},
         mode="weak",
-        smoothing=None,
+        regularization=None,
         slip_scale=5.0,
     )
     result = bayes.sample(post, n_samples=400, n_warmup=400, n_chains=2, seed=0)
@@ -531,7 +536,7 @@ class TestSample:
             free=["dip"],
             theta_prior={"dip": (15.0, 70.0)},
             mode="weak",
-            smoothing=None,
+            regularization=None,
             slip_scale=5.0,
         )
         with pytest.raises(ImportError, match="geodef\\[bayes\\]"):

@@ -233,9 +233,9 @@ class TestAbicSweepJax:
             su=np.full(n, 0.001),
         )
 
-        result_np = abic_curve(fault, gnss, smoothing_range=(1e0, 1e6), n=12)
+        result_np = abic_curve(fault, gnss, regularization_range=(1e0, 1e6), n=12)
         backend.set_backend("jax")
-        result_jax = abic_curve(fault, gnss, smoothing_range=(1e0, 1e6), n=12)
+        result_jax = abic_curve(fault, gnss, regularization_range=(1e0, 1e6), n=12)
 
         np.testing.assert_allclose(
             result_jax.abic_values, result_np.abic_values, rtol=1e-8

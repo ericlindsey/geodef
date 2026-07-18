@@ -99,8 +99,8 @@ post = geodef.bayes.RectPosterior(
     n_length=8, n_width=4,
     components="both",            # slip columns to marginalize
     mode="hierarchical",
-    smoothing="laplacian",
-    smoothing_strength=1.0,       # initial lambda for the sampler
+    regularization="laplacian",
+    regularization_strength=1.0,       # initial lambda for the sampler
 )
 
 post.param_names   # ['dip', 'depth', 'log10_sigma', 'log10_lambda']
@@ -212,8 +212,8 @@ post = geodef.bayes.SlipPosterior(
     [gnss, insar],
     components="dip",
     mode="fixed",                # a proper posterior at one lambda
-    smoothing="laplacian",
-    smoothing_strength=1.0,
+    regularization="laplacian",
+    regularization_strength=1.0,
     positive="dip",              # dip-slip constrained >= 0
 )
 
@@ -262,7 +262,7 @@ covariance by a scalar moves no mass across a cone boundary: `Z` is the
 *same constant* for every `(sigma, lambda)` and cancels out of the
 posterior. So `mode='hierarchical'` remains exact with positivity — no
 correction needed. (This would break for a **nonzero** prior mean, e.g. a
-`smoothing_target`, where the orthant is no longer a cone about the mean.)
+`regularization_target`, where the orthant is no longer a cone about the mean.)
 
 `SlipPosterior` shares `sample()`, the diagnostics, and `predict` with
 `RectPosterior`; only the geometry-vs-slip split of the sampled vector
@@ -284,7 +284,7 @@ post = geodef.bayes.RectPosterior(
     free=["dip", "depth"],                 # geometry sampled...
     theta_prior={"dip": (5.0, 45.0), "depth": (10e3, 40e3)},
     n_length=8, n_width=4,
-    components="both", mode="hierarchical", smoothing="laplacian",
+    components="both", mode="hierarchical", regularization="laplacian",
     positive="dip",                        # ...and dip-slip constrained >= 0
 )
 result = geodef.bayes.sample(post)
@@ -376,7 +376,7 @@ post = geodef.bayes.TriPosterior(
     warp, [gnss, insar],
     knot_prior=(-2000.0, 2000.0),    # one spec for all knots,
     #           or [spec0, spec1, ...] per knot; ('normal', mu, sd) works too
-    components="both", mode="hierarchical", smoothing="laplacian",
+    components="both", mode="hierarchical", regularization="laplacian",
 )
 result = geodef.bayes.sample(post)   # param_names: knot0..knotK, log10_sigma, log10_lambda
 draws = post.slip_draws(result.flat)

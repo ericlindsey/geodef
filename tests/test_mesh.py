@@ -728,7 +728,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -743,7 +743,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -754,7 +754,7 @@ class TestFromTrace:
 
         trace_lon = np.array([100.0, 100.2])
         trace_lat = np.array([0.0, 0.0])
-        max_depth = 30.0
+        max_depth = 30_000.0
         mesh = from_trace(
             trace_lon,
             trace_lat,
@@ -762,7 +762,7 @@ class TestFromTrace:
             dip=45.0,
             target_length=10000.0,
         )
-        assert mesh.depth.max() <= max_depth * 1000 * 1.1
+        assert mesh.depth.max() <= max_depth * 1.1
 
     def test_callable_dip(self):
         """Variable dip (listric): dip increases with depth."""
@@ -773,7 +773,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=lambda z: 10 + 40 * z / 30000,  # 10° at surface, 50° at depth
             target_length=10000.0,
         )
@@ -787,7 +787,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             dip_direction=0.0,  # dip to the north
             target_length=10000.0,
@@ -805,7 +805,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=20.0,
+            max_depth=20_000.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -820,7 +820,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -836,7 +836,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             target_length=10000.0,
         )
@@ -855,7 +855,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=50.0,
+            max_depth=50_000.0,
             dip=80.0,
             target_length=5000.0,
         )
@@ -874,7 +874,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=20.0,
+            max_depth=20_000.0,
             dip=45.0,
             target_length=5000.0,
         )
@@ -891,7 +891,7 @@ class TestFromTrace:
         mesh = from_trace(
             trace_lon,
             trace_lat,
-            max_depth=40.0,
+            max_depth=40_000.0,
             dip=lambda z: 10 + 60 * z / 40000,
             target_length=8000.0,
         )
@@ -1177,14 +1177,14 @@ class TestFromSlab2:
         mesh_full = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
+            target_length=30_000.0,
         )
         # With max_depth=100 km: should clip roughly in half
         mesh_clipped = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
-            max_depth=100.0,
+            target_length=30_000.0,
+            max_depth=100_000.0,
         )
         assert mesh_clipped.depth.max() <= 105_000  # 100 km + tolerance
         assert mesh_clipped.depth.max() < mesh_full.depth.max()
@@ -1227,13 +1227,13 @@ class TestFromSlab2:
         mesh_full = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
+            target_length=30_000.0,
         )
         mesh_clipped = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
-            max_depth=50.0,
+            target_length=30_000.0,
+            max_depth=50_000.0,
         )
         # Clipped mesh should cover less latitude range
         lat_range_full = mesh_full.lat.max() - mesh_full.lat.min()
@@ -1283,7 +1283,7 @@ class TestFromSlab2:
         mesh = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
+            target_length=30_000.0,
             surface_trace=(trace_lon, trace_lat),
         )
         # Should have nodes at depth ≈ 0
@@ -1332,8 +1332,8 @@ class TestFromSlab2:
         mesh = mesh_mod.from_slab2(
             "fake.grd",
             bounds=(99, 101, -1, 1),
-            target_length=30.0,
-            max_depth=100.0,
+            target_length=30_000.0,
+            max_depth=100_000.0,
             surface_trace=(trace_lon, trace_lat),
         )
         # Extended to surface
@@ -1461,7 +1461,7 @@ class TestIntegration:
         mesh = from_trace(
             trace_lon=np.array([100.0, 100.2]),
             trace_lat=np.array([0.0, 0.0]),
-            max_depth=30.0,
+            max_depth=30_000.0,
             dip=30.0,
             target_length=15000.0,
         )

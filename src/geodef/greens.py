@@ -889,7 +889,7 @@ def laplacian(fault: Fault) -> np.ndarray:
     return fault.laplacian
 
 
-def resolution(G: np.ndarray) -> np.ndarray:
+def resolution_matrix(G: np.ndarray) -> np.ndarray:
     """Compute resolution matrix R = pinv(G) @ G.
 
     Args:

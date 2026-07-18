@@ -983,58 +983,58 @@ class TestPlotFault3D:
 
 
 # ======================================================================
-# plot.map (6.7f)
+# plot.map_view (6.7f)
 # ======================================================================
 
 
 class TestPlotMap:
-    """Tests for geodef.plot.map."""
+    """Tests for geodef.plot.map_view."""
 
     def test_returns_axes(self, rect_fault):
-        ax = geodef.plot.map(rect_fault)
+        ax = geodef.plot.map_view(rect_fault)
         assert isinstance(ax, plt.Axes)
 
     def test_with_datasets(self, rect_fault, gnss_3comp, insar_data):
-        ax = geodef.plot.map(rect_fault, datasets=[gnss_3comp, insar_data])
+        ax = geodef.plot.map_view(rect_fault, datasets=[gnss_3comp, insar_data])
         assert isinstance(ax, plt.Axes)
 
     def test_single_dataset(self, rect_fault, gnss_3comp):
-        ax = geodef.plot.map(rect_fault, datasets=gnss_3comp)
+        ax = geodef.plot.map_view(rect_fault, datasets=gnss_3comp)
         assert isinstance(ax, plt.Axes)
 
     def test_show_trace(self, rect_fault):
-        ax = geodef.plot.map(rect_fault, show_trace=True)
+        ax = geodef.plot.map_view(rect_fault, show_trace=True)
         assert isinstance(ax, plt.Axes)
         # Should have at least patches + a line for the trace
         assert len(ax.collections) >= 1 or len(ax.lines) >= 1
 
     def test_no_patches(self, rect_fault):
-        ax = geodef.plot.map(rect_fault, show_patches=False, show_trace=True)
+        ax = geodef.plot.map_view(rect_fault, show_patches=False, show_trace=True)
         assert isinstance(ax, plt.Axes)
 
     def test_existing_axes(self, rect_fault):
         fig, ax_in = plt.subplots()
-        ax_out = geodef.plot.map(rect_fault, ax=ax_in)
+        ax_out = geodef.plot.map_view(rect_fault, ax=ax_in)
         assert ax_out is ax_in
 
     def test_equal_aspect(self, rect_fault):
-        ax = geodef.plot.map(rect_fault)
+        ax = geodef.plot.map_view(rect_fault)
         assert ax.get_aspect() in ("equal", 1.0)
 
     def test_patch_kwargs(self, rect_fault):
-        ax = geodef.plot.map(
+        ax = geodef.plot.map_view(
             rect_fault, patch_kwargs={"edgecolor": "blue", "facecolor": "none"}
         )
         assert isinstance(ax, plt.Axes)
 
     def test_trace_kwargs(self, rect_fault):
-        ax = geodef.plot.map(
+        ax = geodef.plot.map_view(
             rect_fault, show_trace=True, trace_kwargs={"color": "red", "linewidth": 3}
         )
         assert isinstance(ax, plt.Axes)
 
     def test_tri_fault(self, tri_fault):
-        ax = geodef.plot.map(tri_fault)
+        ax = geodef.plot.map_view(tri_fault)
         assert isinstance(ax, plt.Axes)
 
     def test_surface_trace_smooth(self, rect_fault):
@@ -1057,14 +1057,16 @@ class TestPlotMap:
     def test_map_with_values(self, rect_fault):
         """Map should color patches when values array is provided."""
         vals = np.random.rand(rect_fault.n_patches)
-        ax = geodef.plot.map(rect_fault, values=vals, cmap="hot", colorbar_label="Test")
+        ax = geodef.plot.map_view(
+            rect_fault, values=vals, cmap="hot", colorbar_label="Test"
+        )
         assert isinstance(ax, plt.Axes)
         # Colorbar adds an extra axes
         assert len(ax.figure.axes) >= 2
 
     def test_map_with_slip_vector(self, rect_fault, slip_magnitude):
         """Map should accept slip_vector and decompose it."""
-        ax = geodef.plot.map(
+        ax = geodef.plot.map_view(
             rect_fault,
             slip_vector=slip_magnitude,
             components="magnitude",
@@ -1076,12 +1078,12 @@ class TestPlotMap:
         """Providing both values and slip_vector should raise."""
         vals = np.random.rand(rect_fault.n_patches)
         with pytest.raises(ValueError, match="not both"):
-            geodef.plot.map(rect_fault, values=vals, slip_vector=slip_magnitude)
+            geodef.plot.map_view(rect_fault, values=vals, slip_vector=slip_magnitude)
 
     def test_map_no_colorbar(self, rect_fault):
         """colorbar=False should suppress colorbar even with values."""
         vals = np.random.rand(rect_fault.n_patches)
-        ax = geodef.plot.map(rect_fault, values=vals, colorbar=False)
+        ax = geodef.plot.map_view(rect_fault, values=vals, colorbar=False)
         assert len(ax.figure.axes) == 1
 
 
@@ -1097,7 +1099,7 @@ class TestLCurvePlotRefactor:
         from geodef.invert import LCurveResult
 
         return LCurveResult(
-            smoothing_values=np.logspace(-2, 2, 10),
+            regularization_values=np.logspace(-2, 2, 10),
             misfits=np.logspace(1, -1, 10),
             model_norms=np.logspace(-1, 1, 10),
             optimal=1.0,
@@ -1144,7 +1146,7 @@ class TestABICCurvePlotRefactor:
         from geodef.invert import ABICCurveResult
 
         return ABICCurveResult(
-            smoothing_values=np.logspace(-2, 2, 10),
+            regularization_values=np.logspace(-2, 2, 10),
             abic_values=np.random.rand(10) * 100 + 50,
             misfits=np.logspace(1, -1, 10),
             model_norms=np.logspace(-1, 1, 10),
@@ -1201,7 +1203,7 @@ class TestModuleStructure:
         assert hasattr(geodef.plot, "insar")
         assert hasattr(geodef.plot, "fit")
         assert hasattr(geodef.plot, "fault3d")
-        assert hasattr(geodef.plot, "map")
+        assert hasattr(geodef.plot, "map_view")
 
     def test_accessible_from_geodef(self):
         assert hasattr(geodef, "plot")

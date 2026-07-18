@@ -59,8 +59,8 @@ def test_result_records_named_partitions_and_solver_provenance(fault):
     result = invert.solve(
         fault,
         [gnss, vertical],
-        smoothing="damping",
-        smoothing_strength=10.0,
+        regularization="damping",
+        regularization_strength=10.0,
         bounds=(0.0, None),
     )
 
@@ -68,7 +68,7 @@ def test_result_records_named_partitions_and_solver_provenance(fault):
     assert result.dataset_slices == (slice(0, 9), slice(9, 12))
     assert result.solver == "nnls"
     assert result.success is True
-    assert result.smoothing_selection is None
+    assert result.regularization_selection is None
     assert result.backend == backend.get_backend()
     assert result.precision == backend.get_precision()
     assert result.quantity == "displacement"
@@ -85,12 +85,12 @@ def test_automatic_regularization_selection_is_recorded(fault):
     result = invert.solve(
         fault,
         gnss,
-        smoothing="damping",
-        smoothing_strength="abic",
+        regularization="damping",
+        regularization_strength="abic",
     )
 
-    assert result.smoothing_selection == "abic"
-    assert result.smoothing_strength is not None
+    assert result.regularization_selection == "abic"
+    assert result.regularization_strength is not None
 
 
 def test_explicit_duplicate_dataset_names_raise(fault):
