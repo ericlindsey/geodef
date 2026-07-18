@@ -83,7 +83,7 @@ Known wrinkles, resolved as follows:
 
 ### Work items (one commit each)
 
-- [ ] **`docs/api_stability.md`** — the published stability map. Three
+- [x] **`docs/api_stability.md`** — the published stability map. Three
   tiers: *beginner-public* (the `geodef.__all__` vocabulary), *expert-public*
   (stable at its module path: `invert.lcurve`, `greens.stack_obs`,
   `bayes.sample`, `LinearSystem`, …), *private* (`_`-prefixed or
@@ -91,7 +91,7 @@ Known wrinkles, resolved as follows:
   tier and home module; a short statement of the deprecation policy
   cross-referencing the changelog policy from 0.3. Link from `README.md`
   and `docs/` index.
-- [ ] **Tier-consistency test** — extend `tests/test_public_api.py` to
+- [x] **Tier-consistency test** — extend `tests/test_public_api.py` to
   parse the table in `docs/api_stability.md` and assert (a) every
   beginner-tier name is in `geodef.__all__` and vice versa, (b) every
   expert-tier name imports from its stated module path. The map can then
@@ -330,6 +330,17 @@ with each other on separate branches (merge conflicts in the same files).
 5. **`fault.py` is not converted to a package** — only its I/O moves out.
    The class-heavy remainder (~1 200 lines) is cohesive; a package there
    would be structure without benefit.
+6. **The `plot` split (3.2d) proceeds despite the in-flight Priority 2
+   branch having permission to edit `plot.py`** (user decision, 2026-07).
+   If P2 lands `plot.py` edits after the split, the resolution is
+   mechanical: re-apply those edits to the function's new home in
+   `geodef/plot/_*.py` — expect and budget for that conflict rather than
+   serializing the phases. (Resolves former open question 2.)
+7. **The stability map lists reference-port interior names as private
+   tier** even though they are spelled without underscores (`okada85`
+   integrands, `tri` angular-dislocation helpers): renaming them would
+   break traceability to the published sources. Only the kernel entry
+   points are expert-public.
 
 ## 8. Open Questions
 
@@ -337,11 +348,7 @@ with each other on separate branches (merge conflicts in the same files).
    Proposed: layer 5 (workflows) since it composes `fault` + `data` +
    forward models. Resolve when the module lands on the P2 branch; the
    layering test's allowed matrix is updated in the same commit.
-2. **Should `plot` splitting wait for the P2 notebook rewrite to merge?**
-   The split is behavior-preserving so notebooks are unaffected either
-   way; the only cost is potential merge conflicts if P2's 2.2 commit and
-   the plot split land far apart. Default: proceed, and rebase whichever
-   lands second.
+2. *(Resolved — settled decision 6.)*
 3. **Condition-number warning threshold** — cond(G)² vs 1/eps with what
    safety factor, and warn-once vs per-solve? Decide from the benchmark
    problems' measured conditioning rather than picking a constant now.

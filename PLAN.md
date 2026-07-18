@@ -507,7 +507,7 @@ not reorganize numerical reference ports merely to make their style conventional
 
 ### 3.1 Establish package layers and public boundaries
 
-- [ ] Publish an API stability map: beginner-public, expert-public, and
+- [x] Publish an API stability map: beginner-public, expert-public, and
   private. The tier decision and top-level `__all__` trim happen in 1.6, and
   the actual removal of the expert top-level re-exports is done in 2.2 with the
   notebook rewrite, so documentation here targets the final set; this item
