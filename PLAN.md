@@ -541,9 +541,12 @@ not reorganize numerical reference ports merely to make their style conventional
   noise whitening, regularization operators, and solvers. Accept callables and
   SciPy-style operators directly; introduce a public protocol type only where
   static typing materially improves extension safety.
-- [ ] Register engines explicitly instead of expanding `if engine == ...`
+- [x] Register engines explicitly instead of expanding `if engine == ...`
   branches across `Fault`, `greens`, gradients, Bayesian code, and plotting.
-- [ ] Require engine capability declarations (surface/internal displacement,
+  (Green's assembly dispatches through the private registry; the remaining
+  plot/geomap outline branches migrate with the shared-vertex cleanup —
+  see `plans/PHASE3_INTERNALS.md`.)
+- [x] Require engine capability declarations (surface/internal displacement,
   strain, autodiff, supported source geometry) and produce actionable errors
   when a workflow requests an unsupported capability.
 - [ ] Avoid a plugin framework until at least two external engines demonstrate
@@ -556,9 +559,9 @@ not reorganize numerical reference ports merely to make their style conventional
 - [ ] Add conditioning diagnostics and stable solve fallbacks. Do not use normal
   equations solely for speed when their squared condition number can change the
   answer; benchmark QR/SVD/Cholesky choices on representative problems.
-- [ ] Separate exact numerical equivalence tests from tolerance-based physical
+- [x] Separate exact numerical equivalence tests from tolerance-based physical
   validation and from performance benchmarks.
-- [ ] Record benchmark problem definitions, compilation cost, steady-state cost,
+- [x] Record benchmark problem definitions, compilation cost, steady-state cost,
   memory, backend, precision, and hardware; never report a single speedup number
   without those qualifiers.
 

@@ -223,7 +223,7 @@ an engine today means finding all fifteen branch sites.
 
 ### Design
 
-- [ ] **Private engine registry** — new `src/geodef/_engines.py`
+- [x] **Private engine registry** — new `src/geodef/_engines.py`
   (foundation-adjacent, layer 3):
 
   ```python
@@ -242,11 +242,14 @@ an engine today means finding all fifteen branch sites.
   with `register(spec)` / `get(name)` and the two built-ins registered at
   import. `Fault.engine` remains the public string; user-facing behavior
   and error text for *valid* inputs are unchanged.
-- [ ] **Migrate call sites** in three commits: (a) `greens` assembly picks
-  kernels from the spec; (b) `fault` forward/moment/save paths; (c)
-  `plot`/`geomap` use `patch_outlines` (this is what their engine checks
-  actually select). `invert.py:773` follows (b).
-- [ ] **Capability errors** — requesting an unsupported combination (e.g.
+- [~] **Migrate call sites** — (a) done: `Fault.greens_matrix` (and so
+  `displacement` and all assembly) dispatches through the registry.
+  Remaining: the plot/geomap patch-outline branches (which duplicate
+  vertex geometry per engine and deserve a shared home before they move
+  into the spec) and the cosmetic geometry-kind branches in `areas`/
+  `validate`/save-format defaults, which read `spec.geometry` naturally
+  once the outline work lands.
+- [x] **Capability errors** — requesting an unsupported combination (e.g.
   strain from an engine with `strain_greens=None`, internal points from a
   surface-only engine) raises a typed error naming the engine, the missing
   capability, and the engines that have it.
@@ -266,7 +269,7 @@ an engine today means finding all fifteen branch sites.
 
 ## 5. Item 3.4 — Numerical Contracts
 
-- [ ] **Property-based tests** (new dev-only dependency: `hypothesis`,
+- [x] **Property-based tests** (new dev-only dependency: `hypothesis`,
   settled below): round trips `slip.pack`/`unpack` and
   `fault.reshape_patches`/`flatten_patches`; `slip.from_rake`/
   `from_azimuth` produce unit-magnitude bases; `transforms` geodetic ↔
@@ -276,19 +279,19 @@ an engine today means finding all fifteen branch sites.
 - [ ] **Boundary contracts** — lightweight shape/dtype/finite checks at the
   module seams that 3.2 exposes (`_system` inputs, `_solvers` inputs),
   reusing `validation` helpers; trace-only asserts stay private per 0.2.
-- [ ] **Conditioning diagnostics** — `LinearSystem` gains a
+- [x] **Conditioning diagnostics** — `LinearSystem` gains a
   `condition_report()` (cond of the whitened `G`, cond of
   `H = GᵀWG + λLᵀL` at the chosen λ, rank estimate) surfaced through
   `invert.summary`; a warning when cond(G)² approaches 1/eps for the
   active precision. **No default-solver change in this phase**: the normal
   equations remain; the QR/SVD/Cholesky benchmark below produces the
   evidence, and any switch is decided with Phase 4.2's solver work.
-- [ ] **Test taxonomy** — pytest markers `exact` (bit/ULP equivalence:
+- [x] **Test taxonomy** — pytest markers `exact` (bit/ULP equivalence:
   golden okada92 outputs, refactor-equivalence), `physical`
   (tolerance-based cross-validation: Matlab reference data), `benchmark`
   (excluded from the default run). Document tolerance provenance where the
   markers are applied; no tolerance values change.
-- [ ] **Benchmark harness** — `benchmarks/` (not shipped in the wheel): a
+- [x] **Benchmark harness** — `benchmarks/` (not shipped in the wheel): a
   small runner that records problem definition (patches, stations,
   datasets), compile vs steady-state time, peak memory (`tracemalloc`),
   backend, precision, NumPy/JAX versions, and hardware stamp to JSON.
