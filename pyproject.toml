@@ -74,13 +74,17 @@ dev = [
     "mypy>=1.10",
     "ipykernel>=6.29",
     "ipywidgets>=8.1",
+    "hypothesis>=6.100",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not slow'"
+addopts = "-m 'not slow and not benchmark'"
 markers = [
     "slow: expensive compilation, sampling, or end-to-end recovery tests",
+    "exact: bit/ULP-level equivalence against golden outputs; no tolerance loosening",
+    "physical: tolerance-based cross-validation against external reference data",
+    "benchmark: performance measurements; excluded from the default run",
 ]
 filterwarnings = [
     # Emitted by compiled extensions (e.g. netCDF4) built against a different

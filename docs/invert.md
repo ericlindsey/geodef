@@ -192,6 +192,17 @@ result = system.invert(regularization_strength=lc.optimal, bounds=(0, None))
 diagnostics = system.dataset_diagnostics(result)
 ```
 
+`LinearSystem.condition_report()` returns conditioning diagnostics for the
+prepared (whitened) system: `cond_G`, its square `cond_normal_equations`
+(what the unregularized normal-equations solve experiences — values near
+`1/eps`, about `4.5e15` in float64, mean roundoff dominates), the numerical
+`rank_G`, and, given a `regularization_strength`, `cond_H` for the
+regularized matrix `H = G^T W G + lambda L^T L`.
+
+```python
+report = system.condition_report(regularization_strength=lc.optimal)
+```
+
 ---
 
 ## Hyperparameter tuning

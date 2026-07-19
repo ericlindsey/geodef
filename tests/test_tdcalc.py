@@ -12,6 +12,8 @@ import pytest
 
 from geodef import tri as tdcalc
 
+pytestmark = pytest.mark.physical
+
 # Use ~100-point subset for fast tests (every 10th point from 1000)
 _SUBSET_STRIDE = 10
 _REF_DATA_DIR = Path(__file__).parent / "reference_data"

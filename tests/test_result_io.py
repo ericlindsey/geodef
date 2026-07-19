@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from geodef import invert
 from geodef.invert import DatasetDiagnostics, InversionResult
@@ -151,6 +152,7 @@ def test_result_record_has_no_io_workflow_methods():
     assert not hasattr(InversionResult, "save_table")
 
 
+@pytest.mark.exact
 def test_presplit_fixture_loads():
     """A result saved before the 3.2 module split must keep loading.
 

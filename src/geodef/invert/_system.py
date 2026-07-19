@@ -232,6 +232,47 @@ class LinearSystem:
         """G^T W d — normal equations right-hand side."""
         return self.G_w.T @ self.d_w
 
+    def condition_report(
+        self, regularization_strength: float | None = None
+    ) -> dict[str, float]:
+        """Conditioning diagnostics for the prepared (whitened) system.
+
+        Reports how close the least-squares problem is to exhausting the
+        active floating-point precision. ``cond_normal_equations`` is
+        the square of ``cond_G`` — the conditioning a normal-equations
+        solve actually experiences — so values approaching ``1/eps``
+        (about 4.5e15 in float64) mean the unregularized solution is
+        dominated by roundoff.
+
+        Args:
+            regularization_strength: If given (and the system has a
+                regularization operator), also report ``cond_H`` for
+                ``H = G^T W G + lambda L^T L`` at that lambda — the
+                matrix the regularized solve factorizes.
+
+        Returns:
+            Dict with ``cond_G`` (whitened Green's matrix),
+            ``cond_normal_equations``, ``rank_G`` (numerical rank),
+            ``n_params``, and optionally ``cond_H``.
+        """
+        singular_values = np.linalg.svd(self.G_w, compute_uv=False)
+        largest = float(singular_values[0])
+        smallest = float(singular_values[-1])
+        eps = float(np.finfo(self.G_w.dtype).eps)
+        tolerance = max(self.G_w.shape) * eps * largest
+        rank = int(np.sum(singular_values > tolerance))
+        cond = float("inf") if smallest == 0.0 else largest / smallest
+        report: dict[str, float] = {
+            "cond_G": cond,
+            "cond_normal_equations": cond**2,
+            "rank_G": rank,
+            "n_params": int(self.G.shape[1]),
+        }
+        if regularization_strength is not None and self.L is not None:
+            H = self.GtWG + regularization_strength * self.LtL
+            report["cond_H"] = float(np.linalg.cond(H))
+        return report
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
