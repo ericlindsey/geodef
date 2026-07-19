@@ -31,6 +31,7 @@ LAYERS = {
     "okada": 2,
     # 3. Operators
     "greens": 3,
+    "_engines": 3,
     "geometry": 3,
     "slip": 3,
     "gradients": 3,

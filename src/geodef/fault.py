@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 
-from geodef import _fault_io, transforms
+from geodef import _engines, _fault_io, transforms
 from geodef import greens as _greens
 from geodef._fault_io import _seg_to_patches as _seg_to_patches
 from geodef.geometry import (
@@ -768,65 +768,14 @@ class Fault:
             ValueError: If kind is unknown or engine doesn't support it.
         """
         nu = self._medium.poisson_ratio
-        if self._engine == "okada":
-            assert self._length is not None and self._width is not None
-            if kind == "displacement":
-                return _greens.displacement_greens(
-                    obs_lat,
-                    obs_lon,
-                    self._lat,
-                    self._lon,
-                    self._depth,
-                    self.strike,
-                    self.dip,
-                    self._length,
-                    self._width,
-                    nu=nu,
-                )
-            elif kind == "strain":
-                return _greens.strain_greens(
-                    obs_lat,
-                    obs_lon,
-                    self._lat,
-                    self._lon,
-                    self._depth,
-                    self.strike,
-                    self.dip,
-                    self._length,
-                    self._width,
-                    nu=nu,
-                    obs_depth=obs_depth,
-                )
-            raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
-
-        if self._engine == "tri":
-            assert self._vertices is not None
-            if kind == "displacement":
-                return _greens.tri_displacement_greens(
-                    obs_lat,
-                    obs_lon,
-                    self._lat,
-                    self._lon,
-                    self._depth,
-                    self._vertices,
-                    nu=nu,
-                    frame=self._frame,
-                )
-            elif kind == "strain":
-                return _greens.tri_strain_greens(
-                    obs_lat,
-                    obs_lon,
-                    self._lat,
-                    self._lon,
-                    self._depth,
-                    self._vertices,
-                    nu=nu,
-                    obs_depth=obs_depth,
-                    frame=self._frame,
-                )
-            raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
-
-        raise ValueError(f"Unknown engine: {self._engine!r}")
+        spec = _engines.get(self._engine)
+        if kind == "displacement":
+            fn = _engines.require(spec, "displacement_greens")
+            return fn(self, obs_lat, obs_lon, nu=nu)
+        if kind == "strain":
+            fn = _engines.require(spec, "strain_greens")
+            return fn(self, obs_lat, obs_lon, nu=nu, obs_depth=obs_depth)
+        raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
 
     def displacement(
         self,
