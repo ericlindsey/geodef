@@ -401,9 +401,7 @@ class TestConditionReport:
     def test_reports_whitened_conditioning(self, small_system):
         report = small_system.condition_report()
         assert report["cond_G"] >= 1.0
-        assert report["cond_normal_equations"] == pytest.approx(
-            report["cond_G"] ** 2
-        )
+        assert report["cond_normal_equations"] == pytest.approx(report["cond_G"] ** 2)
         assert 0 < report["rank_G"] <= report["n_params"]
         assert "cond_H" not in report
 

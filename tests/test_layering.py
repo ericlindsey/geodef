@@ -162,9 +162,7 @@ def test_from_geodef_imports_only_submodules():
 
 def test_module_level_imports_point_down():
     offenders = {
-        (src, dst)
-        for src, dst in MODULE_LEVEL_EDGES
-        if LAYERS[dst] > LAYERS[src]
+        (src, dst) for src, dst in MODULE_LEVEL_EDGES if LAYERS[dst] > LAYERS[src]
     }
     assert not offenders, (
         f"module-level imports pointing up the layer table: {sorted(offenders)}"
@@ -172,9 +170,7 @@ def test_module_level_imports_point_down():
 
 
 def test_deferred_upward_imports_are_pinned():
-    upward = {
-        (src, dst) for src, dst in DEFERRED_EDGES if LAYERS[dst] > LAYERS[src]
-    }
+    upward = {(src, dst) for src, dst in DEFERRED_EDGES if LAYERS[dst] > LAYERS[src]}
     new = upward - ALLOWED_DEFERRED_UP
     stale = ALLOWED_DEFERRED_UP - upward
     assert not new, (

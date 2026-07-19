@@ -519,7 +519,6 @@ class Fault:
                 raise ValueError(f"Unknown format: {format!r}")
         return fault if medium is None else fault.with_medium(medium)
 
-
     # ==================================================================
     # Properties
     # ==================================================================
@@ -1023,7 +1022,6 @@ class Fault:
                 "Use 'center' or 'seg' for rectangular, 'ned' for triangular."
             )
 
-
     def to_gmt(
         self,
         fname: str,
@@ -1196,5 +1194,3 @@ def magnitude_to_moment(mw: float) -> float:
 # ======================================================================
 # Seg format helpers
 # ======================================================================
-
-

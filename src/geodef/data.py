@@ -333,6 +333,7 @@ def _load_dat(fname: str | Path) -> tuple[np.ndarray, dict]:
     }
     return raw, metadata
 
+
 class DataSet(ABC):
     """Abstract base class for geodetic data types.
 

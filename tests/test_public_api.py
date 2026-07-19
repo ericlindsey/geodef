@@ -167,9 +167,7 @@ def test_map_names_exist(mod_name: str):
         assert hasattr(module, name), f"geodef.{mod_name}.{name} listed but missing"
 
 
-@pytest.mark.parametrize(
-    "mod_name", sorted(set(MODULE_SECTIONS) - KERNEL_MODULES)
-)
+@pytest.mark.parametrize("mod_name", sorted(set(MODULE_SECTIONS) - KERNEL_MODULES))
 def test_map_is_complete(mod_name: str):
     """Every public function/class defined in a module is in the map."""
     module = getattr(geodef, mod_name)
@@ -182,9 +180,7 @@ def test_map_is_complete(mod_name: str):
 
 def test_map_covers_every_submodule():
     """Every non-kernel discovery-surface submodule has a map section."""
-    modules_in_all = {
-        n for n in geodef.__all__ if inspect.ismodule(getattr(geodef, n))
-    }
+    modules_in_all = {n for n in geodef.__all__ if inspect.ismodule(getattr(geodef, n))}
     expected = modules_in_all - KERNEL_MODULES
     missing = expected - set(MODULE_SECTIONS)
     assert not missing, f"modules without a stability-map section: {sorted(missing)}"
@@ -192,9 +188,7 @@ def test_map_covers_every_submodule():
 
 def test_map_kernel_entry_points_exist():
     """The kernel entry-point table names resolve, module-qualified."""
-    section = _section(
-        _map_text(), "## Kernel modules and the reference-port interior"
-    )
+    section = _section(_map_text(), "## Kernel modules and the reference-port interior")
     entries = _table_names(section)
     assert entries, "kernel entry-point table not found"
     for entry in entries:
@@ -210,9 +204,7 @@ def test_surface_snapshot_matches():
     functions/classes defined in the modules being split; each extraction
     commit must leave the surface exactly unchanged.
     """
-    snapshot_path = (
-        Path(__file__).parent / "reference_data" / "public_surface.json"
-    )
+    snapshot_path = Path(__file__).parent / "reference_data" / "public_surface.json"
     snapshot = json.loads(snapshot_path.read_text())
     for mod_name, expected in snapshot.items():
         module = getattr(geodef, mod_name)
