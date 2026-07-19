@@ -127,7 +127,7 @@ the table.
 
 | # | Chapter | Part | Status | Time | Requires |
 |---|---|---|---|---|---|
-| 00 | Preflight: scientific Python for geodesy | 0 | **[new]** | 60–90 min (skippable) | — |
+| 00 | Preflight: Python and NumPy from the beginning | 0 | **[new]** | 3–4 hr (skippable for experienced programmers) | — |
 | 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 60–90 min | — |
 | 02 | Discretization and the Green's matrix | I | revise & deepen | 60–90 min | 01 |
 | 03 | Least squares and the failure of naive inversion | II — The inverse problem | revise & deepen | 60–90 min | 02 |

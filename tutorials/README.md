@@ -12,13 +12,15 @@ choose a method and the [glossary](../docs/glossary.md) for course notation.
 
 ## Course map
 
-Chapter 00 is skippable for readers fluent in NumPy and matplotlib. Chapters
-01–10 form the main sequence. Chapters 11–14 are topic branches and can be read
-after their listed prerequisites.
+Chapter 00 begins with notebook cells and variables, so students with no prior
+programming experience can start there. Readers already comfortable with basic
+Python, NumPy, matplotlib, and matrix calculations may skip it. Chapters 01–10
+form the main sequence. Chapters 11–14 are topic branches and can be read after
+their listed prerequisites.
 
 | # | Notebook | Focus | Time | Requires |
 |---:|---|---|---:|---|
-| 00 | `00_preflight.ipynb` | Arrays, broadcasting, plotting, units, coordinates, reproducibility | 60–90 min | base |
+| 00 | `00_preflight.ipynb` | Python basics, NumPy arrays, plotting, matrix calculations | 3–4 hr | base |
 | 01 | `01_forward_model.ipynb` | Elastic dislocations, geometry, `d = Gm`, moment | 60–90 min | base |
 | 02 | `02_discretization_and_g_matrix.ipynb` | Basis functions, Green's matrix, ordering, conditioning, cache trust | 60–90 min | base |
 | 03 | `03_unregularized_inversion.ipynb` | WLS derivation, SVD, reduced chi-squared, overfitting | 60–90 min | base |
