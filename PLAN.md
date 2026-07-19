@@ -523,13 +523,13 @@ not reorganize numerical reference ports merely to make their style conventional
 
 ### 3.2 Split large modules behind stable re-exports
 
-- [ ] Split `invert.py` into result types, system assembly, regularization,
+- [x] Split `invert.py` into result types, system assembly, regularization,
   solvers, hyperparameter selection, diagnostics, and nonlinear geometry.
-- [ ] Split `bayes.py` into posterior models, slip transforms, geometry
+- [x] Split `bayes.py` into posterior models, slip transforms, geometry
   parameterizations, samplers, diagnostics, and result types.
-- [ ] Split `fault.py` into core geometry, factories, I/O adapters, and forward
+- [x] Split `fault.py` into core geometry, factories, I/O adapters, and forward
   conveniences; split `plot.py` by geometry, data, fit, and assessment plots.
-- [ ] Deduplicate data save/load logic and validation without introducing a deep
+- [x] Deduplicate data save/load logic and validation without introducing a deep
   inheritance hierarchy.
 - [ ] Keep `okada85.py`, `okada92.py`, and `tri.py` visibly traceable to their
   published sources; wrap them with clearer adapters rather than cosmetically

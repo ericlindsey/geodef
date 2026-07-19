@@ -130,7 +130,7 @@ way.
   the four modules into a test fixture; after each split commit the
   snapshot must be unchanged (minus nothing, plus nothing public).
 
-### 3.2a `invert.py` → `geodef/invert/` package
+### 3.2a `invert.py` → `geodef/invert/` package — **done**
 
 Target layout (line references are to today's file):
 
@@ -153,7 +153,8 @@ Internal dependency direction: `_results` ← everything; `_system` ←
 `_assessment`, `_geometry`, leaving `_system` and the package conversion
 last.
 
-### 3.2b `bayes.py` → `geodef/bayes/` package
+### 3.2b `bayes.py` → `geodef/bayes/` package — **done** (plus a
+`_util.py` for the shared jax-guard/slip-transform/parse helpers)
 
 | New file | Contents |
 |---|---|
@@ -168,21 +169,21 @@ only `_slip_transform`. This layout is also the landing zone for Phase 5
 additions (`sample_smc` goes in `_sampling`; predictive checks in a new
 `_checks.py`), so it should land before 5.2/5.3 begin.
 
-### 3.2c `fault.py` — extract I/O, keep the class whole
+### 3.2c `fault.py` — extract I/O, keep the class whole — **done**
 
 `Fault` itself (geometry, factories, forward conveniences, properties) is
 cohesive and stays in `fault.py`. Extract:
 
-- [ ] `_fault_io.py`: the format-specific loaders/savers
+- [x] `_fault_io.py`: the format-specific loaders/savers
   (`_load_center`, `_load_topleft`, `_load_seg`, `_save_center`,
   `_save_seg`, `_save_tri_ned`, `to_gmt` body, `_seg_to_patches`).
   `Fault.load`/`Fault.save`/`Fault.to_gmt` become thin dispatchers. The
   skipped-when-absent `related/stress-shadows` load tests must still pass
   untouched where reference data exists.
-- [ ] Keep `moment_to_magnitude`/`magnitude_to_moment` re-exported from
+- [x] Keep `moment_to_magnitude`/`magnitude_to_moment` re-exported from
   `fault` (public today).
 
-### 3.2d `plot.py` → `geodef/plot/` package
+### 3.2d `plot.py` → `geodef/plot/` package — **done**
 
 | New file | Contents |
 |---|---|
@@ -198,7 +199,7 @@ cohesive and stays in `fault.py`. Extract:
 helpers are already factored (they are: `_names_header`, `_read_metadata`,
 …). Work here is limited to:
 
-- [ ] Audit the three dataset classes' `save`/`load` for residual
+- [x] Audit the three dataset classes' `save`/`load` for residual
   copy-paste and pull any remaining duplication into the existing helper
   layer. **No inheritance deepening** — helpers stay module functions.
 
