@@ -1252,11 +1252,10 @@ the 2026-07 resolutions of this outline's former open-questions list.
     the legacy top-level expert aliases lands in one commit with the
     `geodef/__init__.py` removal and the `tests/test_public_api.py` flip
     (PLAN.md 2.2).
-13. **Docs-only branch compatibility.** The canonical 00–14 files use the
-    frozen numbering. Legacy numbered paths are relative notebook symlinks to
-    those canonical files so the unchanged execution harness runs the same
-    content. Remove the links in the later atomic test-enumeration commit;
-    they are not a second course and are omitted from the course table.
+13. **Canonical test enumeration.** The canonical 00–14 files use the frozen
+    numbering and the execution harness addresses those filenames directly.
+    The temporary legacy-number symlinks were removed with that test migration;
+    there is only one course sequence on disk and in CI.
 
 ---
 

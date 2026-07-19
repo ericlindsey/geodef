@@ -11,25 +11,30 @@ from nbclient import NotebookClient
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The live, progressively built tutorial sequence (see PLAN.md). Previous-
-# generation notebooks are retained as ``old_*`` reference copies and are not
-# executed here; new notebooks are added to this tuple as they are written.
+# The canonical tutorial sequence (see ``tutorials/README.md``).
 TUTORIAL_NOTEBOOKS = (
+    ROOT / "tutorials" / "00_preflight.ipynb",
     ROOT / "tutorials" / "01_forward_model.ipynb",
     ROOT / "tutorials" / "02_discretization_and_g_matrix.ipynb",
     ROOT / "tutorials" / "03_unregularized_inversion.ipynb",
     ROOT / "tutorials" / "04_regularization.ipynb",
-    ROOT / "tutorials" / "05_choosing_regularization.ipynb",
-    ROOT / "tutorials" / "06_multiple_datasets.ipynb",
-    ROOT / "tutorials" / "07_correlated_noise.ipynb",
-    ROOT / "tutorials" / "08_bounds_and_constraints.ipynb",
-    ROOT / "tutorials" / "09_uncertainty_and_resolution.ipynb",
-    ROOT / "tutorials" / "10_nonlinear_geometry.ipynb",
-    ROOT / "tutorials" / "11_gradient_geometry.ipynb",
+    ROOT / "tutorials" / "05_multiple_datasets.ipynb",
+    ROOT / "tutorials" / "06_correlated_noise.ipynb",
+    ROOT / "tutorials" / "07_bounds_and_constraints.ipynb",
+    ROOT / "tutorials" / "08_uncertainty_and_resolution.ipynb",
+    ROOT / "tutorials" / "09_nonlinear_geometry.ipynb",
+    ROOT / "tutorials" / "10_gradient_geometry.ipynb",
+    ROOT / "tutorials" / "11_triangular_faults.ipynb",
+    ROOT / "tutorials" / "12_interseismic_coupling.ipynb",
+    ROOT / "tutorials" / "13_model_misspecification.ipynb",
+    ROOT / "tutorials" / "14_bayesian_inversion.ipynb",
 )
 
-# Notebooks that need optional dependencies; skipped when those are absent.
-_NOTEBOOKS_REQUIRING_JAX = {"11_gradient_geometry.ipynb"}
+# Optional imports needed by individual chapters.
+_OPTIONAL_IMPORTS = {
+    "10_gradient_geometry.ipynb": ("jax",),
+    "14_bayesian_inversion.ipynb": ("jax", "blackjax"),
+}
 
 
 def _notebook_id(path: Path) -> str:
@@ -43,8 +48,8 @@ def test_tutorial_notebook_executes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Execute a tutorial notebook from its own directory."""
-    if notebook_path.name in _NOTEBOOKS_REQUIRING_JAX:
-        pytest.importorskip("jax")
+    for module_name in _OPTIONAL_IMPORTS.get(notebook_path.name, ()):
+        pytest.importorskip(module_name)
 
     src_path = ROOT / "src"
     existing_pythonpath = os.environ.get("PYTHONPATH")

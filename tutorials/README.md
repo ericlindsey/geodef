@@ -63,8 +63,7 @@ alternatives where useful.
 
 The tutorial notebooks are designed to execute from their own directory with
 the repository `src/` path available and matplotlib's noninteractive backend.
-The current pytest harness also retains compatibility paths for the
-first-generation numbering while downstream test work can migrate atomically:
+The pytest harness executes the canonical 00–14 filenames directly:
 
 ```bash
 uv run pytest tests/test_tutorials.py -q
