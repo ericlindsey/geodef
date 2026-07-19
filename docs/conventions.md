@@ -115,6 +115,31 @@ Mapping from published sources:
 - `rms` is unweighted, `wrms` weighted; both are root-mean-square residuals
   in the data's units.
 
+## Interseismic backslip and coupling
+
+Interseismic velocities must first be corrected for rigid-block motion into a
+declared reference frame, normally the overriding-plate-fixed frame. Use the
+same Euler-pole description for station correction and per-patch plate-motion
+directions so the two operations cannot acquire inconsistent signs.
+
+GeoDef defines positive **backslip amplitude** as slip anti-parallel to the
+local plate-motion vector on the fault. On a megathrust this is normal-sense
+motion (the inverse of long-term thrust convergence), so positive backslip has
+a negative raw dip-slip component under the rake convention above. On a
+transform it is opposite-sense strike slip.
+
+Use `components="plate"` with `plate_rake` pointing in the backslip direction
+and bound the rake-parallel amplitude between zero and the local plate rate.
+Then
+
+```text
+coupling = backslip_rate / plate_rate
+```
+
+is dimensionless and lies in `[0, 1]`. Moment-deficit rate is
+`mu * sum(area * backslip_rate)` in N m per declared time unit. Backslip is a
+kinematic superposition, not a friction or earthquake-timing law.
+
 ## Depth sign quick reference
 
 | Quantity | Sign |

@@ -180,7 +180,7 @@ multiple analyses. It precomputes and caches the projected Green's matrix,
 weights, and optional smoothing matrix.
 
 ```python
-system = geodef.LinearSystem(
+system = geodef.invert.LinearSystem(
     fault, [gnss, insar],
     regularization='laplacian',
     components='azimuth',
@@ -206,7 +206,7 @@ mesh, or prior assumptions deserve examination.
 ### `lcurve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → LCurveResult`
 
 ```python
-lc = geodef.lcurve(fault, [gnss, insar], regularization='laplacian',
+lc = geodef.invert.lcurve(fault, [gnss, insar], regularization='laplacian',
                    regularization_range=(1e-2, 1e6), n=50)
 lc.plot()        # log-log misfit vs model norm; optimal marked
 lc.optimal       # λ at maximum curvature
@@ -215,7 +215,7 @@ lc.optimal       # λ at maximum curvature
 ### `abic_curve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → ABICCurveResult`
 
 ```python
-ac = geodef.abic_curve(fault, [gnss, insar], regularization='laplacian',
+ac = geodef.invert.abic_curve(fault, [gnss, insar], regularization='laplacian',
                        regularization_range=(1e-2, 1e8), n=50)
 ac.plot()        # ABIC vs λ; optimal marked
 ac.optimal       # λ at minimum ABIC
@@ -269,7 +269,7 @@ geometry0 = {
     'length': 180e3, 'width': 90e3,
 }
 
-result = geodef.geometry_search(
+result = geodef.invert.geometry_search(
     geometry0, gnss, frame=frame,
     free=['dip', 'depth'],           # parameters to optimize; rest fixed
     bounds={'dip': (5.0, 45.0)},
@@ -313,7 +313,7 @@ These are computed on demand (not during `invert()`) as they require forming and
 ### `model_covariance(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
-Cm = geodef.model_covariance(result, fault, [gnss, insar])
+Cm = geodef.invert.model_covariance(result, fault, [gnss, insar])
 # shape (P, P), where P is 2N for components='both' and N otherwise
 ```
 
@@ -333,14 +333,14 @@ Both reduce to `(GᵀWG)⁻¹` when the inversion is unregularized.
 ### `model_resolution(result, fault, datasets) → np.ndarray`
 
 ```python
-R = geodef.model_resolution(result, fault, [gnss, insar])
+R = geodef.invert.model_resolution(result, fault, [gnss, insar])
 # shape (P, P); R=I for perfect resolution, diag(R)<1 where regularization dominates
 ```
 
 ### `model_uncertainty(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
-sigma = geodef.model_uncertainty(result, fault, [gnss, insar])
+sigma = geodef.invert.model_uncertainty(result, fault, [gnss, insar])
 # shape (P,); per-parameter 1-sigma from sqrt(diag(Cm))
 ```
 
@@ -359,5 +359,5 @@ for name, d in diags.items():
 ### `compute_abic(result, fault, datasets) → float`
 
 ```python
-abic = geodef.compute_abic(result, fault, [gnss, insar])
+abic = geodef.invert.compute_abic(result, fault, [gnss, insar])
 ```

@@ -16,7 +16,7 @@ inversion (`geodef.gradients`, `invert.geometry_search`) and a collapsed
 the default everywhere; nothing changes for existing users unless a backend is
 explicitly selected.
 
-Status: **v0.1** — the runtime library, the eleven-part tutorial course, the
+Status: **v0.1** — the runtime library, the first-generation tutorial course, the
 per-module documentation, and the optional JAX accelerator (differentiable
 forward models, gradient-based and Bayesian geometry inference) are complete.
 `ruff` and `mypy` pass cleanly and the test suite runs warning-free. Version
@@ -60,45 +60,58 @@ notes).
 | JIT/GPU kernels, differentiable models | `backend`, `gradients` | `[jax]` |
 | Bayesian geometry + slip posteriors | `bayes` | `[bayes]` |
 
-## Quick start
+## Five-minute quickstart
+
+Create a fault, generate noisy synthetic GNSS observations, recover slip, and
+plot the fit with the base install:
 
 ```python
+import matplotlib.pyplot as plt
 import numpy as np
 import geodef
-from geodef import Fault, GNSS
 
-# Create a fault (100 km x 50 km, 15° dip, 10×5 patches)
-fault = Fault.planar(lat=0.0, lon=100.0, depth=30_000.0,
-                     strike=90.0, dip=15.0,
-                     length=100_000.0, width=50_000.0,
-                     n_length=10, n_width=5)
-
-# Forward model: 1 m dip slip, displacement at 3 stations
-obs_lat = np.array([0.1, 0.2, 0.3])
-obs_lon = np.array([100.0, 100.1, 100.2])
-ue, un, uz = fault.displacement(obs_lat, obs_lon, slip_strike=0.0, slip_dip=1.0)
+rng = np.random.default_rng(0)
+fault = geodef.Fault.planar(
+    lat=34.0, lon=-118.0, depth=8_000.0, strike=90.0, dip=30.0,
+    length=24_000.0, width=12_000.0, n_length=6, n_width=3,
+)
+station_lon, station_lat = np.meshgrid(
+    np.linspace(-118.18, -117.82, 7), np.linspace(33.88, 34.12, 5)
+)
+station_lon, station_lat = station_lon.ravel(), station_lat.ravel()
+centers = fault.centers_local
+true_dip_slip = 1.2 * np.exp(
+    -(centers[:, 0] / 7_000.0) ** 2
+    - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
+)
+east, north, up = fault.displacement(
+    station_lat, station_lon, slip_strike=0.0, slip_dip=true_dip_slip
+)
+gnss = geodef.data.gnss(
+    lon=station_lon, lat=station_lat,
+    east=east + rng.normal(0.0, 0.004, east.size),
+    north=north + rng.normal(0.0, 0.004, north.size),
+    up=up + rng.normal(0.0, 0.008, up.size),
+    sigma_east=0.004, sigma_north=0.004, sigma_up=0.008,
+    name="synthetic_gnss",
+)
+result = geodef.solve(
+    fault, datasets=gnss, components="dip",
+    regularization="laplacian", regularization_strength=1.0,
+    bounds=(0.0, None),
+)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+geodef.plot.slip(
+    fault, result.dip_slip, ax=axes[0], title="Recovered dip slip",
+    colorbar_label="Slip (m)",
+)
+geodef.plot.prediction(result, ax=axes[1])
+plt.show()
 ```
 
-## Inversion
-
-```python
-# Load data and invert for slip
-gnss = GNSS.load("stations.dat")
-insar = geodef.InSAR.load("ascending.dat")
-
-result = geodef.solve(fault, [gnss, insar],
-                      smoothing='laplacian',
-                      smoothing_strength=1e3,
-                      bounds=(0, None))
-
-print(f"Mw = {result.Mw:.2f}, reduced chi2 = {result.reduced_chi2:.2f}")
-geodef.plot.slip(fault, result.slip_vector)
-
-# Optional fixed slip directions
-fixed_rake = geodef.solve(fault, gnss, components='rake', rake=90.0)
-fixed_azimuth = geodef.solve(fault, gnss,
-                             components='azimuth', slip_azimuth=15.0)
-```
+The annotated [quickstart](docs/quickstart.md) explains each step and useful
+variations. Use the [workflow and decision guides](docs/workflow.md) to choose
+the next method and the [glossary](docs/glossary.md) for notation.
 
 ## Differentiable and Bayesian modeling (JAX)
 
@@ -113,7 +126,7 @@ geodef.backend.set_backend("jax")      # pip install geodef[jax]
 theta0 = np.array([0.0, 0.0, 25e3, 90.0, 15.0, 100e3, 50e3])
 
 # Gradient-based nonlinear geometry inversion (variable projection + L-BFGS-B)
-gs = geodef.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+gs = geodef.invert.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
                             free=["dip", "depth"])
 print(gs.theta, gs.theta_cov)          # best-fit geometry + Gauss-Newton covariance
 
@@ -131,19 +144,16 @@ and [`docs/bayes.md`](docs/bayes.md) for the full APIs, and
 
 ## Tutorials
 
-An eleven-part course in geodetic inverse methods, taught with synthetic data and
-executed by the pytest suite so it stays aligned with the runtime API:
+A fifteen-chapter course develops the forward problem, inverse theory,
+regularization, multiple datasets, correlated noise, constraints, assessment,
+and nonlinear geometry. A skippable scientific-Python preflight and topic
+chapters on triangular faults, interseismic coupling, model misspecification,
+and Bayesian diagnostics broaden the path without burdening the base install.
 
-1. Forward model `d = G m` · 2. Discretization and the `G` matrix ·
-3. Unregularized inversion and overfitting · 4. Regularization ·
-5. Choosing the regularization strength (L-curve / ABIC / CV) ·
-6. Joint GNSS + InSAR · 7. Correlated InSAR noise ·
-8. Bounds and constraints · 9. Uncertainty and resolution ·
-10. Nonlinear geometry search · 11. Gradient-based geometry inversion on the
-JAX backend (requires `geodef[jax]`).
-
-Notebooks 1–10 run on the NumPy default path; notebook 11 is an advanced JAX
-extension. See [`tutorials/README.md`](tutorials/README.md) for the full path.
+The core course and topic chapters 11–13 use NumPy; gradient geometry and
+Bayesian sampling are clearly gated by `geodef[jax]` and `geodef[bayes]`.
+Every chapter has separate worked solutions. See
+[`tutorials/README.md`](tutorials/README.md) for prerequisites and times.
 `tutorials/reference_plots.ipynb` is an exhaustive gallery of the plot functions.
 
 ## Examples
@@ -164,6 +174,11 @@ Full API docs with examples are in `docs/`:
 
 | Doc | Module |
 |-----|--------|
+| [`docs/index.md`](docs/index.md) | Documentation navigation by workflow and API level |
+| [`docs/quickstart.md`](docs/quickstart.md) | Complete first forward model and inversion |
+| [`docs/workflow.md`](docs/workflow.md) | API-level map and scientific decision guides |
+| [`docs/glossary.md`](docs/glossary.md) | Geophysical and inverse-theory notation |
+| [`docs/usability.md`](docs/usability.md) | Golden beginner workflows and usability baselines |
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
 | [`docs/slip.md`](docs/slip.md) | Slip-vector functions, plate-motion coordinates, and patch ordering |
 | [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |

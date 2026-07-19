@@ -6,17 +6,15 @@ introduced, the math that must appear, and the code each chapter uses. Write or
 revise notebooks against this outline; revise this outline first if the plan
 changes.
 
-> **Status: revised 2026-07 for the v0.2 learning release** (`PLAN.md`
-> Priority 2). The first-generation eleven-notebook sequence is written,
-> executed by `tests/test_tutorials.py`, and complete against the v0.1 API.
-> This revision plans the next generation: a deeper, textbook-style
-> treatment of every existing chapter, a new preflight chapter (00), four
-> new topics chapters (11–14), two chapter merges with a one-time
-> renumbering (§11 decision 1), migration to the post-1.6 module-path API,
-> separately published solution notebooks, and the surrounding "start
-> here" documentation layer. Sections marked **[new]** or **Revision
-> deltas** describe work not yet done; everything else describes the
-> course as it should remain.
+> **Status: course and documentation delivered 2026-07 for the v0.2 learning
+> release** (`PLAN.md` Priority 2). The textbook-style chapters 00–14, frozen
+> numbering, merged regularization chapter, module-path documentation calls,
+> separate worked solutions, start-here layer, and reproducible example
+> structure are implemented and manually executed. Runtime/test work is
+> deliberately outside this docs-only branch: `geodef.synthetic`,
+> `invert.compare`, removal of redundant top-level aliases, and atomic pytest
+> enumeration remain open in `PLAN.md`. Compatibility notebook links keep the
+> existing execution harness green until that test migration lands.
 >
 > **Lifecycle.** This outline is a working document, not a permanent one.
 > Once the v0.2 course ships, its durable content migrates to its real
@@ -129,8 +127,8 @@ the table.
 
 | # | Chapter | Part | Status | Time | Requires |
 |---|---|---|---|---|---|
-| 00 | Preflight: scientific Python for geodesy | 0 | **[new]** | 60–90 min (skippable) | — |
-| 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 60–90 min | — |
+| 00 | Preflight: Python and NumPy from the beginning | 0 | **[new]** | 3–4 hr (skippable for experienced programmers) | — |
+| 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 90–120 min | — |
 | 02 | Discretization and the Green's matrix | I | revise & deepen | 60–90 min | 01 |
 | 03 | Least squares and the failure of naive inversion | II — The inverse problem | revise & deepen | 60–90 min | 02 |
 | 04 | Regularization and how to choose it | II | **merge** of old 04+05, deepen | 90–120 min | 03 |
@@ -268,14 +266,12 @@ So chapters stay consistent and composable:
   a smooth "true" slip bump and seeded Gaussian noise is tracked from Chapter
   03 through 08 (and reused by 11–14), so readers follow a single problem end
   to end. Chapters 01–02 use per-lesson illustrative geometries instead.
-- **Scenario delivery — explicit first, then the builder.** Chapters 03 and
-  04 construct the scenario **explicitly** (fault, true slip, noisy data,
-  visible seed) so students have built it by hand. From Chapter 05 onward,
-  chapters call the documented scenario builder (§6) in one cell, with a
-  standing sidebar in 05 showing the builder and the explicit cells are
-  equivalent. This replaces the first-generation "always copy/paste" rule —
-  standalone-ness is preserved because the builder is a documented public
-  function, not a notebook-local import.
+- **Scenario delivery — explicit first, then the builder.** Chapters currently
+  construct their compact scenario explicitly because this course branch is
+  restricted to notebooks and documentation. The explicit cells keep every
+  chapter standalone and make seeds visible. Once the §6 runtime API lands,
+  Chapters 05+ replace only those copied cells with the documented scenario
+  builder; Chapters 03–04 remain explicit so students see the construction.
 - **Random seeds.** Every chapter sets `rng = np.random.default_rng(0)` (or a
   stated seed) and passes seeds explicitly to the synthetic helpers.
 - **Standard imports.** `import numpy as np`,
@@ -292,7 +288,7 @@ So chapters stay consistent and composable:
 
 ---
 
-## 6. Scenario Builder and Synthetic-Test Helpers **[new API]**
+## 6. Scenario Builder and Synthetic-Test Helpers **[new API; runtime-deferred]**
 
 PLAN.md 2.2 requires that the synthetic workflows the course teaches become
 supported API rather than notebook-only code. Home: a new **`geodef.synthetic`**
@@ -1206,8 +1202,9 @@ the 2026-07 resolutions of this outline's former open-questions list.
    drift check (PLAN.md 0.3) rather than generation machinery. This outline
    itself is transient (see the Lifecycle note at the top).
 5. **Scenario delivery — explicit first, builder after.** Supersedes the
-   first-generation "always copy/paste" rule; see §5. Chapters 03–04 build
-   the scenario by hand; 05+ use `synthetic.scenario(...)`.
+   first-generation "always copy/paste" rule; see §5. The docs-only delivery
+   keeps explicit setup in all chapters. Chapters 05+ migrate to
+   `synthetic.scenario(...)` atomically when that runtime API lands.
 6. **Depth in prose, not compute.** The textbook deepening must not slow the
    executed suite materially; heavy demonstrations are shrunk or moved to
    `examples/`.
@@ -1255,6 +1252,10 @@ the 2026-07 resolutions of this outline's former open-questions list.
     the legacy top-level expert aliases lands in one commit with the
     `geodef/__init__.py` removal and the `tests/test_public_api.py` flip
     (PLAN.md 2.2).
+13. **Canonical test enumeration.** The canonical 00–14 files use the frozen
+    numbering and the execution harness addresses those filenames directly.
+    The temporary legacy-number symlinks were removed with that test migration;
+    there is only one course sequence on disk and in CI.
 
 ---
 

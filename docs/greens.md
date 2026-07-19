@@ -75,7 +75,7 @@ stress-kernel regularization into the active basis.
 Concatenate observation vectors from one or more datasets.
 
 ```python
-d = geodef.stack_obs([gnss, insar])    # shape (total_n_obs,)
+d = geodef.greens.stack_obs([gnss, insar])    # shape (total_n_obs,)
 ```
 
 ### `stack_weights(datasets) → np.ndarray`
@@ -83,7 +83,7 @@ d = geodef.stack_obs([gnss, insar])    # shape (total_n_obs,)
 Build block-diagonal inverse-covariance weight matrix.
 
 ```python
-W = geodef.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
+W = geodef.greens.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 ```
 
 `geodef.invert.solve()` calls these internally; use them directly when assembling `G @ m` by hand.
@@ -150,7 +150,7 @@ transferred blindly between meshes.
 Model resolution matrix `R = pinv(G) @ G` for an unregularized system — how
 each true model parameter maps into the recovered one (`R = I` means perfect
 recovery). For the resolution of a *regularized* inversion, use
-`geodef.model_resolution(...)`, which accounts for the smoothing operator.
+`geodef.invert.model_resolution(...)`, which accounts for the smoothing operator.
 
 ## Low-level Green's matrix functions
 
