@@ -391,3 +391,21 @@ class TestPostInversionParity:
         # Unregularized: Cm = (GtWG)^{-1}, so GtWG @ Cm ≈ I
         product = sys.GtWG @ Cm
         np.testing.assert_allclose(product, np.eye(product.shape[0]), atol=1e-8)
+
+
+class TestConditionReport:
+    @pytest.fixture
+    def small_system(self, fault_4x3, gnss):
+        return LinearSystem(fault_4x3, [gnss], regularization="laplacian")
+
+    def test_reports_whitened_conditioning(self, small_system):
+        report = small_system.condition_report()
+        assert report["cond_G"] >= 1.0
+        assert report["cond_normal_equations"] == pytest.approx(report["cond_G"] ** 2)
+        assert 0 < report["rank_G"] <= report["n_params"]
+        assert "cond_H" not in report
+
+    def test_regularized_conditioning_improves(self, small_system):
+        weak = small_system.condition_report(regularization_strength=1e-6)
+        strong = small_system.condition_report(regularization_strength=1e3)
+        assert strong["cond_H"] < weak["cond_H"]

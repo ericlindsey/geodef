@@ -33,6 +33,7 @@ DOCUMENTED_MODULES = [
     "mesh",
     "okada",
     "plot",
+    "slip",
     "transforms",
     "validation",
 ]

@@ -10,6 +10,8 @@ import pytest
 
 from geodef import okada85
 
+pytestmark = pytest.mark.physical
+
 # -----------------------------------------------------------------------
 # Original 9 reference test cases from the Matlab implementation.
 # Each row is (ue, un, uz, -uee, -uen, -une, -unn, uze, uzn).

@@ -277,6 +277,7 @@ class TestOkada92Vectorized:
 
     @pytest.mark.parametrize("geometry", ["dipping", "vertical", "shallow_dip"])
     @pytest.mark.parametrize("slip", ["ss", "ds"])
+    @pytest.mark.exact
     def test_matches_scalar_port_golden(self, geometry: str, slip: str) -> None:
         """Shear results match golden data from the pre-vectorization port."""
         ref = dict(np.load(str(_GOLDEN_PATH)))

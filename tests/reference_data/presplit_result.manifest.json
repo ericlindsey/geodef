@@ -1,0 +1,77 @@
+{
+  "schema": "geodef.inversion_result",
+  "schema_version": 3,
+  "geodef_version": "0.1.0",
+  "result": {
+    "reduced_chi2": 0.5,
+    "rms": 0.2,
+    "moment": 1e+18,
+    "Mw": 5.9,
+    "regularization": "laplacian",
+    "regularization_strength": 10.0,
+    "components": "both",
+    "rake": null,
+    "slip_azimuth": null,
+    "dataset_names": [
+      "gnss"
+    ],
+    "dataset_slices": [
+      [
+        0,
+        3
+      ]
+    ],
+    "solver": "wls",
+    "success": true,
+    "message": "wls completed",
+    "regularization_selection": "fixed",
+    "backend": "numpy",
+    "precision": "float64",
+    "warnings": [],
+    "quantity": "displacement",
+    "units": "m",
+    "system_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dataset_diagnostics": [
+      {
+        "chi2": 1.5,
+        "reduced_chi2": 0.5,
+        "wrms": 0.7,
+        "rms": 0.2,
+        "n_obs": 3,
+        "dof": 2.5,
+        "leverage": 0.5
+      }
+    ]
+  },
+  "arrays": {
+    "slip": {
+      "shape": [
+        1,
+        2
+      ],
+      "dtype": "<f8",
+      "sha256": "82d5182c90ecefa00f9e9d91f02ad8be6d9d082f377bd1f96c00f010bc053e36"
+    },
+    "slip_vector": {
+      "shape": [
+        2
+      ],
+      "dtype": "<f8",
+      "sha256": "82d5182c90ecefa00f9e9d91f02ad8be6d9d082f377bd1f96c00f010bc053e36"
+    },
+    "residuals": {
+      "shape": [
+        3
+      ],
+      "dtype": "<f8",
+      "sha256": "2fb45f6c4584b732f1dda77e36df9783d2d2afb9c707d2e2c8dc5f8279cfcd69"
+    },
+    "predicted": {
+      "shape": [
+        3
+      ],
+      "dtype": "<f8",
+      "sha256": "a68de4b5e96a60c8ceb3c7b7ef93461725bdbbff3516b136585a743b5c0ec664"
+    }
+  }
+}

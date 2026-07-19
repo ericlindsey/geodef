@@ -496,12 +496,18 @@ glossary, `docs/conventions.md`, and release notes.
 
 ## Priority 3 — Legible and extensible internals
 
+`plans/PHASE3_INTERNALS.md` is the design document for this phase: it fixes
+the layer table, the file-level split layout for `invert`/`bayes`/`fault`/
+`plot`, the private engine-registry design, and the commit sequence. Like
+`tutorials/OUTLINE.md`, it is transient and is retired to git history when
+the phase ships.
+
 This work must be behavior-preserving and land in small extraction commits. Do
 not reorganize numerical reference ports merely to make their style conventional.
 
 ### 3.1 Establish package layers and public boundaries
 
-- [ ] Publish an API stability map: beginner-public, expert-public, and
+- [x] Publish an API stability map: beginner-public, expert-public, and
   private. The tier decision and top-level `__all__` trim happen in 1.6, and
   the actual removal of the expert top-level re-exports is done in 2.2 with the
   notebook rewrite, so documentation here targets the final set; this item
@@ -509,21 +515,21 @@ not reorganize numerical reference ports merely to make their style conventional
   this item originally covered — the `invert` function/module shadow, three
   `resolution` callables, `plot.map` — were resolved directly in 1.2 and 1.6
   while the API had no users.)
-- [ ] Define dependency direction: domain types → operators/problem assembly →
+- [x] Define dependency direction: domain types → operators/problem assembly →
   solvers/results, with plotting and I/O at the edges and kernels below all of
   them. Remove imports through `geodef.__init__` from internal modules.
-- [ ] Add import-cycle, base-install, optional-import, and public-API snapshot
+- [x] Add import-cycle, base-install, optional-import, and public-API snapshot
   tests. Importing `geodef` must not initialize JAX or require optional stacks.
 
 ### 3.2 Split large modules behind stable re-exports
 
-- [ ] Split `invert.py` into result types, system assembly, regularization,
+- [x] Split `invert.py` into result types, system assembly, regularization,
   solvers, hyperparameter selection, diagnostics, and nonlinear geometry.
-- [ ] Split `bayes.py` into posterior models, slip transforms, geometry
+- [x] Split `bayes.py` into posterior models, slip transforms, geometry
   parameterizations, samplers, diagnostics, and result types.
-- [ ] Split `fault.py` into core geometry, factories, I/O adapters, and forward
+- [x] Split `fault.py` into core geometry, factories, I/O adapters, and forward
   conveniences; split `plot.py` by geometry, data, fit, and assessment plots.
-- [ ] Deduplicate data save/load logic and validation without introducing a deep
+- [x] Deduplicate data save/load logic and validation without introducing a deep
   inheritance hierarchy.
 - [ ] Keep `okada85.py`, `okada92.py`, and `tri.py` visibly traceable to their
   published sources; wrap them with clearer adapters rather than cosmetically
@@ -535,9 +541,12 @@ not reorganize numerical reference ports merely to make their style conventional
   noise whitening, regularization operators, and solvers. Accept callables and
   SciPy-style operators directly; introduce a public protocol type only where
   static typing materially improves extension safety.
-- [ ] Register engines explicitly instead of expanding `if engine == ...`
+- [x] Register engines explicitly instead of expanding `if engine == ...`
   branches across `Fault`, `greens`, gradients, Bayesian code, and plotting.
-- [ ] Require engine capability declarations (surface/internal displacement,
+  (Green's assembly dispatches through the private registry; the remaining
+  plot/geomap outline branches migrate with the shared-vertex cleanup —
+  see `plans/PHASE3_INTERNALS.md`.)
+- [x] Require engine capability declarations (surface/internal displacement,
   strain, autodiff, supported source geometry) and produce actionable errors
   when a workflow requests an unsupported capability.
 - [ ] Avoid a plugin framework until at least two external engines demonstrate
@@ -550,15 +559,20 @@ not reorganize numerical reference ports merely to make their style conventional
 - [ ] Add conditioning diagnostics and stable solve fallbacks. Do not use normal
   equations solely for speed when their squared condition number can change the
   answer; benchmark QR/SVD/Cholesky choices on representative problems.
-- [ ] Separate exact numerical equivalence tests from tolerance-based physical
+- [x] Separate exact numerical equivalence tests from tolerance-based physical
   validation and from performance benchmarks.
-- [ ] Record benchmark problem definitions, compilation cost, steady-state cost,
+- [x] Record benchmark problem definitions, compilation cost, steady-state cost,
   memory, backend, precision, and hardware; never report a single speedup number
   without those qualifiers.
 
 ---
 
 ## Priority 4 — Scale to real geodetic datasets
+
+`plans/PHASE4_SCALE.md` is the design document for this phase (transient,
+like the others): whitening constructors and the one new `Whitening`
+record, operator/iterative solver paths, nuisance-basis integration, and
+the coupling parameterization, all as additive, non-breaking API.
 
 ### 4.1 Noise and whitening operators
 
@@ -615,6 +629,13 @@ manually re-signing slip vectors.
 - [ ] Deliver the Priority 2 interseismic example through this API and promote
   it to a golden workflow once stable.
 
+## Priority 5 — Complete the JAX and Bayesian research surface
+
+`plans/PHASE5_INFERENCE.md` is the design document for this phase
+(transient): batched JAX sweeps, differentiable strain/stress kernels,
+backend-state hygiene, guided geometry-inference setup and diagnostics,
+and tempered SMC behind a sampler-independent result contract.
+
 ### 5.1 Close the remaining JAX gaps
 
 - [ ] Batch L-curve and cross-validation sweeps on JAX using the established
@@ -655,6 +676,11 @@ manually re-signing slip vectors.
 ---
 
 ## Priority 6 — New physics and research capabilities
+
+`plans/PHASE6_PHYSICS.md` is a tentative design sketch for this phase: it
+records the deliverable ladders, the experiments still needed (stress-kernel
+completeness, integrator choice, Meade port feasibility), and the open
+questions requiring user decisions before a committed plan is honest.
 
 These efforts should use the engine/operator interfaces above so new physics
 does not multiply special cases in beginner-facing code.
