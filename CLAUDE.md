@@ -5,12 +5,13 @@
 **GeoDef** is a Python library for forward and inverse modeling of fault slip
 in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
 (locked fault / coupling) applications. As of **v0.1** the runtime library, the
-eleven-part tutorial course, the per-module documentation, and the optional JAX
-accelerator (differentiable forward models, gradient-based `geometry_search`, and
-the collapsed Bayesian sampler `geodef.bayes`) are complete; `ruff` and `mypy`
-pass cleanly and the suite runs warning-free. Remaining forward-looking work
-(earthquake-cycle modeling, more Green's engines, batched L-curve/CV sweeps,
-triangular-mesh geometry sampling) is tracked in `PLAN.md`.
+fifteen-chapter tutorial course, the per-module documentation, and the optional
+JAX accelerator (differentiable forward models, gradient-based
+`geometry_search`, and the collapsed Bayesian sampler `geodef.bayes`) are
+complete; `ruff` and `mypy` pass cleanly and the suite runs warning-free.
+Remaining forward-looking work is organized in `PLAN.md` plus three menu
+documents: `plans/ARCHITECTURE.md`, `plans/FEATURES.md`, and
+`plans/CAPABILITIES.md`.
 Version 1.0 is reserved for completion of that roadmap and human testing.
 
 **Read `PYTHON.md` before editing any code.**
@@ -22,12 +23,13 @@ Version 1.0 is reserved for completion of that roadmap and human testing.
 ```
 geodef/
 ├── CLAUDE.md              # This file
-├── PLAN.md                # Development roadmap
+├── PLAN.md                # Development roadmap (indexes the plans/ menus)
+├── plans/                 # Menu documents: architecture, features, capabilities
 ├── PYTHON.md              # Mandatory coding standards
 ├── pyproject.toml         # Package config (hatchling, src layout)
 ├── src/geodef/            # Installable package
 ├── tests/                 # Test suite (one file per module plus integration)
-├── tutorials/             # Eleven-part teaching course executed by pytest
+├── tutorials/             # Fifteen-chapter teaching course executed by pytest
 ├── examples/              # Project and real-data examples
 ├── docs/                  # Per-module API reference
 ├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
