@@ -128,7 +128,7 @@ the table.
 | # | Chapter | Part | Status | Time | Requires |
 |---|---|---|---|---|---|
 | 00 | Preflight: Python and NumPy from the beginning | 0 | **[new]** | 3–4 hr (skippable for experienced programmers) | — |
-| 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 60–90 min | — |
+| 01 | The elastic dislocation forward model | I — The forward problem | revise & deepen | 90–120 min | — |
 | 02 | Discretization and the Green's matrix | I | revise & deepen | 60–90 min | 01 |
 | 03 | Least squares and the failure of naive inversion | II — The inverse problem | revise & deepen | 60–90 min | 02 |
 | 04 | Regularization and how to choose it | II | **merge** of old 04+05, deepen | 90–120 min | 03 |

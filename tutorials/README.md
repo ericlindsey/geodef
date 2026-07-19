@@ -21,7 +21,7 @@ their listed prerequisites.
 | # | Notebook | Focus | Time | Requires |
 |---:|---|---|---:|---|
 | 00 | `00_preflight.ipynb` | Python basics, NumPy arrays, plotting, matrix calculations | 3–4 hr | base |
-| 01 | `01_forward_model.ipynb` | Elastic dislocations, geometry, `d = Gm`, moment | 60–90 min | base |
+| 01 | `01_forward_model.ipynb` | Okada construction, geometry, moment, displacement fields, `d = Gm` | 90–120 min | base |
 | 02 | `02_discretization_and_g_matrix.ipynb` | Basis functions, Green's matrix, ordering, conditioning, cache trust | 60–90 min | base |
 | 03 | `03_unregularized_inversion.ipynb` | WLS derivation, SVD, reduced chi-squared, overfitting | 60–90 min | base |
 | 04 | `04_regularization.ipynb` | Operators, filter factors, L-curve, ABIC, cross-validation | 90–120 min | base |
