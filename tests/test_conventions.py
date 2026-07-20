@@ -100,7 +100,7 @@ class TestLinearPaths:
         a = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        b = geodef.LinearSystem(fault, gnss, L).invert(regularization_strength=LAM)
+        b = geodef.invert.LinearSystem(fault, gnss, L).invert(regularization_strength=LAM)
         npt.assert_allclose(a.slip_vector, b.slip_vector, rtol=1e-12)
 
     def test_augmented_system_equivalence(self, problem) -> None:
@@ -138,7 +138,7 @@ class TestLinearPaths:
         result = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        C = geodef.model_covariance(result, fault, gnss)
+        C = geodef.invert.model_covariance(result, fault, gnss)
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         C_manual = np.linalg.inv(G.T @ W @ G + LAM * (L.T @ L))
@@ -151,8 +151,8 @@ class TestABICConvention:
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         d = stack_obs(gnss)
-        a = geodef.compute_abic(G, d, W, L, LAM)
-        b = geodef.compute_abic(G, d, W, L / np.sqrt(SCALE), SCALE * LAM)
+        a = geodef.invert.compute_abic(G, d, W, L, LAM)
+        b = geodef.invert.compute_abic(G, d, W, L / np.sqrt(SCALE), SCALE * LAM)
         assert a == pytest.approx(b, rel=1e-9)
 
     def test_abic_distinguishes_lambdas(self, problem) -> None:
@@ -162,8 +162,8 @@ class TestABICConvention:
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         d = stack_obs(gnss)
-        a = geodef.compute_abic(G, d, W, L, LAM)
-        b = geodef.compute_abic(G, d, W, L, 100 * LAM)
+        a = geodef.invert.compute_abic(G, d, W, L, LAM)
+        b = geodef.invert.compute_abic(G, d, W, L, 100 * LAM)
         assert a != pytest.approx(b, rel=1e-6)
 
 
@@ -183,10 +183,10 @@ class TestGeometrySearchConvention:
                 n_length=4,
                 n_width=3,
             )
-            a = geodef.geometry_search(
+            a = geodef.invert.geometry_search(
                 theta0, gnss, regularization=L, regularization_strength=LAM, **kwargs
             )
-            b = geodef.geometry_search(
+            b = geodef.invert.geometry_search(
                 theta0,
                 gnss,
                 regularization=L / np.sqrt(SCALE),

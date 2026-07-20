@@ -397,16 +397,20 @@ class TestProjectGreens:
 
 
 class TestTopLevelAPI:
-    """Verify matrix() is accessible from the greens namespace."""
+    """Verify the greens helpers are accessible from the greens namespace.
+
+    The roadmap 2.2 export trim removed the transitional top-level aliases,
+    so these names live only under ``geodef.greens`` now.
+    """
 
     def test_greens_accessible(self):
         assert hasattr(geodef.greens, "matrix")
 
     def test_stack_obs_accessible(self):
-        assert hasattr(geodef, "stack_obs")
+        assert hasattr(geodef.greens, "stack_obs")
 
     def test_stack_weights_accessible(self):
-        assert hasattr(geodef, "stack_weights")
+        assert hasattr(geodef.greens, "stack_weights")
 
 
 # ======================================================================

@@ -51,35 +51,6 @@ The submodules re-exported at the top level (the discovery surface):
 `gradients`, `greens`, `invert`, `medium`, `mesh`, `okada`, `okada85`,
 `okada92`, `plot`, `slip`, `transforms`, `tri`, `validation`.
 
-## Transitional top-level aliases (pending removal)
-
-These expert-public names are still importable as `geodef.<name>` for
-backward compatibility, but their home is the module path shown in the
-expert tables below. The top-level aliases are removed in the Priority 2.2
-notebook-migration commit (see `PLAN.md`); new code must use the module
-path.
-
-| Alias | Use instead |
-|---|---|
-| `LinearSystem` | `geodef.invert.LinearSystem` |
-| `lcurve` | `geodef.invert.lcurve` |
-| `abic_curve` | `geodef.invert.abic_curve` |
-| `compute_abic` | `geodef.invert.compute_abic` |
-| `geometry_search` | `geodef.invert.geometry_search` |
-| `model_covariance` | `geodef.invert.model_covariance` |
-| `model_resolution` | `geodef.invert.model_resolution` |
-| `model_uncertainty` | `geodef.invert.model_uncertainty` |
-| `ABICCurveResult` | `geodef.invert.ABICCurveResult` |
-| `LCurveResult` | `geodef.invert.LCurveResult` |
-| `GeometrySearchResult` | `geodef.invert.GeometrySearchResult` |
-| `DatasetDiagnostics` | `geodef.invert.DatasetDiagnostics` |
-| `select_slip_columns` | `geodef.greens.select_slip_columns` |
-| `stack_obs` | `geodef.greens.stack_obs` |
-| `stack_weights` | `geodef.greens.stack_weights` |
-| `spatial_covariance` | `geodef.data.spatial_covariance` |
-| `magnitude_to_moment` | `geodef.fault.magnitude_to_moment` |
-| `moment_to_magnitude` | `geodef.fault.moment_to_magnitude` |
-
 ## Expert-public tier (by module)
 
 Every public function and class defined in each module is listed;

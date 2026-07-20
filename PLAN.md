@@ -117,8 +117,8 @@ adapter layer (A2), whitening and operator-valued linear algebra — the
 key enabler for realistic data sizes (A3), solver conditioning defaults
 (A4), JAX backend-state hygiene (A5), the sampler-independent result
 contract (A6), boundary contracts (A7), the top-level export trim that
-must precede any public v0.2 tag (A8), and the standing schema-bump rule
-(A9).
+must precede any public v0.2 tag (A8, shipped), and the standing
+schema-bump rule (A9).
 
 ### `plans/FEATURES.md` — improvements to existing capabilities
 
@@ -148,7 +148,7 @@ still-open items map as follows:
 | Old item | New home |
 |---|---|
 | 2.2 scenario builder, synthetic helpers | F1 |
-| 2.2 top-level export reduction | A8 |
+| 2.2 top-level export reduction | A8 (shipped) |
 | 2.3 real-data examples, docs site; 2.4 golden workflows, observation sessions | F10 |
 | 3.2 kernel adapters | A2 |
 | 3.3 registry completion, typed contracts | A1 |
@@ -172,8 +172,9 @@ like the phase plans.
 
 The menus are menus — but if asked for a default order:
 
-1. **F1 + A8** (synthetic helpers; export trim): small, close out the
-   Priority 2 leftovers, and enable a public v0.2 tag.
+1. **F1** (synthetic helpers): small, closes out the Priority 2 leftovers
+   alongside the export trim (A8, already shipped), enabling a public
+   v0.2 tag.
 2. **F2** (coupling): strategic, convention already settled, no
    prerequisites; deliver the interseismic example (F10) with it.
 3. **A5 + A7** (backend capture; boundary contracts): small protective

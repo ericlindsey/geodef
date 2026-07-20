@@ -240,7 +240,8 @@ underestimates its true structure. `geodef.data.spatial_covariance()` builds a f
 great-circle distance:
 
 ```python
-from geodef import InSAR, spatial_covariance
+from geodef import InSAR
+from geodef.data import spatial_covariance
 
 # sill = correlated variance (m^2), correlation_length in meters
 Cdata = spatial_covariance(
