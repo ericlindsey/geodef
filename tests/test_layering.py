@@ -1,8 +1,8 @@
 """Package layering, import-cycle, and base-install contracts (roadmap 3.1).
 
-The declared layer table lives in ``plans/PHASE3_INTERNALS.md`` (and will
-move to the module docs when Phase 3 ships): dependency direction points
-down, module-level imports must never point up, and the two known upward
+The declared layer table lives in ``plans/ARCHITECTURE.md`` ("The current
+architecture, briefly"): dependency direction points down, module-level
+imports must never point up, and the two known upward
 *deferred* (function-level) imports are pinned in an explicit allowlist so
 new ones cannot appear silently. Lower layers may reference higher-layer
 types under ``TYPE_CHECKING`` only.
