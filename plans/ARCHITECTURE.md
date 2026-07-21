@@ -54,11 +54,12 @@ feature menu needs.
 | A5 | Backend-state capture | A whole class of confusing JAX bugs prevented | Small | Soon |
 | A6 | Sampler-independent results | Sampler libraries can change without breaking users | Small | Immediately before SMC (C1) |
 | A7 | Boundary contracts | Cryptic deep-stack errors become named-argument errors | Small | Anytime |
-| A8 | Top-level export trim | The public API matches the documentation | Small (coordinated) | Before any public v0.2 tag |
+| A8 | Top-level export trim (shipped) | The public API matches the documentation | Small (coordinated) | Before any public v0.2 tag |
 | A9 | Schema-bump discipline | Old result files always load | Rule, not a task | Standing |
 
-A practical reading: **A5, A7, and A8 are small and protective — do them
-soon in any order.** The rest are *enabling layers*: build each one
+A practical reading: **A5 and A7 are small and protective — do them
+soon in any order.** (A8, the export trim, has shipped.) The rest are
+*enabling layers*: build each one
 just-in-time with the first feature that needs it (noted per item), rather
 than speculatively. That keeps every architecture commit paired with a
 visible payoff and avoids building machinery that the eventual feature
@@ -342,27 +343,29 @@ questions that never get asked.
 
 ---
 
-## A8. Finish the top-level export trim
+## A8. Finish the top-level export trim (shipped)
 
 **What this is.** The 1.6 API work trimmed `geodef.__all__` to the
 beginner vocabulary but deliberately left the expert names (`lcurve`,
 `abic_curve`, `model_covariance`, `LinearSystem`, `stack_obs`, and
 friends) importable at top level as redundant aliases, so the notebooks
-could be migrated once rather than twice. The remaining move: migrate the
-notebooks, examples, and `docs/*.md` to the module paths
-(`geodef.invert.lcurve`, `geodef.greens.stack_obs`, ...), then delete the
-top-level aliases — about two dozen executed code lines across ~8
-notebooks, landed as **one atomic commit** so the tutorial suite stays
-green. `tests/test_public_api.py` moves those names from the "still
-importable" assertion to a "no longer top-level" one.
+could be migrated once rather than twice. This has now landed: the
+notebooks, examples, and `docs/*.md` use the module paths
+(`geodef.invert.lcurve`, `geodef.greens.stack_obs`, ...), the top-level
+aliases are deleted from `geodef/__init__.py`, and the change went in as
+**one atomic commit** so the tutorial suite stayed green.
+`tests/test_public_api.py` now asserts those names are **no longer
+reachable** at the top level, and the "Transitional top-level aliases"
+section has been removed from `docs/api_stability.md`.
 
-**Why it helps.** Until this lands, the real public surface is larger
-than the documented one, and every day of delay adds new notebook cells
-and user habits to migrate. It must land **before any public v0.2 tag**,
-because a release freezes the top level into a compatibility promise.
+**Why it helped.** The real public surface now matches the documented
+one. This had to land **before any public v0.2 tag**, because a release
+freezes the top level into a compatibility promise, and every day of
+delay added new notebook cells and user habits to migrate.
 
 **Cost and risk.** Small but coordinated — the one item here that
-touches many files at once. Risk: low (mechanical, fully test-guarded).
+touched many files at once. Risk was low (mechanical, fully
+test-guarded).
 
 ---
 

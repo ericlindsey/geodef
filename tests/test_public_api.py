@@ -1,9 +1,9 @@
-"""Contract for the public API tiers (roadmap 1.6 and 3.1).
+"""Contract for the public API tiers (roadmap 1.6, 2.2, and 3.1).
 
 ``geodef.__all__`` is the beginner-public vocabulary. Expert-public names
-live under their submodule path and, while several are still re-exported at
-the top level for backward compatibility, they are deliberately excluded
-from ``__all__``.
+live under their submodule path only; the roadmap 2.2 export trim removed
+the transitional top-level aliases, so those names are no longer reachable
+as ``geodef.<name>``.
 
 ``docs/api_stability.md`` is the published stability map; the tests below
 parse it and fail when the map and the code disagree, in either direction.
@@ -41,9 +41,10 @@ BEGINNER_NAMES = frozenset(
     }
 )
 
-# Expert-public names still re-exported at the top level, but reached through
-# their module in new code and kept out of ``__all__``.
-EXPERT_TOP_LEVEL_NAMES = frozenset(
+# Expert-public names that live under their module path only. The roadmap 2.2
+# export trim removed their transitional top-level aliases, so they must be kept
+# out of ``__all__`` and must no longer be reachable as ``geodef.<name>``.
+EXPERT_MODULE_ONLY_NAMES = frozenset(
     {
         "LinearSystem",
         "lcurve",
@@ -72,12 +73,15 @@ def test_beginner_names_are_public():
 
 
 def test_expert_names_excluded_from_all():
-    assert EXPERT_TOP_LEVEL_NAMES.isdisjoint(geodef.__all__)
+    assert EXPERT_MODULE_ONLY_NAMES.isdisjoint(geodef.__all__)
 
 
-def test_expert_names_remain_importable_during_transition():
-    for name in EXPERT_TOP_LEVEL_NAMES:
-        assert hasattr(geodef, name), name
+def test_expert_names_not_reachable_at_top_level():
+    """The 2.2 export trim removed the transitional top-level aliases."""
+    for name in EXPERT_MODULE_ONLY_NAMES:
+        assert not hasattr(geodef, name), (
+            f"geodef.{name} is still top-level; reach it through its module"
+        )
 
 
 def test_all_entries_are_resolvable_attributes():
@@ -148,12 +152,6 @@ def test_map_beginner_table_matches_all():
     modules_in_all = {n for n in all_names if inspect.ismodule(getattr(geodef, n))}
     assert table == all_names - modules_in_all
     assert submodules == modules_in_all
-
-
-def test_map_transitional_aliases_match():
-    heading = "## Transitional top-level aliases (pending removal)"
-    section = _section(_map_text(), heading)
-    assert set(_table_names(section)) == EXPERT_TOP_LEVEL_NAMES
 
 
 MODULE_SECTIONS = _module_sections(_map_text()) if STABILITY_MAP.exists() else {}

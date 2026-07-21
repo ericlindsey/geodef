@@ -164,7 +164,7 @@ M0 = fault.moment(slip_magnitude, mu=30e9)     # returns N·m
 Mw = fault.magnitude(slip_magnitude, mu=30e9) # moment magnitude
 
 # Module-level utilities
-from geodef import moment_to_magnitude, magnitude_to_moment
+from geodef.fault import moment_to_magnitude, magnitude_to_moment
 Mw = moment_to_magnitude(1e20)  # → 6.60
 M0 = magnitude_to_moment(7.0)   # → 1.41e19
 ```

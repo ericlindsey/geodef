@@ -194,7 +194,6 @@ def sample(
         blackjax.nuts,
         post.logpdf,
         target_acceptance_rate=target_acceptance,
-        progress_bar=False,
     )
     (adapt_state, nuts_params), _ = warmup.run(
         warm_key, jnp.asarray(post.x0), num_steps=n_warmup

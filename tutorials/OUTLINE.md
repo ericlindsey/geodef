@@ -232,12 +232,11 @@ So chapters stay consistent and composable:
 - **Module-path API policy.** Beginner-public names are used bare
   (`geodef.Fault`, `geodef.solve`, `geodef.GNSS`); everything else is spelled
   through its module (`geodef.invert.lcurve`, `geodef.greens.matrix`,
-  `geodef.data.spatial_covariance`, `geodef.slip.pack`). The notebooks'
-  migration off the legacy top-level aliases (`geodef.lcurve`,
-  `geodef.model_covariance`, …) lands **in one commit with** the removal of
-  those aliases from `geodef/__init__.py` and the corresponding
-  `tests/test_public_api.py` flip, per PLAN.md 2.2 — do not mix old and new
-  spellings across chapters in between.
+  `geodef.data.spatial_covariance`, `geodef.slip.pack`). The roadmap 2.2 export
+  trim has landed: the notebooks use the module paths throughout, the legacy
+  top-level aliases (`geodef.lcurve`, `geodef.model_covariance`, ...) were
+  removed from `geodef/__init__.py`, and `tests/test_public_api.py` now asserts
+  they are no longer reachable at the top level.
 - **The elastic medium is declared, not implicit.** Chapters that use `μ` or
   `ν` (01 moment, 04 stress kernel, 13 misspecification) construct or name an
   `ElasticMedium` so students see where material parameters live.
