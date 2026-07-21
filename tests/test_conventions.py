@@ -100,7 +100,9 @@ class TestLinearPaths:
         a = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        b = geodef.invert.LinearSystem(fault, gnss, L).invert(regularization_strength=LAM)
+        b = geodef.invert.LinearSystem(fault, gnss, L).invert(
+            regularization_strength=LAM
+        )
         npt.assert_allclose(a.slip_vector, b.slip_vector, rtol=1e-12)
 
     def test_augmented_system_equivalence(self, problem) -> None:
