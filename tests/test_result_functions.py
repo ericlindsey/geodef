@@ -154,9 +154,9 @@ def test_assessment_functions_return_name_keyed_views(fault):
     gnss, vertical = _datasets(fault)
     result = invert.solve(fault, [gnss, vertical])
 
-    predictions = invert.prediction(result)
-    residuals = invert.residual(result)
-    diagnostics = invert.diagnostics(result)
+    predictions = result.prediction()
+    residuals = result.residual()
+    diagnostics = result.diagnostics()
 
     assert tuple(predictions) == result.dataset_names
     assert tuple(residuals) == result.dataset_names
@@ -173,7 +173,7 @@ def test_assessment_functions_return_name_keyed_views(fault):
 def test_summary_is_human_readable_and_named(fault):
     result = invert.solve(fault, list(_datasets(fault)))
 
-    text = invert.summary(result)
+    text = result.summary()
 
     assert "gnss" in text
     assert "leveling" in text
@@ -197,3 +197,38 @@ def test_result_plot_functions_need_no_manual_slicing(fault, function, expected_
 
     assert axes.get_title() == expected_title
     plt.close(axes.figure)
+
+
+def test_result_remembers_its_problem_for_assessment(fault):
+    gnss, vertical = _datasets(fault)
+
+    result = invert.solve(fault, [gnss, vertical])
+
+    assert result.fault is fault
+    assert result.datasets == [gnss, vertical]
+    covariance = result.covariance()
+    assert covariance.shape == (2, 2)
+    np.testing.assert_allclose(result.uncertainty(), np.sqrt(np.diag(covariance)))
+    np.testing.assert_allclose(result.resolution(), np.eye(2), atol=1e-8)
+
+
+def test_attach_restores_assessment_on_a_loaded_result(fault, tmp_path):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+    path = tmp_path / "result.npz"
+    result.save(path)
+
+    loaded = invert.InversionResult.load(path, fault=fault, datasets=[gnss, vertical])
+
+    np.testing.assert_allclose(loaded.uncertainty(), result.uncertainty())
+
+
+def test_linear_system_solves_repeatedly_without_reassembly(fault):
+    gnss, vertical = _datasets(fault)
+    system = invert.LinearSystem(fault, [gnss, vertical], regularization="damping")
+
+    weak = system.solve(regularization_strength=1e-6)
+    strong = system.solve(regularization_strength=1e6)
+
+    assert weak.system is system and strong.system is system
+    assert np.linalg.norm(strong.slip_vector) < np.linalg.norm(weak.slip_vector)

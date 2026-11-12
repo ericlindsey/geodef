@@ -13,10 +13,15 @@ from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
 from geodef.greens import matrix as greens
 from geodef.greens import stack_obs, stack_weights
+from geodef.invert import DatasetDiagnostics, InversionResult
 from geodef.invert import (
-    DatasetDiagnostics,
-    InversionResult,
+    solve as invert,
+)
+from geodef.slip import from_plate, pack
+from tests.helpers import (
+    abic_curve,
     diagnostics,
+    lcurve,
     load,
     model_covariance,
     model_resolution,
@@ -24,10 +29,6 @@ from geodef.invert import (
     save,
     save_table,
 )
-from geodef.invert import (
-    solve as invert,
-)
-from geodef.slip import from_plate, pack
 
 # ======================================================================
 # Fixtures
@@ -958,7 +959,7 @@ class TestLCurve:
 
     def test_lcurve_returns_result(self, fault_4x3, obs_points):
         """lcurve should return an LCurveResult."""
-        from geodef.invert import LCurveResult, lcurve
+        from geodef.invert import LCurveResult
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -972,7 +973,6 @@ class TestLCurve:
 
     def test_lcurve_has_arrays(self, fault_4x3, obs_points):
         """Result should have regularization_values, misfits, and model_norms arrays."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -988,7 +988,6 @@ class TestLCurve:
 
     def test_lcurve_misfit_increases_with_lambda(self, fault_4x3, obs_points):
         """Stronger regularization should generally increase misfit."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -1003,7 +1002,6 @@ class TestLCurve:
 
     def test_lcurve_model_norm_decreases_with_lambda(self, fault_4x3, obs_points):
         """Stronger regularization should reduce the model norm."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -1017,7 +1015,6 @@ class TestLCurve:
 
     def test_lcurve_optimal_exists(self, fault_4x3, obs_points):
         """Optimal regularization_strength should be within the swept range."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -1031,7 +1028,6 @@ class TestLCurve:
 
     def test_lcurve_with_damping(self, fault_4x3, obs_points):
         """lcurve should work with different regularization types."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         lc = lcurve(
@@ -1045,7 +1041,6 @@ class TestLCurve:
 
     def test_lcurve_with_bounds(self, fault_4x3, obs_points):
         """lcurve should support bounds."""
-        from geodef.invert import lcurve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.ones(12) * 0.5)
         lc = lcurve(
@@ -1061,8 +1056,6 @@ class TestLCurve:
     def test_lcurve_plot(self, fault_4x3, obs_points):
         """LCurveResult.plot() should return matplotlib axes."""
         import matplotlib
-
-        from geodef.invert import lcurve
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
@@ -1089,7 +1082,7 @@ class TestABICCurve:
     """ABIC curve sweep and optimal point finding."""
 
     def test_abic_curve_returns_result(self, fault_4x3, obs_points):
-        from geodef.invert import ABICCurveResult, abic_curve
+        from geodef.invert import ABICCurveResult
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(
@@ -1102,7 +1095,6 @@ class TestABICCurve:
         assert isinstance(ac, ABICCurveResult)
 
     def test_abic_curve_has_arrays(self, fault_4x3, obs_points):
-        from geodef.invert import abic_curve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(
@@ -1116,7 +1108,6 @@ class TestABICCurve:
         assert len(ac.abic_values) == 20
 
     def test_abic_curve_optimal_in_range(self, fault_4x3, obs_points):
-        from geodef.invert import abic_curve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(
@@ -1130,7 +1121,6 @@ class TestABICCurve:
 
     def test_abic_curve_has_misfits_and_norms(self, fault_4x3, obs_points):
         """Should also expose misfit and model norm arrays for context."""
-        from geodef.invert import abic_curve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(
@@ -1145,7 +1135,6 @@ class TestABICCurve:
 
     def test_abic_curve_with_noisy_data(self, fault_4x3, obs_points):
         """With noisy data, optimal should sit between extremes."""
-        from geodef.invert import abic_curve
 
         rng = np.random.default_rng(42)
         slip_ss = np.ones(12)
@@ -1182,8 +1171,6 @@ class TestABICCurve:
     def test_abic_curve_plot(self, fault_4x3, obs_points):
         import matplotlib
 
-        from geodef.invert import abic_curve
-
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -1200,7 +1187,6 @@ class TestABICCurve:
         plt.close(ax.figure)
 
     def test_abic_curve_with_damping(self, fault_4x3, obs_points):
-        from geodef.invert import abic_curve
 
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         ac = abic_curve(

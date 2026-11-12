@@ -53,7 +53,7 @@ def _result() -> InversionResult:
 def test_save_writes_npz_and_human_readable_manifest(tmp_path):
     path = tmp_path / "result.npz"
 
-    invert.save(_result(), path)
+    _result().save(path)
 
     manifest_path = tmp_path / "result.manifest.json"
     assert path.exists()
@@ -69,8 +69,8 @@ def test_save_load_roundtrips_result_metadata_and_arrays(tmp_path):
     result = _result()
     path = tmp_path / "result.npz"
 
-    invert.save(result, path)
-    loaded = invert.load(path)
+    result.save(path)
+    loaded = InversionResult.load(path)
 
     np.testing.assert_array_equal(loaded.slip, result.slip)
     np.testing.assert_array_equal(loaded.lower_bounds, result.lower_bounds)
@@ -84,10 +84,10 @@ def test_save_load_roundtrips_result_metadata_and_arrays(tmp_path):
 
 def test_embedded_manifest_keeps_npz_portable_without_sidecar(tmp_path):
     path = tmp_path / "result.npz"
-    invert.save(_result(), path)
+    _result().save(path)
     (tmp_path / "result.manifest.json").unlink()
 
-    loaded = invert.load(path)
+    loaded = InversionResult.load(path)
 
     assert loaded.dataset_names == ("gnss",)
 
@@ -109,7 +109,7 @@ def test_load_migrates_legacy_unversioned_archive(tmp_path):
         components=np.array(["both"]),
     )
 
-    loaded = invert.load(path)
+    loaded = InversionResult.load(path)
 
     assert loaded.dataset_names == ("data",)
     assert loaded.dataset_slices == (slice(0, 1),)
@@ -119,7 +119,7 @@ def test_load_migrates_legacy_unversioned_archive(tmp_path):
 def test_load_migrates_v2_smoothing_keys(tmp_path):
     """A version-2 file keyed by ``smoothing*`` loads into the new fields."""
     path = tmp_path / "v2.npz"
-    invert.save(_result(), path)
+    _result().save(path)
     (tmp_path / "v2.manifest.json").unlink()
 
     with np.load(path, allow_pickle=False) as loaded:
@@ -139,17 +139,20 @@ def test_load_migrates_v2_smoothing_keys(tmp_path):
     )
     np.savez_compressed(path, **arrays)
 
-    loaded_result = invert.load(path)
+    loaded_result = InversionResult.load(path)
 
     assert loaded_result.regularization == "damping"
     assert loaded_result.regularization_strength == 10.0
     assert loaded_result.regularization_selection == "abic"
 
 
-def test_result_record_has_no_io_workflow_methods():
-    assert not hasattr(InversionResult, "save")
-    assert not hasattr(InversionResult, "load")
-    assert not hasattr(InversionResult, "save_table")
+def test_loaded_result_needs_attach_before_assessment(tmp_path):
+    path = tmp_path / "result.npz"
+    _result().save(path)
+    loaded = InversionResult.load(path)
+
+    with pytest.raises(ValueError, match="attach"):
+        loaded.uncertainty()
 
 
 @pytest.mark.exact
@@ -163,7 +166,7 @@ def test_presplit_fixture_loads():
     """
     fixture = Path(__file__).parent / "reference_data" / "presplit_result.npz"
 
-    result = invert.load(fixture)
+    result = InversionResult.load(fixture)
 
     assert result.regularization == "laplacian"
     assert result.regularization_strength == 10.0

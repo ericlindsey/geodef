@@ -229,7 +229,7 @@ insar = InSAR(lon=lon, lat=lat, los=los, sigma=sigma, look_e=look_e,
 `load()` reads diagonal-uncertainty files. If a loaded dataset needs a full
 covariance, reconstruct it from the source arrays and pass `covariance=`.
 
-The covariance is used automatically by `geodef.invert.solve()` and
+The covariance is used automatically by `geodef.solve()` and
 `geodef.greens.stack_weights()`.
 
 ### Building a spatially-correlated covariance

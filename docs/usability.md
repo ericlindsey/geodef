@@ -14,7 +14,7 @@ human observation sessions.
    `plot.prediction(result)`. The [quickstart](quickstart.md) and tutorial 03
    execute this path.
 3. **Joint GNSS + InSAR:** construct named datasets, pass both to `solve`, and
-   use `invert.prediction` / `diagnostics` or result-aware plot functions for
+   use `result.prediction()` / `diagnostics` or result-aware plot functions for
    each partition. Tutorial 05 executes this path without manual row slices.
 
 The complete quickstart was executed on the phase branch. Every canonical

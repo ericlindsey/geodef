@@ -2,7 +2,7 @@
 
 Private submodule of :mod:`geodef.invert`. ``LinearSystem`` assembles
 G, d, W, and L for a fault-dataset pair, caches the expensive derived
-products, and hosts the invert/lcurve/abic sweeps that reuse them.
+products, and hosts the solve/lcurve/abic sweeps that reuse them.
 """
 
 import functools
@@ -49,13 +49,13 @@ class LinearSystem:
     Encapsulates the Green's matrix, data vector, weight matrix, and
     regularization matrix for a given fault-dataset pair.  Expensive derived
     products (G^T W G, L^T L, G^T W d) are computed on first access and
-    cached, so they are shared across ``invert``, ``lcurve``,
+    cached, so they are shared across ``solve``, ``lcurve``,
     ``abic_curve``, and the post-inversion analysis methods.
 
     Use this class directly when performing multiple analyses on the same
     fault and datasets (e.g. comparing L-curve and ABIC, then running
     diagnostics after inversion).  The module-level convenience functions
-    (``invert``, ``lcurve``, etc.) create a ``LinearSystem`` internally
+    (``solve``, ``lcurve``, etc.) create a ``LinearSystem`` internally
     and are fully backward-compatible.
 
     Args:
@@ -74,8 +74,8 @@ class LinearSystem:
     Examples:
         >>> sys = LinearSystem(fault, [gnss, insar], regularization='laplacian')
         >>> lc = sys.lcurve()
-        >>> result = sys.invert(regularization_strength=lc.optimal)
-        >>> diag = sys.dataset_diagnostics(result)
+        >>> result = sys.solve(regularization_strength=lc.optimal)
+        >>> sigma = result.uncertainty()
     """
 
     def __init__(
@@ -471,7 +471,7 @@ class LinearSystem:
     # Public methods
     # ------------------------------------------------------------------
 
-    def invert(
+    def solve(
         self,
         regularization_strength: float | str = 0.0,
         bounds: BoundsSpec = None,
@@ -643,6 +643,7 @@ class LinearSystem:
             constraint_matrix=constraint_matrix,
             constraint_bounds=constraint_bounds,
             dataset_diagnostics=fit_diagnostics,
+            system=self,
         )
 
     def lcurve(
@@ -759,7 +760,7 @@ class LinearSystem:
         """Compute per-dataset fit diagnostics using the hat matrix.
 
         Args:
-            result: Output from ``invert()``.
+            result: Output from ``solve()``.
 
         Returns:
             List of ``DatasetDiagnostics``, one per dataset.
@@ -829,7 +830,7 @@ class LinearSystem:
           resolution matrix.
 
         Args:
-            result: Output from ``invert()``.
+            result: Output from ``solve()``.
             kind: ``'posterior'`` (default) or ``'estimator'``.
 
         Returns:
@@ -851,7 +852,7 @@ class LinearSystem:
         ``R = (G^T W G + lambda L^T L)^{-1} G^T W G``
 
         Args:
-            result: Output from ``invert()``.
+            result: Output from ``solve()``.
 
         Returns:
             Resolution matrix, shape (n_params, n_params).
@@ -867,7 +868,7 @@ class LinearSystem:
         """Compute per-parameter 1-sigma uncertainty from model covariance.
 
         Args:
-            result: Output from ``invert()``.
+            result: Output from ``solve()``.
             kind: Covariance kind, ``'posterior'`` (default) or
                 ``'estimator'``; see :meth:`model_covariance`.
 
@@ -891,7 +892,7 @@ def _validate_args(
     slip_azimuth: float | None = None,
     plate_rake: np.ndarray | None = None,
 ) -> None:
-    """Validate invert() arguments."""
+    """Validate solve() arguments."""
     for ds in datasets:
         if not isinstance(ds, DataSet):
             raise TypeError(

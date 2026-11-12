@@ -100,7 +100,7 @@ class TestLinearPaths:
         a = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        b = geodef.invert.LinearSystem(fault, gnss, L).invert(
+        b = geodef.invert.LinearSystem(fault, gnss, L).solve(
             regularization_strength=LAM
         )
         npt.assert_allclose(a.slip_vector, b.slip_vector, rtol=1e-12)
@@ -140,7 +140,7 @@ class TestLinearPaths:
         result = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        C = geodef.invert.model_covariance(result, fault, gnss)
+        C = result.covariance()
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         C_manual = np.linalg.inv(G.T @ W @ G + LAM * (L.T @ L))

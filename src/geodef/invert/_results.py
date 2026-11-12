@@ -5,7 +5,10 @@ are re-exported by the package ``__init__`` and are stable under
 ``geodef.invert.<name>`` (see ``docs/api_stability.md``).
 """
 
+from __future__ import annotations
+
 import dataclasses
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,6 +20,9 @@ from geodef.slip import rake as slip_rake
 
 if TYPE_CHECKING:
     import matplotlib
+
+    from geodef.data import DataSet
+    from geodef.invert._system import LinearSystem
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,6 +77,10 @@ class InversionResult:
         constraint_matrix: Linear inequality matrix, if any.
         constraint_bounds: Linear inequality right-hand side, if any.
         dataset_diagnostics: Solve-time diagnostics in dataset order.
+        system: The :class:`LinearSystem` that produced this result. It
+            gives the assessment methods (``covariance``, ``uncertainty``,
+            ``resolution``) access to the fault and data. ``None`` for a
+            result loaded from a file until :meth:`attach` is called.
     """
 
     slip: np.ndarray
@@ -105,7 +115,209 @@ class InversionResult:
     regularization_target: np.ndarray | None = None
     constraint_matrix: np.ndarray | None = None
     constraint_bounds: np.ndarray | None = None
-    dataset_diagnostics: tuple["DatasetDiagnostics", ...] = ()
+    dataset_diagnostics: tuple[DatasetDiagnostics, ...] = ()
+    system: LinearSystem | None = dataclasses.field(
+        default=None, repr=False, compare=False
+    )
+
+    # ------------------------------------------------------------------
+    # The problem this result solves
+    # ------------------------------------------------------------------
+
+    def _system(self) -> LinearSystem:
+        if self.system is None:
+            raise ValueError(
+                "this result is not attached to a fault and datasets (it was "
+                "loaded from a file); call result.attach(fault, datasets) first"
+            )
+        return self.system
+
+    @property
+    def fault(self) -> Fault:
+        """The fault this result was solved on."""
+        return self._system().fault
+
+    @property
+    def datasets(self) -> list[DataSet]:
+        """The datasets this result was fit to, in stacked-row order."""
+        return self._system().datasets
+
+    def attach(
+        self, fault: Fault, datasets: DataSet | list[DataSet]
+    ) -> InversionResult:
+        """Return a copy of this result attached to its fault and datasets.
+
+        Needed only for results loaded from a file, which store the
+        solution but not the problem.
+
+        Args:
+            fault: Fault geometry used for the inversion.
+            datasets: Dataset(s) used for the inversion.
+
+        Returns:
+            A result whose assessment methods are available.
+        """
+        from geodef.invert._system import LinearSystem
+
+        system = LinearSystem(
+            fault,
+            datasets,
+            self.regularization,
+            self.components,
+            self.rake,
+            self.slip_azimuth,
+            self.plate_rake,
+        )
+        return dataclasses.replace(self, system=system)
+
+    # ------------------------------------------------------------------
+    # Fit: predictions, residuals, diagnostics
+    # ------------------------------------------------------------------
+
+    def prediction(self) -> dict[str, np.ndarray]:
+        """Model predictions keyed by dataset name, in solve order."""
+        return self._by_dataset(self.predicted)
+
+    def residual(self) -> dict[str, np.ndarray]:
+        """Observed-minus-predicted residuals keyed by dataset name."""
+        return self._by_dataset(self.residuals)
+
+    def diagnostics(self) -> dict[str, DatasetDiagnostics]:
+        """Fit diagnostics keyed by dataset name, in solve order."""
+        names = self.dataset_names or tuple(
+            f"data_{index + 1}" for index in range(len(self.dataset_diagnostics))
+        )
+        return dict(zip(names, self.dataset_diagnostics))
+
+    def _by_dataset(self, stacked: np.ndarray) -> dict[str, np.ndarray]:
+        if not self.dataset_names:
+            return {"data": stacked}
+        return {
+            name: stacked[rows]
+            for name, rows in zip(self.dataset_names, self.dataset_slices)
+        }
+
+    def summary(self) -> str:
+        """Format the essential assumptions and fit statistics as text."""
+        regularization = "none"
+        if self.regularization is not None:
+            kind = (
+                self.regularization
+                if isinstance(self.regularization, str)
+                else "custom"
+            )
+            regularization = f"{kind} (lambda={self.regularization_strength:.6g})"
+            if self.regularization_selection is not None:
+                regularization += f", selected by {self.regularization_selection}"
+        lines = [
+            f"solver: {self.solver} ({'success' if self.success else 'failed'})",
+            f"datasets: {', '.join(self.dataset_names) or 'data'}",
+            f"quantity: {self.quantity} [{self.units}]",
+            f"components: {self.components}",
+            f"regularization: {regularization}",
+            f"reduced chi-squared: {self.reduced_chi2:.6g}",
+            f"RMS: {self.rms:.6g} {self.units}",
+            f"backend: {self.backend}/{self.precision}",
+        ]
+        for name, values in self.diagnostics().items():
+            lines.append(
+                f"{name}: n={values.n_obs}, reduced chi-squared="
+                f"{values.reduced_chi2:.6g}, RMS={values.rms:.6g} {self.units}"
+            )
+        lines.extend(f"warning: {warning}" for warning in self.warnings)
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Assessment: covariance, uncertainty, resolution
+    # ------------------------------------------------------------------
+
+    def covariance(self, kind: str = "posterior") -> np.ndarray:
+        """Model covariance matrix ``C_m``, shape (n_params, n_params).
+
+        Without regularization both kinds reduce to ``(G^T W G)^{-1}``.
+        With regularization, ``H = G^T W G + lambda L^T L`` and:
+
+        - ``kind='posterior'``: the linear-Gaussian posterior covariance
+          ``H^{-1}``.
+        - ``kind='estimator'``: the covariance of the penalized estimate
+          under data noise alone, ``H^{-1} G^T W G H^{-1}``.
+
+        Args:
+            kind: ``'posterior'`` (default) or ``'estimator'``.
+        """
+        return self._system().model_covariance(self, kind=kind)
+
+    def uncertainty(self, kind: str = "posterior") -> np.ndarray:
+        """One-sigma uncertainty per parameter: ``sqrt(diag(covariance))``.
+
+        Args:
+            kind: Covariance kind; see :meth:`covariance`.
+        """
+        return self._system().model_uncertainty(self, kind=kind)
+
+    def resolution(self) -> np.ndarray:
+        """Model resolution matrix ``R = H^{-1} G^T W G``.
+
+        ``R`` is the identity for a perfectly resolved model; diagonal
+        values below one mark parameters that regularization smooths or
+        damps, and each row is that parameter's averaging kernel.
+        """
+        return self._system().model_resolution(self)
+
+    # ------------------------------------------------------------------
+    # File I/O
+    # ------------------------------------------------------------------
+
+    def save(self, fname: str | Path) -> None:
+        """Save the solution arrays and metadata to a ``.npz`` file.
+
+        Args:
+            fname: Output path.
+        """
+        from geodef.invert import _io
+
+        _io.save(self, fname)
+
+    @classmethod
+    def load(
+        cls,
+        fname: str | Path,
+        *,
+        fault: Fault | None = None,
+        datasets: DataSet | list[DataSet] | None = None,
+    ) -> InversionResult:
+        """Load a result saved by :meth:`save`.
+
+        Args:
+            fname: Path to the ``.npz`` file.
+            fault: Optional fault geometry; together with ``datasets`` it
+                re-attaches the result so assessment methods work.
+            datasets: Optional dataset(s) used for the inversion.
+
+        Returns:
+            The loaded result.
+        """
+        from geodef.invert import _io
+
+        result = _io.load(fname)
+        if fault is not None and datasets is not None:
+            return result.attach(fault, datasets)
+        return result
+
+    def save_table(self, fname: str | Path, fault: Fault | None = None) -> None:
+        """Save the slip distribution as a human-readable per-patch table.
+
+        Args:
+            fname: Output text path.
+            fault: Fault geometry; defaults to the attached fault.
+        """
+        from geodef.invert import _io
+
+        _io.save_table(self, fname, self.fault if fault is None else fault)
+
+    # ------------------------------------------------------------------
+    # Slip views
+    # ------------------------------------------------------------------
 
     @property
     def n_patches(self) -> int:

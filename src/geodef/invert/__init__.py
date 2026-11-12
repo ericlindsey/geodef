@@ -1,89 +1,36 @@
-"""One-call inversion for fault slip from geodetic data.
+"""Linear slip inversion: ``d = G m`` with weights, regularization, and bounds.
 
-Solves d = Gm for slip m with optional regularization and bounds.
-Supports weighted least-squares, non-negative least-squares,
-bounded least-squares, and constrained (QP) solvers.
-Automatic hyperparameter tuning via ABIC or cross-validation.
+Two entry points share one implementation:
 
-This package re-exports its full public surface (see
-``docs/api_stability.md``); the implementation lives in private sibling
-submodules: results (``_results``), file I/O (``_io``), regularization
-(``_regularization``), solver dispatch (``_solvers``), the prepared
-``LinearSystem`` (``_system``), hyperparameter selection (``_selection``),
-assessment (``_assessment``), and nonlinear geometry search
-(``_geometry``).
+- :func:`solve` inverts a fault and its datasets in one call.
+- :class:`LinearSystem` holds the assembled ``G``, ``d``, ``W``, and ``L``
+  so they can be inspected or reused for L-curve and ABIC sweeps and for
+  solves at several regularization strengths.
+
+Both return an :class:`InversionResult`, which carries named slip views,
+fit statistics, and the assessment methods ``covariance()``,
+``uncertainty()``, and ``resolution()``.
+
+The implementation lives in private sibling modules: results
+(``_results``), result files (``_io``), regularization operators
+(``_regularization``), solver dispatch (``_solvers``), the linear system
+(``_system``), and nonlinear geometry search (``_geometry``).
 """
 
 import numpy as np
 
 from geodef.data import DataSet
 from geodef.fault import Fault
-from geodef.invert._assessment import (
-    diagnostics as diagnostics,
-)
-from geodef.invert._assessment import (
-    model_covariance as model_covariance,
-)
-from geodef.invert._assessment import (
-    model_resolution as model_resolution,
-)
-from geodef.invert._assessment import (
-    model_uncertainty as model_uncertainty,
-)
-from geodef.invert._assessment import (
-    prediction as prediction,
-)
-from geodef.invert._assessment import (
-    residual as residual,
-)
-from geodef.invert._assessment import (
-    summary as summary,
-)
-from geodef.invert._geometry import (
-    geometry_search as geometry_search,
-)
-from geodef.invert._io import (
-    RESULT_SCHEMA_VERSION as RESULT_SCHEMA_VERSION,
-)
-from geodef.invert._io import (
-    load as load,
-)
-from geodef.invert._io import (
-    save as save,
-)
-from geodef.invert._io import (
-    save_table as save_table,
-)
-from geodef.invert._results import (
-    ABICCurveResult as ABICCurveResult,
-)
-from geodef.invert._results import (
-    DatasetDiagnostics as DatasetDiagnostics,
-)
-from geodef.invert._results import (
-    GeometrySearchResult as GeometrySearchResult,
-)
-from geodef.invert._results import (
-    InversionResult as InversionResult,
-)
-from geodef.invert._results import (
-    LCurveResult as LCurveResult,
-)
-from geodef.invert._selection import (
-    abic_curve as abic_curve,
-)
-from geodef.invert._selection import (
-    compute_abic as compute_abic,
-)
-from geodef.invert._selection import (
-    lcurve as lcurve,
-)
-from geodef.invert._solvers import (
-    BoundsSpec as BoundsSpec,
-)
-from geodef.invert._system import (
-    LinearSystem as LinearSystem,
-)
+from geodef.invert._geometry import geometry_search as geometry_search
+from geodef.invert._io import RESULT_SCHEMA_VERSION as RESULT_SCHEMA_VERSION
+from geodef.invert._results import ABICCurveResult as ABICCurveResult
+from geodef.invert._results import DatasetDiagnostics as DatasetDiagnostics
+from geodef.invert._results import GeometrySearchResult as GeometrySearchResult
+from geodef.invert._results import InversionResult as InversionResult
+from geodef.invert._results import LCurveResult as LCurveResult
+from geodef.invert._selection import compute_abic as compute_abic
+from geodef.invert._solvers import BoundsSpec as BoundsSpec
+from geodef.invert._system import LinearSystem as LinearSystem
 
 
 def solve(
@@ -152,7 +99,7 @@ def solve(
         slip_azimuth,
         plate_rake,
     )
-    return sys.invert(
+    return sys.solve(
         regularization_strength,
         bounds,
         method,
@@ -160,8 +107,3 @@ def solve(
         constraints,
         cv_folds,
     )
-
-
-# ======================================================================
-# Private helpers
-# ======================================================================

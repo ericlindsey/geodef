@@ -18,7 +18,7 @@ ordering are in [conventions.md](conventions.md).
   else. These names are used bare (`geodef.Fault`, `geodef.solve`) and are
   the most stable surface in the package.
 - **Expert-public** — stable API reached through its module path
-  (`geodef.invert.lcurve`, `geodef.greens.matrix`, `geodef.slip.pack`).
+  (`LinearSystem.lcurve`, `geodef.greens.matrix`, `geodef.slip.pack`).
   The stability promise is the same as the beginner tier; the distinction
   is prominence and audience, not reliability. Several of these names
   (e.g. the `geodef.data` constructors) appear in the beginner course —

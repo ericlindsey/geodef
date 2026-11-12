@@ -549,10 +549,10 @@ class TestPositivity:
         )
         lam = 1.0
 
-        wls = sys.invert(regularization_strength=lam, method="wls")
+        wls = sys.solve(regularization_strength=lam, method="wls")
         assert np.any(wls.slip_vector < 0), "fixture must produce a negative wls slip"
 
-        bounded = sys.invert(regularization_strength=lam, bounds=(0, None))
+        bounded = sys.solve(regularization_strength=lam, bounds=(0, None))
 
         post = _posterior(
             fault3x3,

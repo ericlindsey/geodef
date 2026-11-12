@@ -42,7 +42,7 @@ G = geodef.greens.matrix(fault, [gnss, insar])       # rows stacked vertically
 By default columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
 
 Pass `components=` to have `matrix()` return a single-component matrix (shape
-`(n_obs, N)`) directly, using the same slip basis as `geodef.invert.solve()`:
+`(n_obs, N)`) directly, using the same slip basis as `geodef.solve()`:
 
 ```python
 G_strike = geodef.greens.matrix(fault, gnss, components='strike')
@@ -66,7 +66,7 @@ triangle orientations.
 
 The reduction primitive behind `matrix(components=...)`. Apply it to any
 already-assembled `(M, 2*N)` matrix — a Green's matrix or a stress kernel — to
-project it into a one-component slip basis. `geodef.invert.solve()` uses it internally
+project it into a one-component slip basis. `geodef.solve()` uses it internally
 for `components='strike'|'dip'|'rake'|'azimuth'|'plate'` and to project
 stress-kernel regularization into the active basis.
 
@@ -86,7 +86,7 @@ Build block-diagonal inverse-covariance weight matrix.
 W = geodef.greens.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 ```
 
-`geodef.invert.solve()` calls these internally; use them directly when assembling `G @ m` by hand.
+`geodef.solve()` calls these internally; use them directly when assembling `G @ m` by hand.
 
 `W` is the inverse covariance, not a vector of standard deviations. In
 derivations it is often clearer to whiten the system with a matrix `R` such
@@ -150,7 +150,7 @@ transferred blindly between meshes.
 Model resolution matrix `R = pinv(G) @ G` for an unregularized system — how
 each true model parameter maps into the recovered one (`R = I` means perfect
 recovery). For the resolution of a *regularized* inversion, use
-`geodef.invert.model_resolution(...)`, which accounts for the smoothing operator.
+`....resolution()`, which accounts for the smoothing operator.
 
 ## Low-level Green's matrix functions
 

@@ -492,7 +492,7 @@ class RectPosterior(_CollapsedPosterior):
             ``'both'``, ``'strike'``, or ``'dip'``.
         mode: Slip-prior mode: ``'hierarchical'``, ``'weak'``, or
             ``'profiled'`` (see module docstring).
-        regularization: Regularization operator (as in ``invert()``) for the
+        regularization: Regularization operator (as in ``solve()``) for the
             hierarchical and profiled modes; must be None for
             ``'weak'``.
         regularization_strength: Fixed lambda for ``'profiled'``; initial

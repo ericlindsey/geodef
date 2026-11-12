@@ -123,7 +123,7 @@ or systematic model error.
 GNSS displacement/velocity vectors as quiver arrows.
 
 ```python
-predictions = geodef.invert.prediction(result)
+predictions = result.prediction()
 geodef.plot.vectors(gnss, fault,
     predicted=predictions[gnss.name],  # optional overlay
     scale=10,
@@ -252,7 +252,7 @@ geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
 `LCurveResult` and `ABICCurveResult` have `.plot()` methods that follow the same pattern:
 
 ```python
-lc = geodef.invert.lcurve(fault, data, regularization='laplacian', regularization_range=(1e-2, 1e6))
+lc = geodef.LinearSystem(fault, data, regularization='laplacian').lcurve(regularization_range=(1e-2, 1e6))
 ax = lc.plot()           # optimal λ annotated automatically
 ax = lc.plot(ax=ax, color='navy')
 ```

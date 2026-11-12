@@ -34,24 +34,24 @@ for general background.
 import geodef
 
 # Unregularized WLS
-result = geodef.invert.solve(fault, [gnss, insar])
+result = geodef.solve(fault, [gnss, insar])
 
 # Laplacian smoothing, non-negative
-result = geodef.invert.solve(fault, [gnss, insar],
+result = geodef.solve(fault, [gnss, insar],
                              regularization='laplacian',
                              regularization_strength=1e3,
                              bounds=(0, None))
 
 # One-parameter slip bases
-result = geodef.invert.solve(fault, gnss, components='rake', rake=90.0)
-result = geodef.invert.solve(fault, gnss,
+result = geodef.solve(fault, gnss, components='rake', rake=90.0)
+result = geodef.solve(fault, gnss,
                              components='azimuth', slip_azimuth=15.0)
 
 # Two plate-motion coordinates, suitable for variable-orientation meshes
 plate_rake = geodef.slip.plate_rake_from_euler(
     fault, (pole_lat, pole_lon, rate)
 )
-result = geodef.invert.solve(fault, gnss,
+result = geodef.solve(fault, gnss,
                              components='plate', plate_rake=plate_rake)
 ```
 
@@ -143,10 +143,10 @@ Use the named physical arrays for interpretation and plotting. Use
 For ordinary assessment, use functions rather than slicing stacked rows:
 
 ```python
-predictions = geodef.invert.prediction(result)  # {dataset_name: array}
-residuals = geodef.invert.residual(result)      # {dataset_name: array}
-diagnostics = geodef.invert.diagnostics(result) # {dataset_name: diagnostics}
-print(geodef.invert.summary(result))
+predictions = result.prediction()  # {dataset_name: array}
+residuals = result.residual()      # {dataset_name: array}
+diagnostics = result.diagnostics() # {dataset_name: diagnostics}
+print(result.summary())
 
 geodef.plot.prediction(result)
 geodef.plot.residual(result)
@@ -158,12 +158,12 @@ The mappings always follow solve order, including for one dataset. The stacked
 `predicted` and `residuals` arrays remain the explicit linear-algebra views.
 
 ```python
-geodef.invert.save(result, "result.npz")
-geodef.invert.save_table(result, "result.txt", fault)
-result = geodef.invert.load("result.npz")
+result.save("result.npz")
+result.save_table("result.txt", fault)
+result = geodef.InversionResult.load("result.npz")
 ```
 
-`invert.save` writes `result.npz` and a readable `result.manifest.json`. The
+`result.save(path)` writes `result.npz` and a readable `result.manifest.json`. The
 same versioned manifest is embedded in the NumPy archive, so the `.npz` remains
 portable by itself. The archive contains numeric arrays only and is always
 loaded with pickling disabled. On load, GeoDef verifies the schema version plus
@@ -180,7 +180,7 @@ multiple analyses. It precomputes and caches the projected Green's matrix,
 weights, and optional smoothing matrix.
 
 ```python
-system = geodef.invert.LinearSystem(
+system = geodef.LinearSystem(
     fault, [gnss, insar],
     regularization='laplacian',
     components='azimuth',
@@ -188,7 +188,7 @@ system = geodef.invert.LinearSystem(
 )
 
 lc = system.lcurve(regularization_range=(1e-2, 1e6))
-result = system.invert(regularization_strength=lc.optimal, bounds=(0, None))
+result = system.solve(regularization_strength=lc.optimal, bounds=(0, None))
 diagnostics = system.dataset_diagnostics(result)
 ```
 
@@ -217,8 +217,7 @@ mesh, or prior assumptions deserve examination.
 ### `lcurve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → LCurveResult`
 
 ```python
-lc = geodef.invert.lcurve(fault, [gnss, insar], regularization='laplacian',
-                   regularization_range=(1e-2, 1e6), n=50)
+lc = geodef.LinearSystem(fault, [gnss, insar], regularization='laplacian').lcurve(regularization_range=(1e-2, 1e6), n=50)
 lc.plot()        # log-log misfit vs model norm; optimal marked
 lc.optimal       # λ at maximum curvature
 ```
@@ -226,8 +225,7 @@ lc.optimal       # λ at maximum curvature
 ### `abic_curve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → ABICCurveResult`
 
 ```python
-ac = geodef.invert.abic_curve(fault, [gnss, insar], regularization='laplacian',
-                       regularization_range=(1e-2, 1e8), n=50)
+ac = geodef.LinearSystem(fault, [gnss, insar], regularization='laplacian').abic_curve(regularization_range=(1e-2, 1e8), n=50)
 ac.plot()        # ABIC vs λ; optimal marked
 ac.optimal       # λ at minimum ABIC
 ```
@@ -235,8 +233,8 @@ ac.optimal       # λ at minimum ABIC
 ### Auto-tuning via `regularization_strength`
 
 ```python
-result = geodef.invert.solve(fault, data, regularization='laplacian', regularization_strength='abic')
-result = geodef.invert.solve(fault, data, regularization='laplacian', regularization_strength='cv')
+result = geodef.solve(fault, data, regularization='laplacian', regularization_strength='abic')
+result = geodef.solve(fault, data, regularization='laplacian', regularization_strength='cv')
 ```
 
 On the JAX backend (`geodef.backend.set_backend('jax')`), `abic_curve`
@@ -324,7 +322,7 @@ These are computed on demand (not during `invert()`) as they require forming and
 ### `model_covariance(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
-Cm = geodef.invert.model_covariance(result, fault, [gnss, insar])
+Cm = result.covariance()
 # shape (P, P), where P is 2N for components='both' and N otherwise
 ```
 
@@ -344,14 +342,14 @@ Both reduce to `(GᵀWG)⁻¹` when the inversion is unregularized.
 ### `model_resolution(result, fault, datasets) → np.ndarray`
 
 ```python
-R = geodef.invert.model_resolution(result, fault, [gnss, insar])
+R = result.resolution()
 # shape (P, P); R=I for perfect resolution, diag(R)<1 where regularization dominates
 ```
 
 ### `model_uncertainty(result, fault, datasets, kind='posterior') → np.ndarray`
 
 ```python
-sigma = geodef.invert.model_uncertainty(result, fault, [gnss, insar])
+sigma = result.uncertainty()
 # shape (P,); per-parameter 1-sigma from sqrt(diag(Cm))
 ```
 
@@ -361,7 +359,7 @@ Per-dataset fit statistics are computed during the solve and retained in the
 result, so assessment does not need the live fault and datasets.
 
 ```python
-diags = geodef.invert.diagnostics(result)
+diags = result.diagnostics()
 for name, d in diags.items():
     print(name)
     print(d.chi2, d.reduced_chi2, d.wrms, d.n_obs, d.dof)

@@ -11,8 +11,8 @@ regularization rules are specified in [conventions](conventions.md).
 | Data vector | $d$ | `dataset.obs` | Observed GNSS components, InSAR line of sight, or vertical motion. |
 | Model vector | $m$ | `result.slip_vector` | Slip parameters in the selected basis; the expert view is blocked by component. |
 | Green's matrix | $G$ | `geodef.greens.matrix(...)` | Linear map from unit slip on each patch to predicted observations. |
-| Prediction | $Gm$ | `result.predicted`; `invert.prediction(...)` | Noise-free data implied by the estimated model. |
-| Residual | $r=d-Gm$ | `result.residuals`; `invert.residual(...)` | Observed minus predicted data. |
+| Prediction | $Gm$ | `result.predicted`; `....prediction()` | Noise-free data implied by the estimated model. |
+| Residual | $r=d-Gm$ | `result.residuals`; `....residual()` | Observed minus predicted data. |
 | Noise | $\epsilon$ | synthetic noise; covariance metadata | Measurement and model discrepancy added to the prediction. |
 | Data covariance | $C_d$ | `dataset.covariance` | Variances and correlations assumed for the data errors. |
 | Weight/precision matrix | $W=C_d^{-1}$ | `geodef.greens.stack_weights(...)` | Inverse covariance used in weighted misfit. |
@@ -20,8 +20,8 @@ regularization rules are specified in [conventions](conventions.md).
 | Regularization strength | $\lambda$ | `regularization_strength=` | Weight multiplying $\lVert L(m-m_{ref})\rVert^2$; it is not squared again. |
 | Reference model | $m_{ref}$ | `regularization_target=` | Model toward which regularization pulls the solution. |
 | Objective | $\Phi(m)$ | solved by `geodef.solve(...)` | Weighted data misfit plus regularization penalty. |
-| Model covariance | $C_m$ | `geodef.invert.model_covariance(...)` | Linear-Gaussian covariance conditional on the assumed geometry, noise, and regularization. |
-| Model resolution | $R$ | `geodef.invert.model_resolution(...)` | Map from true model parameters to their expected recovered values. |
+| Model covariance | $C_m$ | `....covariance()` | Linear-Gaussian covariance conditional on the assumed geometry, noise, and regularization. |
+| Model resolution | $R$ | `....resolution()` | Map from true model parameters to their expected recovered values. |
 | Chi-squared | $\chi^2$ | `diagnostic.chi2` | Unreduced weighted squared residual, $r^TWr$. |
 | Reduced chi-squared | $\chi^2_\nu$ | `result.reduced_chi2` | Chi-squared divided by degrees of freedom. |
 | Root-mean-square residual | RMS | `diagnostic.rms` | Unweighted residual scale in the data's declared units. |
@@ -67,8 +67,8 @@ regularization rules are specified in [conventions](conventions.md).
 | Tikhonov regularization | `regularization=...` | Stabilizes an ill-conditioned inverse problem with a quadratic penalty. |
 | Laplacian smoothing | `regularization="laplacian"` | Penalizes spatial curvature in slip. |
 | Damping | `regularization="damping"` | Penalizes model magnitude using an identity operator. |
-| L-curve | `geodef.invert.lcurve(...)` | Selects a trade-off near the corner of misfit versus model norm. |
-| ABIC | `geodef.invert.abic_curve(...)` | Evidence-based comparison of regularization strengths. |
+| L-curve | `geodef.LinearSystem(..., regularization="laplacian").lcurve()` | Selects a trade-off near the corner of misfit versus model norm. |
+| ABIC | `geodef.LinearSystem(..., regularization="laplacian").abic_curve()` | Evidence-based comparison of regularization strengths. |
 | Cross-validation | `regularization_strength="cv"` | Selects strength by held-out prediction error. |
 | Bound | `bounds=(lower, upper)` | Per-parameter admissible interval. |
 | Linear inequality | `constraints=(C, d)` | Constraint of the form $Cm\le d$. |
