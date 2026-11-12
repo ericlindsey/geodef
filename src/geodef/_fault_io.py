@@ -38,15 +38,14 @@ def load_center(filedata: np.ndarray) -> "Fault":
     grid_shape = (n_length, n_width) if n_length * n_width == n else None
 
     return Fault(
-        lat_c,
-        lon_c,
-        depth,
-        strike,
-        dip,
-        length,
-        width,
+        lon=lon_c,
+        lat=lat_c,
+        depth=depth,
+        strike=strike,
+        dip=dip,
+        length=length,
+        width=width,
         grid_shape=grid_shape,
-        engine="okada",
     )
 
 
@@ -83,15 +82,14 @@ def load_topleft(filedata: np.ndarray) -> "Fault":
     grid_shape = (n_length, n_width) if n_length * n_width == n else None
 
     return Fault(
-        lat_c,
-        lon_c,
-        depth_c,
-        strike,
-        dip,
-        length,
-        width,
+        lon=lon_c,
+        lat=lat_c,
+        depth=depth_c,
+        strike=strike,
+        dip=dip,
+        length=length,
+        width=width,
         grid_shape=grid_shape,
-        engine="okada",
     )
 
 
@@ -213,23 +211,22 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
             grid_shape = (n_length, n_width)
 
     return Fault(
-        lat_c,
-        lon_c,
-        depth_c,
-        p_strike,
-        p_dip,
-        p_length,
-        p_width,
+        lon=lon_c,
+        lat=lat_c,
+        depth=depth_c,
+        strike=p_strike,
+        dip=p_dip,
+        length=p_length,
+        width=p_width,
         grid_shape=grid_shape,
-        engine="okada",
     )
 
 
 def save_center(fault: "Fault", fname: str) -> None:
     """Save in center-defined format."""
-    assert fault._length is not None and fault._width is not None
-    if fault._grid_shape is not None:
-        nL, _ = fault._grid_shape
+    assert fault.length is not None and fault.width is not None
+    if fault.grid_shape is not None:
+        nL, _ = fault.grid_shape
         strike_ids = np.arange(fault.n_patches) % nL
         dip_ids = np.arange(fault.n_patches) // nL
     else:
@@ -241,11 +238,11 @@ def save_center(fault: "Fault", fname: str) -> None:
             np.arange(fault.n_patches),
             dip_ids,
             strike_ids,
-            fault._lon,
-            fault._lat,
-            fault._depth,
-            fault._length,
-            fault._width,
+            fault.lon,
+            fault.lat,
+            fault.depth,
+            fault.length,
+            fault.width,
             fault.strike,
             fault.dip,
         )
@@ -267,12 +264,12 @@ def save_seg(
     uniform patch sizes (qL=qW=1), this round-trips exactly. For
     non-uniform faults, L0/W0 are taken from the smallest patch.
     """
-    assert fault._length is not None and fault._width is not None
+    assert fault.length is not None and fault.width is not None
     # Convert geographic centers back to local Cartesian
     alt = np.zeros(fault.n_patches)
     east, north, _ = transforms.geod2enu(
-        fault._lat,
-        fault._lon,
+        fault.lat,
+        fault.lon,
         alt,
         ref_lat,
         ref_lon,
@@ -286,14 +283,12 @@ def save_seg(
     cos_dip = np.cos(np.radians(fault.dip))
 
     corner_north = (
-        north
-        - (fault._length / 2) * cos_str
-        - (fault._width / 2) * (-cos_dip * sin_str)
+        north - (fault.length / 2) * cos_str - (fault.width / 2) * (-cos_dip * sin_str)
     )
     corner_east = (
-        east - (fault._length / 2) * sin_str - (fault._width / 2) * (cos_dip * cos_str)
+        east - (fault.length / 2) * sin_str - (fault.width / 2) * (cos_dip * cos_str)
     )
-    corner_depth = fault._depth - (fault._width / 2) * sin_dip
+    corner_depth = fault.depth - (fault.width / 2) * sin_dip
 
     # Find the overall segment bounding box
     # x1 (North), x2 (East), x3 (Depth) of the segment origin
@@ -308,36 +303,36 @@ def save_seg(
     # Use patch properties to determine total extent
     # Sum unique lengths along strike and widths along dip
     total_L = (
-        float(np.sum(fault._length[:1]))
-        if fault._grid_shape is None
-        else float(fault._length[0] * fault._grid_shape[0])
+        float(np.sum(fault.length[:1]))
+        if fault.grid_shape is None
+        else float(fault.length[0] * fault.grid_shape[0])
     )
     total_W = (
-        float(np.sum(fault._width[:1]))
-        if fault._grid_shape is None
-        else float(fault._width[0] * fault._grid_shape[1])
+        float(np.sum(fault.width[:1]))
+        if fault.grid_shape is None
+        else float(fault.width[0] * fault.grid_shape[1])
     )
 
     # If we don't have grid_shape, estimate from the patches
-    if fault._grid_shape is None:
+    if fault.grid_shape is None:
         # Sum all unique widths (down-dip) and max strike extent
-        total_L = float(np.max(fault._length) * len(fault._length))
-        total_W = float(np.sum(np.unique(fault._width)))
+        total_L = float(np.max(fault.length) * len(fault.length))
+        total_W = float(np.sum(np.unique(fault.width)))
 
-    L0 = float(np.min(fault._length))
-    W0 = float(np.min(fault._width))
+    L0 = float(np.min(fault.length))
+    W0 = float(np.min(fault.width))
 
     # Detect growth factors
-    if fault._grid_shape is not None:
+    if fault.grid_shape is not None:
         qL = 1.0
         qW = 1.0
     else:
-        unique_widths = np.unique(fault._width)
+        unique_widths = np.unique(fault.width)
         if len(unique_widths) > 1:
             qW = float(unique_widths[1] / unique_widths[0])
         else:
             qW = 1.0
-        unique_lengths = np.unique(fault._length)
+        unique_lengths = np.unique(fault.length)
         if len(unique_lengths) > 1:
             qL = float(unique_lengths[1] / unique_lengths[0])
         else:
@@ -364,11 +359,11 @@ def save_tri_ned(fault: "Fault", fname: str) -> None:
     """
     from geodef.mesh import Mesh
 
-    assert fault._vertices is not None
+    assert fault.vertices is not None
     n_tri = fault.n_patches
-    verts_flat = fault._vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
+    verts_flat = fault.vertices.reshape(-1, 3)  # (N*3, 3) [east, north, up]
 
-    geographic = fault._frame.to_geographic(
+    geographic = fault.frame.to_geographic(
         east=verts_flat[:, 0],
         north=verts_flat[:, 1],
         up=verts_flat[:, 2],
@@ -389,7 +384,7 @@ def save_tri_ned(fault: "Fault", fname: str) -> None:
         lat=lat_nodes[unique_idx],
         depth=depth_nodes[unique_idx],
         triangles=inverse.reshape(n_tri, 3),
-        frame=fault._frame,
+        frame=fault.frame,
     )
     mesh.save(fname)
 
@@ -418,26 +413,7 @@ def write_gmt(fault: "Fault", fname: str, values: np.ndarray | None = None) -> N
         if values.shape != (n,):
             raise ValueError(f"values must have shape ({n},), got {values.shape}")
 
-    if fault._engine == "okada":
-        # vertices_2d: (N, 4, 2) as [lon, lat]
-        verts = fault.vertices_2d  # (N, 4, 2)
-    else:
-        # Triangular: convert ENU to geographic lon/lat
-        verts_enu = fault._vertices  # (N, 3, 3)
-        assert verts_enu is not None
-        verts_flat = verts_enu.reshape(-1, 3)
-        geographic = fault._frame.to_geographic(
-            east=verts_flat[:, 0],
-            north=verts_flat[:, 1],
-            up=verts_flat[:, 2],
-        )
-        verts = np.stack(
-            [
-                geographic[:, 0].reshape(n, 3),
-                geographic[:, 1].reshape(n, 3),
-            ],
-            axis=-1,
-        )  # (N, 3, 2)
+    verts = fault.corners_geo
 
     with open(fname, "w") as fh:
         fh.write("# geodef GMT fault export\n")

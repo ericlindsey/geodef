@@ -143,18 +143,18 @@ def _gnss_kwargs(n: int = 3) -> dict:
     return dict(
         lon=np.linspace(100.0, 100.2, n),
         lat=np.linspace(0.0, 0.2, n),
-        ve=np.zeros(n),
-        vn=np.zeros(n),
-        se=np.full(n, 0.001),
-        sn=np.full(n, 0.001),
+        east=np.zeros(n),
+        north=np.zeros(n),
+        sigma_east=np.full(n, 0.001),
+        sigma_north=np.full(n, 0.001),
     )
 
 
 class TestDatasetConstructorValidation:
     def test_gnss_rejects_nan_component(self) -> None:
         kw = _gnss_kwargs()
-        kw["ve"] = np.array([0.0, np.nan, 0.0])
-        with pytest.raises(ValueError, match="ve.*non-finite"):
+        kw["east"] = np.array([0.0, np.nan, 0.0])
+        with pytest.raises(ValueError, match="east.*non-finite"):
             GNSS(**kw)
 
     def test_gnss_rejects_bad_latitude(self) -> None:
@@ -184,8 +184,8 @@ class TestDatasetConstructorValidation:
         with pytest.raises(ValueError, match="symmetric"):
             GNSS(
                 **_gnss_kwargs(n),
-                vu=np.zeros(n),
-                su=np.full(n, 0.001),
+                up=np.zeros(n),
+                sigma_up=np.full(n, 0.001),
                 covariance=cov,
             )
 

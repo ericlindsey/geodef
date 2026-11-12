@@ -90,7 +90,7 @@ disp, strain = okada92(
     e=1000.0, n=500.0, z=-5000.0,
     depth=20_000.0, strike=90.0, dip=15.0,
     length=50_000.0, width=20_000.0,
-    slip_strike=1.0, slip_dip=0.0, opening=0.0,
+    strike_slip=1.0, dip_slip=0.0, opening=0.0,
     mu=30e9, nu=0.25,
 )
 ```

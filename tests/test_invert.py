@@ -79,16 +79,18 @@ def _make_gnss(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     """Build a noise-free GNSS dataset from known slip."""
     lat, lon = obs_points
     n = len(lat)
-    ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=ue,
-        vn=un,
-        vu=uz,
-        se=np.full(n, sigma),
-        sn=np.full(n, sigma),
-        su=np.full(n, sigma),
+        east=ue,
+        north=un,
+        up=uz,
+        sigma_east=np.full(n, sigma),
+        sigma_north=np.full(n, sigma),
+        sigma_up=np.full(n, sigma),
     )
 
 
@@ -96,7 +98,9 @@ def _make_insar(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     """Build a noise-free InSAR dataset from known slip (ascending-like look)."""
     lat, lon = obs_points
     n = len(lat)
-    ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     look_e = np.full(n, -0.38)
     look_n = np.full(n, 0.09)
     look_u = np.full(n, 0.92)
@@ -116,7 +120,9 @@ def _make_vertical(fault, obs_points, slip_ss, slip_ds, sigma=0.001):
     """Build a noise-free Vertical dataset from known slip."""
     lat, lon = obs_points
     n = len(lat)
-    _, _, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
+    _, _, uz = fault.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     return Vertical(
         lon=lon,
         lat=lat,
@@ -425,12 +431,12 @@ class TestRegularization:
         gnss_noisy = GNSS(
             lon=lon,
             lat=lat,
-            ve=noisy_obs[0::3],
-            vn=noisy_obs[1::3],
-            vu=noisy_obs[2::3],
-            se=np.full(n, 0.01),
-            sn=np.full(n, 0.01),
-            su=np.full(n, 0.01),
+            east=noisy_obs[0::3],
+            north=noisy_obs[1::3],
+            up=noisy_obs[2::3],
+            sigma_east=np.full(n, 0.01),
+            sigma_north=np.full(n, 0.01),
+            sigma_up=np.full(n, 0.01),
         )
         r_unreg = invert(fault_4x3, gnss_noisy)
         r_smooth = invert(
@@ -849,12 +855,12 @@ class TestABIC:
         gnss_noisy = GNSS(
             lon=lon,
             lat=lat,
-            ve=noisy_obs[0::3],
-            vn=noisy_obs[1::3],
-            vu=noisy_obs[2::3],
-            se=np.full(n, 0.01),
-            sn=np.full(n, 0.01),
-            su=np.full(n, 0.01),
+            east=noisy_obs[0::3],
+            north=noisy_obs[1::3],
+            up=noisy_obs[2::3],
+            sigma_east=np.full(n, 0.01),
+            sigma_north=np.full(n, 0.01),
+            sigma_up=np.full(n, 0.01),
         )
         result = invert(
             fault_4x3,
@@ -924,12 +930,12 @@ class TestABIC:
         gnss_noisy = GNSS(
             lon=lon,
             lat=lat,
-            ve=noisy_obs[0::3],
-            vn=noisy_obs[1::3],
-            vu=noisy_obs[2::3],
-            se=np.full(n, 0.01),
-            sn=np.full(n, 0.01),
-            su=np.full(n, 0.01),
+            east=noisy_obs[0::3],
+            north=noisy_obs[1::3],
+            up=noisy_obs[2::3],
+            sigma_east=np.full(n, 0.01),
+            sigma_north=np.full(n, 0.01),
+            sigma_up=np.full(n, 0.01),
         )
         G = greens(fault_4x3, [gnss_noisy])
         d = stack_obs([gnss_noisy])
@@ -1152,12 +1158,12 @@ class TestABICCurve:
         gnss_noisy = GNSS(
             lon=lon,
             lat=lat,
-            ve=noisy_obs[0::3],
-            vn=noisy_obs[1::3],
-            vu=noisy_obs[2::3],
-            se=np.full(n, 0.01),
-            sn=np.full(n, 0.01),
-            su=np.full(n, 0.01),
+            east=noisy_obs[0::3],
+            north=noisy_obs[1::3],
+            up=noisy_obs[2::3],
+            sigma_east=np.full(n, 0.01),
+            sigma_north=np.full(n, 0.01),
+            sigma_up=np.full(n, 0.01),
         )
         ac = abic_curve(
             fault_4x3,

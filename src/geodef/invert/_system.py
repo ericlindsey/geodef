@@ -105,9 +105,7 @@ class LinearSystem:
             )
 
         explicit_names = [
-            dataset.dataset_name
-            for dataset in datasets
-            if dataset.dataset_name is not None
+            dataset.name for dataset in datasets if dataset.name is not None
         ]
         if len(explicit_names) != len(set(explicit_names)):
             raise ValueError("explicit dataset names must be unique")
@@ -115,8 +113,8 @@ class LinearSystem:
         generated_counts: dict[str, int] = {}
         dataset_names: list[str] = []
         for dataset in datasets:
-            if dataset.dataset_name is not None:
-                dataset_names.append(dataset.dataset_name)
+            if dataset.name is not None:
+                dataset_names.append(dataset.name)
                 continue
             base = type(dataset).__name__.lower()
             count = generated_counts.get(base, 0) + 1

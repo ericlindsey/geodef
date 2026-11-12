@@ -53,15 +53,14 @@ def tri_fault():
         ]
     )
     return Fault(
-        lat,
-        lon,
-        depth,
-        strike,
-        dip,
+        lat=lat,
+        lon=lon,
+        depth=depth,
+        strike=strike,
+        dip=dip,
         length=None,
         width=None,
         vertices=vertices,
-        engine="tri",
     )
 
 
@@ -92,7 +91,16 @@ def gnss_3comp():
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
     su = np.full(n, 0.002)
-    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su)
+    return GNSS(
+        lon=lon,
+        lat=lat,
+        east=ve,
+        north=vn,
+        up=vu,
+        sigma_east=se,
+        sigma_north=sn,
+        sigma_up=su,
+    )
 
 
 @pytest.fixture
@@ -106,7 +114,16 @@ def gnss_horiz():
     vn = rng.normal(0, 0.01, n)
     se = np.full(n, 0.001)
     sn = np.full(n, 0.001)
-    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=None, se=se, sn=sn, su=None)
+    return GNSS(
+        lon=lon,
+        lat=lat,
+        east=ve,
+        north=vn,
+        up=None,
+        sigma_east=se,
+        sigma_north=sn,
+        sigma_up=None,
+    )
 
 
 @pytest.fixture
@@ -268,12 +285,12 @@ class TestPlotPatches:
     """Tests for geodef.plot.patches."""
 
     def test_returns_axes(self, rect_fault):
-        values = rect_fault._depth * 1e-3
+        values = rect_fault.depth * 1e-3
         ax = geodef.plot.patches(rect_fault, values)
         assert isinstance(ax, plt.Axes)
 
     def test_custom_label(self, rect_fault):
-        values = rect_fault._depth * 1e-3
+        values = rect_fault.depth * 1e-3
         ax = geodef.plot.patches(rect_fault, values, colorbar_label="Depth (km)")
         assert isinstance(ax, plt.Axes)
 
@@ -626,8 +643,8 @@ class TestPlotVectors:
 
         x_km, y_km = _stations_to_local_km(gnss_3comp, rect_fault)
         ell0_center = ellipses[0].center
-        tip_x = x_km[0] + gnss_3comp._ve[0] * 500.0
-        tip_y = y_km[0] + gnss_3comp._vn[0] * 500.0
+        tip_x = x_km[0] + gnss_3comp.east[0] * 500.0
+        tip_y = y_km[0] + gnss_3comp.north[0] * 500.0
         np.testing.assert_allclose(ell0_center, (tip_x, tip_y), atol=1e-10)
 
     def test_scale_arrow_legend(self, gnss_3comp, rect_fault):

@@ -51,12 +51,12 @@ regularization rules are specified in [conventions](conventions.md).
 
 | Term | GeoDef name | Meaning |
 |---|---|---|
-| GNSS | `geodef.data.gnss(...)` | East, north, and optionally up displacement or velocity at stations. |
-| InSAR | `geodef.data.insar(...)` | Surface motion projected onto a radar line-of-sight unit vector. |
+| GNSS | `geodef.GNSS(...)` | East, north, and optionally up displacement or velocity at stations. |
+| InSAR | `geodef.InSAR(...)` | Surface motion projected onto a radar line-of-sight unit vector. |
 | Look vector | `look_e`, `look_n`, `look_u` | Unit vector that defines positive InSAR line of sight in ENU coordinates. |
 | Line of sight | LOS | Scalar projection $u_E l_E+u_N l_N+u_U l_U$. |
 | Local frame | `geodef.LocalFrame` | WGS84 origin that gives local East, North, Up coordinates physical meaning. |
-| Dataset name | `dataset.dataset_name` | Stable label used to split joint predictions and diagnostics. |
+| Dataset name | `dataset.name` | Stable label used to split joint predictions and diagnostics. |
 | Spatial covariance | `geodef.data.spatial_covariance(...)` | Dense covariance generated from a distance-decay model plus nugget. |
 
 ## Inference and assessment

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from geodef import backend, data, invert, plot
+from geodef import GNSS, Vertical, backend, invert, plot
 from geodef.fault import Fault
 
 
@@ -31,8 +31,10 @@ def fault():
 def _datasets(fault):
     lon = np.array([99.9, 100.0, 100.1])
     lat = np.array([-0.1, 0.0, 0.1])
-    east, north, up = fault.displacement(lat, lon, [1.0], [0.25])
-    gnss = data.gnss(
+    east, north, up = fault.displacement(
+        lat=lat, lon=lon, strike_slip=[1.0], dip_slip=[0.25]
+    )
+    gnss = GNSS(
         lon=lon,
         lat=lat,
         east=east,
@@ -43,7 +45,7 @@ def _datasets(fault):
         sigma_up=0.002,
         name="gnss",
     )
-    vertical = data.vertical(
+    vertical = Vertical(
         lon=lon,
         lat=lat,
         displacement=up,
@@ -95,7 +97,7 @@ def test_automatic_regularization_selection_is_recorded(fault):
 
 def test_explicit_duplicate_dataset_names_raise(fault):
     gnss, _ = _datasets(fault)
-    duplicate = data.horizontal_gnss(
+    duplicate = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -111,7 +113,7 @@ def test_explicit_duplicate_dataset_names_raise(fault):
 
 def test_unnamed_datasets_receive_stable_readable_names(fault):
     gnss, _ = _datasets(fault)
-    first = data.horizontal_gnss(
+    first = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -119,7 +121,7 @@ def test_unnamed_datasets_receive_stable_readable_names(fault):
         sigma_east=gnss.sigma_east,
         sigma_north=gnss.sigma_north,
     )
-    second = data.horizontal_gnss(
+    second = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -135,7 +137,7 @@ def test_unnamed_datasets_receive_stable_readable_names(fault):
 
 def test_joint_inversion_rejects_mixed_measurement_semantics(fault):
     gnss, vertical = _datasets(fault)
-    velocity = data.vertical(
+    velocity = Vertical(
         lon=vertical.lon,
         lat=vertical.lat,
         displacement=vertical.obs,

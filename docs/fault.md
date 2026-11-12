@@ -120,7 +120,7 @@ position; incompatible frames are never silently substituted.
 
 ## Forward modeling
 
-### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
+### `fault.displacement(lat=obs_lat, lon=obs_lon, strike_slip=slip_strike, dip_slip=0.0)`
 
 Compute surface displacements from strike-slip and dip-slip scalars or arrays.
 
@@ -128,19 +128,19 @@ Compute surface displacements from strike-slip and dip-slip scalars or arrays.
 strike_slip = np.zeros(fault.n_patches)
 dip_slip = np.ones(fault.n_patches)
 east, north, up = fault.displacement(
-    obs_lat,
-    obs_lon,
-    slip_strike=strike_slip,
-    slip_dip=dip_slip,
+    lat=obs_lat,
+    lon=obs_lon,
+    strike_slip=strike_slip,
+    dip_slip=dip_slip,
 )
 ```
 
-### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
+### `fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="displacement", depth=None)`
 
 Build the raw Green's matrix.
 
 ```python
-G = fault.greens_matrix(obs_lat, obs_lon)
+G = fault.greens_matrix(lat=obs_lat, lon=obs_lon)
 # shape (3*n_obs, 2*N) for displacement
 # Columns [:N] = strike-slip, [N:] = dip-slip
 ```

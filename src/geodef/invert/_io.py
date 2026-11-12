@@ -581,27 +581,27 @@ def save_table(result: InversionResult, fname: str | Path, fault: Fault) -> None
         header_lines.append(f"slip_azimuth_deg: {result.slip_azimuth:.6g}")
 
     if fault.engine == "okada":
-        if fault._length is None or fault._width is None:
+        if fault.length is None or fault.width is None:
             raise ValueError("rectangular fault is missing patch dimensions")
         column_names = "lon lat depth_m strike dip length_m width_m"
         geometry = np.column_stack(
             [
-                fault._lon,
-                fault._lat,
-                fault._depth,
+                fault.lon,
+                fault.lat,
+                fault.depth,
                 fault.strike,
                 fault.dip,
-                fault._length,
-                fault._width,
+                fault.length,
+                fault.width,
             ]
         )
     else:
         column_names = "lon lat depth_m strike dip area_m2"
         geometry = np.column_stack(
             [
-                fault._lon,
-                fault._lat,
-                fault._depth,
+                fault.lon,
+                fault.lat,
+                fault.depth,
                 fault.strike,
                 fault.dip,
                 fault.areas,

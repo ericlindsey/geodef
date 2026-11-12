@@ -74,12 +74,12 @@ def gnss_4station(obs_points):
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=np.zeros(n),
-        vn=np.zeros(n),
-        vu=np.zeros(n),
-        se=np.ones(n),
-        sn=np.ones(n),
-        su=np.ones(n),
+        east=np.zeros(n),
+        north=np.zeros(n),
+        up=np.zeros(n),
+        sigma_east=np.ones(n),
+        sigma_north=np.ones(n),
+        sigma_up=np.ones(n),
     )
 
 
@@ -91,12 +91,12 @@ def gnss_horizontal(obs_points):
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=np.zeros(n),
-        vn=np.zeros(n),
-        vu=None,
-        se=np.ones(n),
-        sn=np.ones(n),
-        su=None,
+        east=np.zeros(n),
+        north=np.zeros(n),
+        up=None,
+        sigma_east=np.ones(n),
+        sigma_north=np.ones(n),
+        sigma_up=None,
     )
 
 
@@ -189,12 +189,12 @@ class TestConsistencyWithDisplacement:
         gnss = GNSS(
             lon=lon,
             lat=lat,
-            ve=np.zeros(4),
-            vn=np.zeros(4),
-            vu=np.zeros(4),
-            se=np.ones(4),
-            sn=np.ones(4),
-            su=np.ones(4),
+            east=np.zeros(4),
+            north=np.zeros(4),
+            up=np.zeros(4),
+            sigma_east=np.ones(4),
+            sigma_north=np.ones(4),
+            sigma_up=np.ones(4),
         )
 
         G = greens(single_patch, gnss)
@@ -203,7 +203,7 @@ class TestConsistencyWithDisplacement:
         pred = G @ m
 
         ue, un, uz = single_patch.displacement(
-            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+            lat=lat, lon=lon, strike_slip=slip_s, dip_slip=slip_d
         )
         expected = gnss.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
@@ -227,7 +227,7 @@ class TestConsistencyWithDisplacement:
         pred = G @ m
 
         ue, un, uz = single_patch.displacement(
-            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+            lat=lat, lon=lon, strike_slip=slip_s, dip_slip=slip_d
         )
         expected = insar.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
@@ -243,7 +243,7 @@ class TestConsistencyWithDisplacement:
         pred = G @ m
 
         ue, un, uz = single_patch.displacement(
-            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+            lat=lat, lon=lon, strike_slip=slip_s, dip_slip=slip_d
         )
         expected = vert.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
@@ -255,12 +255,12 @@ class TestConsistencyWithDisplacement:
         gnss = GNSS(
             lon=lon,
             lat=lat,
-            ve=np.zeros(n),
-            vn=np.zeros(n),
-            vu=np.zeros(n),
-            se=np.ones(n),
-            sn=np.ones(n),
-            su=np.ones(n),
+            east=np.zeros(n),
+            north=np.zeros(n),
+            up=np.zeros(n),
+            sigma_east=np.ones(n),
+            sigma_north=np.ones(n),
+            sigma_up=np.ones(n),
         )
 
         rng = np.random.default_rng(42)
@@ -275,7 +275,7 @@ class TestConsistencyWithDisplacement:
         pred = G @ m
 
         ue, un, uz = fault_4x3.displacement(
-            lat, lon, slip_strike=slip_s, slip_dip=slip_d
+            lat=lat, lon=lon, strike_slip=slip_s, dip_slip=slip_d
         )
         expected = gnss.project(ue, un, uz)
         np.testing.assert_allclose(pred, expected, rtol=1e-10)
@@ -370,12 +370,12 @@ class TestProjectGreens:
     """Tests for the project helper function."""
 
     def test_insar_projection_reduces_rows(self, fault_4x3, insar_4pixel):
-        G_raw = fault_4x3.greens_matrix(insar_4pixel.lat, insar_4pixel.lon)
+        G_raw = fault_4x3.greens_matrix(lat=insar_4pixel.lat, lon=insar_4pixel.lon)
         G_proj = project(insar_4pixel, G_raw)
         assert G_proj.shape == (4, 24)  # from (12, 24) to (4, 24)
 
     def test_gnss_3comp_preserves_rows(self, fault_4x3, gnss_4station):
-        G_raw = fault_4x3.greens_matrix(gnss_4station.lat, gnss_4station.lon)
+        G_raw = fault_4x3.greens_matrix(lat=gnss_4station.lat, lon=gnss_4station.lon)
         G_proj = project(gnss_4station, G_raw)
         assert G_proj.shape == (12, 24)  # 3*4 stays 3*4
 
@@ -383,7 +383,7 @@ class TestProjectGreens:
         lat, lon = obs_points
         n = len(lat)
         vert = Vertical(lon=lon, lat=lat, displacement=np.zeros(n), sigma=np.ones(n))
-        G_raw = single_patch.greens_matrix(lat, lon)
+        G_raw = single_patch.greens_matrix(lat=lat, lon=lon)
         G_proj = project(vert, G_raw)
 
         # Vertical projection should extract rows 2, 5, 8, 11 from G_raw
@@ -453,25 +453,25 @@ class TestTriEngine:
         dip = np.array([90.0, 90.0])
 
         return Fault(
-            lat, lon, depth, strike, dip, None, None, vertices=vertices, engine="tri"
+            lat=lat, lon=lon, depth=depth, strike=strike, dip=dip, vertices=vertices
         )
 
     def test_tri_greens_matrix_shape(self, tri_fault):
         obs_lat = np.array([0.1, -0.1])
         obs_lon = np.array([100.1, 99.9])
-        G = tri_fault.greens_matrix(obs_lat, obs_lon, kind="displacement")
+        G = tri_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="displacement")
         assert G.shape == (6, 4)  # 3*2 obs, 2*2 patches
 
     def test_tri_strain_greens_shape(self, tri_fault):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.1])
-        G = tri_fault.greens_matrix(obs_lat, obs_lon, kind="strain")
+        G = tri_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="strain")
         assert G.shape == (6, 4)  # 6*1 obs, 2*2 patches
 
     def test_tri_greens_nonzero(self, tri_fault):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.1])
-        G = tri_fault.greens_matrix(obs_lat, obs_lon, kind="displacement")
+        G = tri_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="displacement")
         assert np.any(G != 0.0)
 
     def test_tri_with_greens_function(self, tri_fault):
@@ -482,12 +482,12 @@ class TestTriEngine:
         gnss = GNSS(
             lon=obs_lon,
             lat=obs_lat,
-            ve=np.zeros(n),
-            vn=np.zeros(n),
-            vu=np.zeros(n),
-            se=np.ones(n),
-            sn=np.ones(n),
-            su=np.ones(n),
+            east=np.zeros(n),
+            north=np.zeros(n),
+            up=np.zeros(n),
+            sigma_east=np.ones(n),
+            sigma_north=np.ones(n),
+            sigma_up=np.ones(n),
         )
         G = greens(tri_fault, gnss)
         assert G.shape == (6, 4)
@@ -495,7 +495,7 @@ class TestTriEngine:
     def test_tri_zero_slip(self, tri_fault):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.1])
-        G = tri_fault.greens_matrix(obs_lat, obs_lon, kind="displacement")
+        G = tri_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="displacement")
         m = np.zeros(4)
         np.testing.assert_allclose(G @ m, 0.0, atol=1e-15)
 
@@ -503,7 +503,7 @@ class TestTriEngine:
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.1])
         with pytest.raises(ValueError, match="Unknown kind"):
-            tri_fault.greens_matrix(obs_lat, obs_lon, kind="tilt")
+            tri_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="tilt")
 
 
 # ======================================================================

@@ -64,18 +64,20 @@ def gnss_data():
 
     glon, glat = np.meshgrid(np.linspace(99.0, 101.0, 5), np.linspace(-3.0, -1.0, 5))
     glon, glat = glon.ravel(), glat.ravel()
-    ue, un, uz = fault.displacement(glat, glon, slip_ss, slip_ds)
+    ue, un, uz = fault.displacement(
+        lat=glat, lon=glon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     n = len(glat)
     sigma = 0.001
     data = GNSS(
         lon=glon,
         lat=glat,
-        ve=ue,
-        vn=un,
-        vu=uz,
-        se=np.full(n, sigma),
-        sn=np.full(n, sigma),
-        su=np.full(n, sigma),
+        east=ue,
+        north=un,
+        up=uz,
+        sigma_east=np.full(n, sigma),
+        sigma_north=np.full(n, sigma),
+        sigma_up=np.full(n, sigma),
     )
     backend.set_backend("jax")
     return data

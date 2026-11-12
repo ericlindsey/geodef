@@ -41,16 +41,16 @@ true_dip_slip = 1.2 * np.exp(
     - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
 )
 east, north, up = fault.displacement(
-    station_lat,
-    station_lon,
-    slip_strike=0.0,
-    slip_dip=true_dip_slip,
+    lat=station_lat,
+    lon=station_lon,
+    strike_slip=0.0,
+    dip_slip=true_dip_slip,
 )
 
 # Add seeded measurement noise and declare the same uncertainties to GeoDef.
 sigma_horizontal = 0.004
 sigma_vertical = 0.008
-gnss = geodef.data.gnss(
+gnss = geodef.GNSS(
     lon=station_lon,
     lat=station_lat,
     east=east + rng.normal(0.0, sigma_horizontal, east.size),
@@ -96,7 +96,7 @@ geometry or regularization assumption is correct.
 |---|---|---|
 | `Fault.planar(...)` | Declare source geometry and discretization | Tutorials 01–02 |
 | `fault.displacement(...)` | Evaluate the elastic forward model | Tutorial 01 |
-| `data.gnss(...)` | Pair observations with uncertainty and metadata | Tutorials 03 and 05 |
+| `GNSS(...)` | Pair observations with uncertainty and metadata | Tutorials 03 and 05 |
 | `solve(...)` | Estimate slip from the observations | Tutorials 03–04 |
 | `regularization="laplacian"` | Prefer spatially smooth slip | Tutorial 04 |
 | `bounds=(0, None)` | Exclude opposite-sense slip | Tutorial 07 |

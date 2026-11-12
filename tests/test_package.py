@@ -109,12 +109,12 @@ class TestTopLevelAPI:
         g = geodef.GNSS(
             lon=lon,
             lat=lat,
-            ve=np.array([1.0]),
-            vn=np.array([0.5]),
-            vu=np.array([-0.1]),
-            se=np.array([0.1]),
-            sn=np.array([0.1]),
-            su=np.array([0.5]),
+            east=np.array([1.0]),
+            north=np.array([0.5]),
+            up=np.array([-0.1]),
+            sigma_east=np.array([0.1]),
+            sigma_north=np.array([0.1]),
+            sigma_up=np.array([0.5]),
         )
         assert isinstance(g, geodef.DataSet)
 

@@ -125,7 +125,7 @@ GNSS displacement/velocity vectors as quiver arrows.
 ```python
 predictions = geodef.invert.prediction(result)
 geodef.plot.vectors(gnss, fault,
-    predicted=predictions[gnss.dataset_name],  # optional overlay
+    predicted=predictions[gnss.name],  # optional overlay
     scale=10,
     obs_color='black', pred_color='red',
     components='both',          # 'horizontal', 'vertical', 'both'
@@ -152,7 +152,7 @@ InSAR LOS data as colored scatter points.
 
 ```python
 geodef.plot.insar(insar, fault,
-    predicted=predictions[insar.dataset_name],
+    predicted=predictions[insar.name],
     layout='obs_pred_res',    # 'obs', 'pred', 'residual', 'obs_pred_res'
     cmap='RdBu_r',
     vmin=-0.1, vmax=0.1,
@@ -169,8 +169,8 @@ geodef.plot.insar(insar, fault,
 Observed vs. predicted scatter or residual histogram.
 
 ```python
-geodef.plot.fit(gnss.obs, predictions[gnss.dataset_name])
-geodef.plot.fit(gnss.obs, predictions[gnss.dataset_name],
+geodef.plot.fit(gnss.obs, predictions[gnss.name])
+geodef.plot.fit(gnss.obs, predictions[gnss.name],
     style='residual_histogram')
 ```
 

@@ -101,18 +101,7 @@ def basemap(
 
 def _patch_outlines_lonlat(fault: Fault) -> np.ndarray:
     """Return closed per-patch outlines as ``(N, k+1, 2)`` in ``[lon, lat]``."""
-    if fault.engine == "okada":
-        return fault.patch_outlines
-    # Triangular: convert ENU vertices to geographic and close each triangle.
-    verts = fault._vertices  # (N, 3, 3) as [e, n, u]
-    assert verts is not None
-    n_tri = verts.shape[0]
-    geographic = fault.frame.to_geographic(
-        east=verts[:, :, 0].ravel(),
-        north=verts[:, :, 1].ravel(),
-        up=verts[:, :, 2].ravel(),
-    )
-    lonlat = geographic[:, :2].reshape(n_tri, 3, 2)
+    lonlat = fault.corners_geo[:, :, :2]
     return np.concatenate([lonlat, lonlat[:, :1, :]], axis=1)
 
 
@@ -178,8 +167,8 @@ def add_vectors(
     return ax.quiver(
         dataset.lon,
         dataset.lat,
-        dataset._ve * scale,
-        dataset._vn * scale,
+        dataset.east * scale,
+        dataset.north * scale,
         color=color,
         transform=ccrs.PlateCarree(),
         angles="xy",

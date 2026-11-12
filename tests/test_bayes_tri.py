@@ -74,18 +74,20 @@ def _gnss_from_fault(fault, slip_ds, sigma, seed, n_lon=6, n_lat=5, span=(0.15, 
         np.linspace(_REF_LAT - span[1], _REF_LAT + span[1], n_lat),
     )
     glon, glat = glon.ravel(), glat.ravel()
-    ue, un, uz = fault.displacement(glat, glon, np.zeros(fault.n_patches), slip_ds)
+    ue, un, uz = fault.displacement(
+        lat=glat, lon=glon, strike_slip=np.zeros(fault.n_patches), dip_slip=slip_ds
+    )
     rng = np.random.default_rng(seed)
     n = len(glat)
     return GNSS(
         lon=glon,
         lat=glat,
-        ve=ue + rng.normal(0, sigma, n),
-        vn=un + rng.normal(0, sigma, n),
-        vu=uz + rng.normal(0, sigma, n),
-        se=np.full(n, sigma),
-        sn=np.full(n, sigma),
-        su=np.full(n, sigma),
+        east=ue + rng.normal(0, sigma, n),
+        north=un + rng.normal(0, sigma, n),
+        up=uz + rng.normal(0, sigma, n),
+        sigma_east=np.full(n, sigma),
+        sigma_north=np.full(n, sigma),
+        sigma_up=np.full(n, sigma),
     )
 
 

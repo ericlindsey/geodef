@@ -85,9 +85,12 @@ true_dip_slip = 1.2 * np.exp(
     - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
 )
 east, north, up = fault.displacement(
-    station_lat, station_lon, slip_strike=0.0, slip_dip=true_dip_slip
+    lat=station_lat,
+    lon=station_lon,
+    strike_slip=0.0,
+    dip_slip=true_dip_slip,
 )
-gnss = geodef.data.gnss(
+gnss = geodef.GNSS(
     lon=station_lon, lat=station_lat,
     east=east + rng.normal(0.0, 0.004, east.size),
     north=north + rng.normal(0.0, 0.004, north.size),

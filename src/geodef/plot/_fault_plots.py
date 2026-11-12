@@ -304,7 +304,7 @@ def fault3d(
     if color_by is None:
         face_values = None
     elif isinstance(color_by, str) and color_by == "depth":
-        face_values = fault._depth * 1e-3  # km
+        face_values = fault.depth * 1e-3  # km
         if colorbar_label is None:
             colorbar_label = "Depth (km)"
     elif isinstance(color_by, str) and color_by == "area":

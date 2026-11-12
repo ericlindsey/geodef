@@ -36,5 +36,5 @@ def test_gorkha_datasets_load():
     assert gnss.n_obs == 3 * gnss.n_stations
     assert insar.n_obs == insar.n_stations
     # look vectors are unit-length to within rounding
-    norm = insar._look_e**2 + insar._look_n**2 + insar._look_u**2
+    norm = insar.look_e**2 + insar.look_n**2 + insar.look_u**2
     assert abs(float(norm.mean()) - 1.0) < 0.05

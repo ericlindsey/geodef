@@ -145,9 +145,15 @@ def test_forward_model_is_linear_in_slip(data):
     obs_lat = np.array([0.05, -0.1])
     obs_lon = np.array([0.1, 0.2])
 
-    combined = fault.displacement(obs_lat, obs_lon, a * sx + b * sy, a * dx + b * dy)
-    ex, nx, ux = fault.displacement(obs_lat, obs_lon, sx, dx)
-    ey, ny, uy = fault.displacement(obs_lat, obs_lon, sy, dy)
+    combined = fault.displacement(
+        lat=obs_lat, lon=obs_lon, strike_slip=a * sx + b * sy, dip_slip=a * dx + b * dy
+    )
+    ex, nx, ux = fault.displacement(
+        lat=obs_lat, lon=obs_lon, strike_slip=sx, dip_slip=dx
+    )
+    ey, ny, uy = fault.displacement(
+        lat=obs_lat, lon=obs_lon, strike_slip=sy, dip_slip=dy
+    )
 
     np.testing.assert_allclose(combined[0], a * ex + b * ey, atol=1e-9)
     np.testing.assert_allclose(combined[1], a * nx + b * ny, atol=1e-9)

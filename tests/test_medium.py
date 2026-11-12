@@ -85,10 +85,10 @@ class TestFaultMedium:
         """nu must actually reach the dislocation kernels."""
         obs_lat = np.array([0.05, 0.10])
         obs_lon = np.array([100.0, 100.1])
-        G_default = Fault.planar(**fault_kwargs).greens_matrix(obs_lat, obs_lon)
+        G_default = Fault.planar(**fault_kwargs).greens_matrix(lat=obs_lat, lon=obs_lon)
         G_nu30 = Fault.planar(
             **fault_kwargs, medium=ElasticMedium(poisson_ratio=0.3)
-        ).greens_matrix(obs_lat, obs_lon)
+        ).greens_matrix(lat=obs_lat, lon=obs_lon)
         assert not np.allclose(G_default, G_nu30)
 
     def test_moment_uses_medium(self, fault_kwargs: dict) -> None:
@@ -129,12 +129,12 @@ class TestMediumCacheKeys:
         gnss = GNSS(
             lon=np.array([100.0]),
             lat=np.array([0.05]),
-            ve=np.array([0.01]),
-            vn=np.array([0.01]),
-            vu=None,
-            se=np.array([0.001]),
-            sn=np.array([0.001]),
-            su=None,
+            east=np.array([0.01]),
+            north=np.array([0.01]),
+            up=None,
+            sigma_east=np.array([0.001]),
+            sigma_north=np.array([0.001]),
+            sigma_up=None,
         )
         from geodef.cache import compute_hash
 
@@ -147,10 +147,9 @@ class TestMediumCacheKeys:
 
     def test_stress_key_includes_medium(self, fault_kwargs: dict) -> None:
         from geodef.cache import compute_hash
-        from geodef.fault import _build_stress_key
 
         fault_a = Fault.planar(**fault_kwargs)
         fault_b = Fault.planar(**fault_kwargs, medium=ElasticMedium(poisson_ratio=0.3))
-        key_a = _build_stress_key(fault_a, 30e9)
-        key_b = _build_stress_key(fault_b, 30e9)
+        key_a = fault_a._cache_key()
+        key_b = fault_b._cache_key()
         assert compute_hash(key_a) != compute_hash(key_b)

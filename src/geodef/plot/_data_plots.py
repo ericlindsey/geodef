@@ -112,8 +112,8 @@ def vectors(
         qkw.update(quiver_kwargs)
 
     if components in ("horizontal", "both"):
-        ve = dataset._ve * scale
-        vn = dataset._vn * scale
+        ve = dataset.east * scale
+        vn = dataset.north * scale
         ax.quiver(x_km, y_km, ve, vn, color=obs_color, label="_nolegend_", **qkw)
 
         if predicted is not None:
@@ -135,8 +135,8 @@ def vectors(
             if ellipse_kwargs:
                 ekw.update(ellipse_kwargs)
             for i in range(n):
-                w = dataset._se[i] * scale * 2  # full axis = 2 * sigma
-                h = dataset._sn[i] * scale * 2
+                w = dataset.sigma_east[i] * scale * 2  # full axis = 2 * sigma
+                h = dataset.sigma_north[i] * scale * 2
                 # Place ellipse at the arrow tip (geodetic convention)
                 tip_x = x_km[i] + ve[i]
                 tip_y = y_km[i] + vn[i]
@@ -144,7 +144,7 @@ def vectors(
                 ax.add_patch(ell)
 
     if components == "vertical" or (components == "both" and has_vert):
-        vu = dataset._vu  # raw values — encode magnitude by color only
+        vu = dataset.up  # raw values — encode magnitude by color only
         assert vu is not None
         # Vertical dots are a constant size; the vertical component is read
         # from color, not marker area (value-scaled areas produced dots that

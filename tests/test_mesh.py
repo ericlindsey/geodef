@@ -421,8 +421,8 @@ class TestFaultFromTriangles:
         )
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
         # Centers should be near ref point
-        assert fault._lat[0] == pytest.approx(0.0, abs=0.1)
-        assert fault._lon[0] == pytest.approx(100.0, abs=0.1)
+        assert fault.lat[0] == pytest.approx(0.0, abs=0.1)
+        assert fault.lon[0] == pytest.approx(100.0, abs=0.1)
 
     def test_areas_positive(self):
         from geodef.fault import Fault
@@ -446,8 +446,8 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
-        assert fault._vertices is not None
-        assert fault._vertices.shape == (1, 3, 3)
+        assert fault.vertices is not None
+        assert fault.vertices.shape == (1, 3, 3)
 
     def test_depth_from_vertices(self):
         from geodef.fault import Fault
@@ -460,7 +460,7 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
-        assert fault._depth[0] == pytest.approx(10000.0, abs=100.0)
+        assert fault.depth[0] == pytest.approx(10000.0, abs=100.0)
 
     def test_node_connectivity_matches_explicit(self):
         from geodef.fault import Fault
@@ -473,7 +473,7 @@ class TestFaultFromTriangles:
         f_conn = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
         f_expl = Fault.from_triangles(nodes[tris], ref_lat=0.0, ref_lon=100.0)
         assert f_conn.n_patches == 2
-        np.testing.assert_allclose(f_conn._vertices, f_expl._vertices)
+        np.testing.assert_allclose(f_conn.vertices, f_expl.vertices)
         np.testing.assert_allclose(f_conn.strike, f_expl.strike)
 
     def test_connectivity_preserves_order(self):
@@ -485,7 +485,7 @@ class TestFaultFromTriangles:
         )
         tris = np.array([[1, 3, 2], [0, 1, 2]])  # swapped order
         fault = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
-        np.testing.assert_allclose(fault._vertices[0], nodes[tris[0]])
+        np.testing.assert_allclose(fault.vertices[0], nodes[tris[0]])
 
     def test_connectivity_bad_node_shape_raises(self):
         from geodef.fault import Fault
@@ -519,7 +519,7 @@ class TestFaultFromMesh:
         from geodef.fault import Fault
 
         fault = Fault.from_mesh(simple_mesh)
-        assert fault._vertices.shape == (2, 3, 3)
+        assert fault.vertices.shape == (2, 3, 3)
 
     def test_strike_dip_reasonable(self, simple_mesh):
         from geodef.fault import Fault
@@ -534,8 +534,8 @@ class TestFaultFromMesh:
         from geodef.fault import Fault
 
         fault = Fault.from_mesh(simple_mesh)
-        assert np.all(fault._lat >= -0.1) and np.all(fault._lat <= 0.2)
-        assert np.all(fault._lon >= 99.9) and np.all(fault._lon <= 100.2)
+        assert np.all(fault.lat >= -0.1) and np.all(fault.lat <= 0.2)
+        assert np.all(fault.lon >= 99.9) and np.all(fault.lon <= 100.2)
 
     def test_horizontal_mesh_dip_zero(self, horizontal_mesh):
         from geodef.fault import Fault
@@ -551,7 +551,7 @@ class TestFaultFromMesh:
         obs_lat = np.array([0.05])
         obs_lon = np.array([100.05])
         slip_s = np.ones(fault.n_patches)
-        ux, uy, uz = fault.displacement(obs_lat, obs_lon, slip_s)
+        ux, uy, uz = fault.displacement(lat=obs_lat, lon=obs_lon, strike_slip=slip_s)
         assert ux.shape == (1,)
 
 
@@ -1471,12 +1471,12 @@ class TestIntegration:
         gnss = GNSS(
             lat=np.array([0.05]),
             lon=np.array([100.1]),
-            ve=np.array([0.01]),
-            vn=np.array([0.02]),
-            vu=np.array([0.0]),
-            se=np.array([0.001]),
-            sn=np.array([0.001]),
-            su=np.array([0.001]),
+            east=np.array([0.01]),
+            north=np.array([0.02]),
+            up=np.array([0.0]),
+            sigma_east=np.array([0.001]),
+            sigma_north=np.array([0.001]),
+            sigma_up=np.array([0.001]),
         )
 
         G = greens_mod.matrix(fault, gnss)

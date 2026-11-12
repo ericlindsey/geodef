@@ -37,14 +37,14 @@ Three-component (E, N, U) or horizontal-only (E, N) displacement/velocity data.
 from geodef import data
 
 # Three-component observations; scalar uncertainties broadcast over stations.
-gnss = data.gnss(
+gnss = GNSS(
     lon=lon, lat=lat,
     east=east, north=north, up=up,
     sigma_east=0.001, sigma_north=0.001, sigma_up=0.002,
     name="campaign_gnss", station_names=station_names,
 )
 
-horizontal = data.horizontal_gnss(
+horizontal = GNSS(
     lon=lon, lat=lat,
     east=east, north=north,
     sigma_east=sigma_east, sigma_north=sigma_north,
@@ -54,7 +54,7 @@ horizontal = data.horizontal_gnss(
 For a velocity field, declare the semantics rather than relying on context:
 
 ```python
-velocity = data.horizontal_gnss(
+velocity = GNSS(
     lon=lon, lat=lat,
     east=east, north=north,
     sigma_east=sigma_east, sigma_north=sigma_north,
@@ -74,8 +74,8 @@ The lower-level constructors and text readers remain available:
 from geodef import GNSS
 
 # Optional per-station East-North correlation (scalar or per-station array)
-gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu,
-            se=se, sn=sn, su=su, rho=0.4)
+gnss = GNSS(lon=lon, lat=lat, east=ve, north=vn, up=vu,
+            sigma_east=se, sigma_north=sn, sigma_up=su, rho=0.4)
 
 # Load from file (columns: lon lat uE uN uZ sigE sigN sigZ)
 gnss = GNSS.load("stations.dat")
@@ -104,7 +104,7 @@ Line-of-sight displacement with per-pixel look vectors.
 ```python
 from geodef import data
 
-insar = data.insar(
+insar = InSAR(
     lon=lon, lat=lat, los=los, sigma=sigma,
     look_e=look_e, look_n=look_n, look_u=look_u,
     name="ascending",
@@ -133,7 +133,7 @@ Single-component vertical displacement (coral uplift, tide gauges, etc.).
 ```python
 from geodef import data
 
-vert = data.vertical(
+vert = Vertical(
     lon=lon, lat=lat,
     displacement=displacement, sigma=sigma,
     name="leveling", station_names=benchmark_names,
@@ -162,7 +162,7 @@ All data classes share:
 | `data.project(ue, un, uz)` | Maps displacement components to observation space |
 | `data.n_stations` | Number of physical observation locations |
 | `data.n_obs` | Length of the observation vector |
-| `data.dataset_name` | Stable dataset identifier used in joint results and plots |
+| `data.name` | Stable dataset identifier used in joint results and plots |
 | `data.station_names` | Optional per-station labels, shape `(n_stations,)` |
 | `data.quantity` | `"displacement"` or `"velocity"` |
 | `data.units` | Declared observation and uncertainty units |
@@ -208,8 +208,8 @@ When present, names round-trip through `save()`/`load()` as a leading
 `# names:` comment line, so the numeric data block stays unchanged:
 
 ```python
-gnss = GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su,
-            name=["P001", "P002", "P003"], dataset_name="campaign_gnss")
+gnss = GNSS(lon=lon, lat=lat, east=ve, north=vn, up=vu, sigma_east=se, sigma_north=sn, sigma_up=su,
+            name=["P001", "P002", "P003"], name="campaign_gnss")
 gnss.save("stations.dat")
 GNSS.load("stations.dat").station_names  # array(['P001', 'P002', 'P003'])
 ```

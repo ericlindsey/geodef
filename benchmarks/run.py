@@ -42,10 +42,12 @@ def build_problem(n_length: int, n_width: int, n_stations: int, seed: int = 0):
     lon = rng.uniform(-1.0, 1.0, n_stations)
     true = np.zeros(2 * fault.n_patches)
     true[fault.n_patches :] = 1.0
-    ue, un, uz = fault.displacement(lat, lon, true[: fault.n_patches], 1.0)
+    ue, un, uz = fault.displacement(
+        lat=lat, lon=lon, strike_slip=true[: fault.n_patches], dip_slip=1.0
+    )
     sigma = 0.002
     noise = rng.normal(0.0, sigma, (3, n_stations))
-    gnss = geodef.data.gnss(
+    gnss = geodef.GNSS(
         lon=lon,
         lat=lat,
         east=ue + noise[0],
@@ -82,9 +84,7 @@ def measure(scale: str, spec: dict) -> dict:
         },
         "stages": {},
     }
-    record["stages"]["greens_assembly_cold"] = timed(
-        lambda: greens.matrix(fault, gnss)
-    )
+    record["stages"]["greens_assembly_cold"] = timed(lambda: greens.matrix(fault, gnss))
     cache.enable()
     greens.matrix(fault, gnss)  # populate the disk cache
     record["stages"]["greens_assembly_cached"] = timed(

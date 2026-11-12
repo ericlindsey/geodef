@@ -63,16 +63,18 @@ def gnss(fault_4x3, obs_points):
     n = len(lat)
     slip_ss = np.zeros(fault_4x3.n_patches)
     slip_ds = np.ones(fault_4x3.n_patches) * 2.0
-    ue, un, uz = fault_4x3.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault_4x3.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=ue,
-        vn=un,
-        vu=uz,
-        se=np.full(n, 0.001),
-        sn=np.full(n, 0.001),
-        su=np.full(n, 0.001),
+        east=ue,
+        north=un,
+        up=uz,
+        sigma_east=np.full(n, 0.001),
+        sigma_north=np.full(n, 0.001),
+        sigma_up=np.full(n, 0.001),
     )
 
 
@@ -82,7 +84,9 @@ def insar(fault_4x3, obs_points):
     n = len(lat)
     slip_ss = np.zeros(fault_4x3.n_patches)
     slip_ds = np.ones(fault_4x3.n_patches) * 2.0
-    ue, un, uz = fault_4x3.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault_4x3.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     look_e = np.full(n, -0.38)
     look_n = np.full(n, 0.09)
     look_u = np.full(n, 0.92)

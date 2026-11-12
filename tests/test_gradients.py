@@ -283,13 +283,13 @@ class TestRectGreens:
         G_ref = greens.displacement_greens(
             lat_obs,
             lon_obs,
-            fault._lat,
-            fault._lon,
-            fault._depth,
+            fault.lat,
+            fault.lon,
+            fault.depth,
             fault.strike * np.ones(fault.n_patches),
             fault.dip * np.ones(fault.n_patches),
-            fault._length,
-            fault._width,
+            fault.length,
+            fault.width,
         )
         G = gradients.rect_greens(
             theta, e_obs, n_obs, n_length=n_length, n_width=n_width

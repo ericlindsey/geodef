@@ -68,57 +68,41 @@ class TestConstruction:
     def test_mismatched_lengths_raises(self):
         with pytest.raises(ValueError, match="same length"):
             Fault(
-                np.array([0.0, 1.0]),
-                np.array([100.0]),  # wrong length
-                np.array([10e3, 10e3]),
-                np.array([0.0, 0.0]),
-                np.array([90.0, 90.0]),
-                np.array([10e3, 10e3]),
-                np.array([10e3, 10e3]),
+                lat=np.array([0.0, 1.0]),
+                lon=np.array([100.0]),  # wrong length
+                depth=np.array([10e3, 10e3]),
+                strike=np.array([0.0, 0.0]),
+                dip=np.array([90.0, 90.0]),
+                length=np.array([10e3, 10e3]),
+                width=np.array([10e3, 10e3]),
             )
 
-    def test_invalid_engine_raises(self):
-        with pytest.raises(ValueError, match="engine"):
-            Fault(
-                np.array([0.0]),
-                np.array([100.0]),
-                np.array([10e3]),
-                np.array([0.0]),
-                np.array([90.0]),
-                np.array([10e3]),
-                np.array([10e3]),
-                engine="bogus",
-            )
-
-    def test_okada_requires_length_width(self):
+    def test_requires_length_width_or_vertices(self):
         with pytest.raises(ValueError, match="length and width"):
             Fault(
-                np.array([0.0]),
-                np.array([100.0]),
-                np.array([10e3]),
-                np.array([0.0]),
-                np.array([90.0]),
-                None,
-                None,
-                engine="okada",
+                lat=np.array([0.0]),
+                lon=np.array([100.0]),
+                depth=np.array([10e3]),
+                strike=np.array([0.0]),
+                dip=np.array([90.0]),
             )
 
     def test_grid_shape_mismatch_raises(self):
         with pytest.raises(ValueError, match="grid_shape"):
             Fault(
-                np.array([0.0, 1.0]),
-                np.array([100.0, 100.0]),
-                np.array([10e3, 10e3]),
-                np.array([0.0, 0.0]),
-                np.array([90.0, 90.0]),
-                np.array([10e3, 10e3]),
-                np.array([10e3, 10e3]),
+                lat=np.array([0.0, 1.0]),
+                lon=np.array([100.0, 100.0]),
+                depth=np.array([10e3, 10e3]),
+                strike=np.array([0.0, 0.0]),
+                dip=np.array([90.0, 90.0]),
+                length=np.array([10e3, 10e3]),
+                width=np.array([10e3, 10e3]),
                 grid_shape=(3, 3),  # 9 != 2
             )
 
     def test_arrays_are_read_only(self, simple_fault):
         with pytest.raises(ValueError):
-            simple_fault._lat[0] = 999.0
+            simple_fault.lat[0] = 999.0
 
     def test_direct_fault_has_explicit_frame(self, single_patch):
         assert single_patch.frame.projection == "wgs84-enu"
@@ -205,17 +189,17 @@ class TestPlanar:
 
     def test_centroid_near_input(self, simple_fault):
         """Mean of patch centers should be close to the input center."""
-        mean_lat = np.mean(simple_fault._lat)
-        mean_lon = np.mean(simple_fault._lon)
-        mean_depth = np.mean(simple_fault._depth)
+        mean_lat = np.mean(simple_fault.lat)
+        mean_lon = np.mean(simple_fault.lon)
+        mean_depth = np.mean(simple_fault.depth)
         assert abs(mean_lat - 0.0) < 0.5
         assert abs(mean_lon - 100.0) < 0.5
         assert abs(mean_depth - 15e3) < 1e3
 
     def test_uniform_patch_sizes(self, simple_fault):
         """All patches should have the same L and W."""
-        np.testing.assert_allclose(simple_fault._length, 10e3)
-        np.testing.assert_allclose(simple_fault._width, 10e3)
+        np.testing.assert_allclose(simple_fault.length, 10e3)
+        np.testing.assert_allclose(simple_fault.width, 10e3)
 
     def test_uniform_strike_dip(self, simple_fault):
         np.testing.assert_allclose(simple_fault.strike, 320.0)
@@ -237,7 +221,7 @@ class TestPlanar:
         # Patches span from shallowest to deepest across the dip direction
         patch_W = 50e3 / 5
         # Range should be (nW - 1) * patchW * sin(dip)
-        actual_range = fault._depth.max() - fault._depth.min()
+        actual_range = fault.depth.max() - fault.depth.min()
         expected = 4 * patch_W * np.sin(np.radians(45.0))
         np.testing.assert_allclose(actual_range, expected, rtol=0.01)
 
@@ -283,19 +267,21 @@ class TestForwardModeling:
     def test_greens_matrix_shape(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
-        G = simple_fault.greens_matrix(obs_lat, obs_lon)
+        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon)
         assert G.shape == (6, 100)  # 3*2 x 2*50
 
     def test_strain_greens_shape(self, simple_fault):
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
-        G = simple_fault.greens_matrix(obs_lat, obs_lon, kind="strain")
+        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="strain")
         assert G.shape == (4, 100)  # 4*1 x 2*50
 
     def test_displacement_returns_three_arrays(self, single_patch):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
-        ue, un, uz = single_patch.displacement(obs_lat, obs_lon, slip_strike=1.0)
+        ue, un, uz = single_patch.displacement(
+            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+        )
         assert ue.shape == (1,)
         assert un.shape == (1,)
         assert uz.shape == (1,)
@@ -304,7 +290,7 @@ class TestForwardModeling:
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
         ue, un, uz = simple_fault.displacement(
-            obs_lat, obs_lon, slip_strike=0.0, slip_dip=0.0
+            lat=obs_lat, lon=obs_lon, strike_slip=0.0, dip_slip=0.0
         )
         np.testing.assert_allclose(ue, 0.0, atol=1e-15)
         np.testing.assert_allclose(un, 0.0, atol=1e-15)
@@ -314,8 +300,12 @@ class TestForwardModeling:
         """Doubling slip should double displacement."""
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
-        ue1, un1, uz1 = single_patch.displacement(obs_lat, obs_lon, slip_strike=1.0)
-        ue2, un2, uz2 = single_patch.displacement(obs_lat, obs_lon, slip_strike=2.0)
+        ue1, un1, uz1 = single_patch.displacement(
+            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+        )
+        ue2, un2, uz2 = single_patch.displacement(
+            lat=obs_lat, lon=obs_lon, strike_slip=2.0
+        )
         np.testing.assert_allclose(ue2, 2.0 * ue1, rtol=1e-10)
         np.testing.assert_allclose(un2, 2.0 * un1, rtol=1e-10)
         np.testing.assert_allclose(uz2, 2.0 * uz1, rtol=1e-10)
@@ -325,14 +315,16 @@ class TestForwardModeling:
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
         slip = np.ones(50)
-        ue, un, uz = simple_fault.displacement(obs_lat, obs_lon, slip_strike=slip)
+        ue, un, uz = simple_fault.displacement(
+            lat=obs_lat, lon=obs_lon, strike_slip=slip
+        )
         assert np.any(np.abs(ue) > 0)
 
     def test_invalid_kind_raises(self, simple_fault):
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
         with pytest.raises(ValueError, match="Unknown kind"):
-            simple_fault.greens_matrix(obs_lat, obs_lon, kind="bogus")
+            simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="bogus")
 
 
 # ======================================================================
@@ -402,13 +394,13 @@ class TestLaplacian:
         lats = np.linspace(0, 1, n)
         lons = np.full(n, 100.0)
         fault = Fault(
-            lats,
-            lons,
-            np.linspace(5e3, 30e3, n),
-            np.zeros(n),
-            np.full(n, 45.0),
-            np.full(n, 10e3),
-            np.full(n, 10e3),
+            lat=lats,
+            lon=lons,
+            depth=np.linspace(5e3, 30e3, n),
+            strike=np.zeros(n),
+            dip=np.full(n, 45.0),
+            length=np.full(n, 10e3),
+            width=np.full(n, 10e3),
             grid_shape=None,
         )
         L = fault.laplacian
@@ -418,13 +410,13 @@ class TestLaplacian:
     def test_laplacian_unstructured_too_few_patches_raises(self):
         """Unstructured fault with fewer patches than k should raise."""
         fault = Fault(
-            np.array([0.0, 1.0]),
-            np.array([100.0, 100.0]),
-            np.array([10e3, 10e3]),
-            np.array([0.0, 0.0]),
-            np.array([90.0, 90.0]),
-            np.array([10e3, 10e3]),
-            np.array([10e3, 10e3]),
+            lat=np.array([0.0, 1.0]),
+            lon=np.array([100.0, 100.0]),
+            depth=np.array([10e3, 10e3]),
+            strike=np.array([0.0, 0.0]),
+            dip=np.array([90.0, 90.0]),
+            length=np.array([10e3, 10e3]),
+            width=np.array([10e3, 10e3]),
             grid_shape=None,
         )
         with pytest.raises(ValueError, match="k"):
@@ -447,13 +439,13 @@ class TestPatchIndex:
 
     def test_patch_index_no_grid_raises(self):
         fault = Fault(
-            np.array([0.0]),
-            np.array([100.0]),
-            np.array([10e3]),
-            np.array([0.0]),
-            np.array([90.0]),
-            np.array([10e3]),
-            np.array([10e3]),
+            lat=np.array([0.0]),
+            lon=np.array([100.0]),
+            depth=np.array([10e3]),
+            strike=np.array([0.0]),
+            dip=np.array([90.0]),
+            length=np.array([10e3]),
+            width=np.array([10e3]),
             grid_shape=None,
         )
         with pytest.raises(ValueError, match="structured grid"):
@@ -478,13 +470,13 @@ class TestPatchIndex:
 
     def test_reshape_patches_rejects_unstructured_fault(self):
         fault = Fault(
-            np.array([0.0]),
-            np.array([100.0]),
-            np.array([10e3]),
-            np.array([0.0]),
-            np.array([90.0]),
-            np.array([10e3]),
-            np.array([10e3]),
+            lat=np.array([0.0]),
+            lon=np.array([100.0]),
+            depth=np.array([10e3]),
+            strike=np.array([0.0]),
+            dip=np.array([90.0]),
+            length=np.array([10e3]),
+            width=np.array([10e3]),
             grid_shape=None,
         )
         with pytest.raises(ValueError, match="structured grid"):
@@ -506,13 +498,13 @@ class TestFileIO:
         simple_fault.save(fname)
         loaded = Fault.load(fname, format="center")
 
-        np.testing.assert_allclose(loaded._lat, simple_fault._lat, atol=1e-4)
-        np.testing.assert_allclose(loaded._lon, simple_fault._lon, atol=1e-4)
-        np.testing.assert_allclose(loaded._depth, simple_fault._depth, atol=1e-1)
+        np.testing.assert_allclose(loaded.lat, simple_fault.lat, atol=1e-4)
+        np.testing.assert_allclose(loaded.lon, simple_fault.lon, atol=1e-4)
+        np.testing.assert_allclose(loaded.depth, simple_fault.depth, atol=1e-1)
         np.testing.assert_allclose(loaded.strike, simple_fault.strike, atol=1e-4)
         np.testing.assert_allclose(loaded.dip, simple_fault.dip, atol=1e-4)
-        np.testing.assert_allclose(loaded._length, simple_fault._length, atol=1e-1)
-        np.testing.assert_allclose(loaded._width, simple_fault._width, atol=1e-1)
+        np.testing.assert_allclose(loaded.length, simple_fault.length, atol=1e-1)
+        np.testing.assert_allclose(loaded.width, simple_fault.width, atol=1e-1)
         assert loaded.n_patches == simple_fault.n_patches
 
         Path(fname).unlink()
@@ -527,36 +519,48 @@ class TestFileIO:
 # ======================================================================
 
 
-class TestVertices:
-    """Test vertices_2d and vertices_3d."""
+class TestCorners:
+    """Test the patch-corner accessors ``corners`` and ``corners_geo``."""
 
-    def test_vertices_3d_shape(self, simple_fault):
-        v = simple_fault.vertices_3d
-        assert v.shape == (50, 4, 3)
+    def test_shapes(self, simple_fault):
+        assert simple_fault.corners.shape == (50, 4, 3)
+        assert simple_fault.corners_geo.shape == (50, 4, 3)
 
-    def test_vertices_2d_shape(self, simple_fault):
-        v = simple_fault.vertices_2d
-        assert v.shape == (50, 4, 2)
-
-    def test_vertices_2d_is_subset_of_3d(self, simple_fault):
-        v2 = simple_fault.vertices_2d
-        v3 = simple_fault.vertices_3d
-        np.testing.assert_allclose(v2, v3[:, :, :2])
-
-    def test_single_patch_vertices_surround_center(self, single_patch):
-        """Vertices should bracket the center coordinates."""
-        v = single_patch.vertices_3d  # (1, 4, 3) = [lon, lat, depth_km]
-        center_lon = single_patch._lon[0]
-        center_lat = single_patch._lat[0]
-        # For a vertical (dip=90) fault, updip width projection is zero
-        # so vertices only extend along strike
-        lons = v[0, :, 0]
-        lats = v[0, :, 1]
-        assert np.min(lons) <= center_lon <= np.max(lons) or np.allclose(
-            lons, center_lon, atol=0.01
+    def test_corners_average_to_the_patch_center(self, simple_fault):
+        np.testing.assert_allclose(
+            simple_fault.corners.mean(axis=1), simple_fault.centers_local, atol=1e-6
         )
-        assert np.min(lats) <= center_lat <= np.max(lats) or np.allclose(
-            lats, center_lat, atol=0.01
+
+    def test_first_two_corners_are_the_shallow_edge(self):
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=20e3, strike=30.0, dip=40.0,
+            length=20e3, width=10e3,
+        )  # fmt: skip
+        depth = fault.corners_geo[0, :, 2]
+        half_height = 5e3 * np.sin(np.radians(40.0))
+        np.testing.assert_allclose(depth[:2], 20e3 - half_height)
+        np.testing.assert_allclose(depth[2:], 20e3 + half_height)
+
+    def test_fault_dips_to_the_right_of_strike(self):
+        """Strike north, so the deep edge lies to the east of the shallow edge."""
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=20e3, strike=0.0, dip=30.0,
+            length=20e3, width=10e3,
+        )  # fmt: skip
+        east = fault.corners[0, :, 0]
+        assert np.all(east[2:] > east[:2].max())
+
+    def test_corners_geo_brackets_the_center(self, single_patch):
+        corners = single_patch.corners_geo[0]
+        assert corners[:, 0].min() <= single_patch.lon[0] <= corners[:, 0].max()
+        assert corners[:, 1].min() <= single_patch.lat[0] <= corners[:, 1].max()
+
+    def test_triangular_corners_are_the_vertices(self):
+        vertices = np.array([[[0.0, 0.0, -1e3], [1e3, 0.0, -1e3], [0.0, 1e3, -2e3]]])
+        fault = Fault.from_triangles(vertices)
+        np.testing.assert_array_equal(fault.corners, vertices)
+        np.testing.assert_allclose(
+            fault.corners_geo[0, :, 2], [1e3, 1e3, 2e3], atol=1.0
         )
 
 
@@ -596,7 +600,7 @@ class TestPlanarFromCorner:
             n_width=3,
         )
         # Shallowest patches (first row, j=0)
-        min_depth = np.min(f._depth)
+        min_depth = np.min(f.depth)
         # Should be close to corner_depth + half_patchW * sin(dip)
         patch_W = 30e3 / 3
         expected_min = 1000.0 + 0.5 * patch_W * np.sin(np.radians(45.0))
@@ -669,7 +673,7 @@ class TestCrossValidation:
                 expected_depths.append(depth0 - u_offset)
 
         np.testing.assert_allclose(
-            fault._depth,
+            fault.depth,
             expected_depths,
             rtol=1e-10,
         )
@@ -773,7 +777,7 @@ class TestSegIO:
         assert f.n_patches > 0
         np.testing.assert_allclose(f.dip, 10.0)
         # All patches should have the same width (qW=1)
-        np.testing.assert_allclose(f._width, f._width[0])
+        np.testing.assert_allclose(f.width, f.width[0])
 
     @requires_stress_shadows
     def test_load_seg_with_ref_coords(self):
@@ -782,8 +786,8 @@ class TestSegIO:
         f0 = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=0.0)
         f1 = Fault.load(fname, format="seg", ref_lat=10.0, ref_lon=100.0)
         # Centers should differ by roughly the ref offset
-        assert abs(np.mean(f1._lat) - np.mean(f0._lat)) > 5.0
-        assert abs(np.mean(f1._lon) - np.mean(f0._lon)) > 50.0
+        assert abs(np.mean(f1.lat) - np.mean(f0.lat)) > 5.0
+        assert abs(np.mean(f1.lon) - np.mean(f0.lon)) > 50.0
 
     def test_seg_save_load_roundtrip(self):
         """Save a uniform fault as .seg and reload it."""
@@ -807,13 +811,13 @@ class TestSegIO:
         assert loaded.n_patches == fault.n_patches
         np.testing.assert_allclose(loaded.strike, fault.strike, atol=1e-4)
         np.testing.assert_allclose(loaded.dip, fault.dip, atol=1e-4)
-        np.testing.assert_allclose(loaded._length, fault._length, atol=1.0)
-        np.testing.assert_allclose(loaded._width, fault._width, atol=1.0)
+        np.testing.assert_allclose(loaded.length, fault.length, atol=1.0)
+        np.testing.assert_allclose(loaded.width, fault.width, atol=1.0)
         # Depths match (flt2flt orders shallow-to-deep, planar() deep-to-shallow,
         # so compare sorted values)
         np.testing.assert_allclose(
-            np.sort(loaded._depth),
-            np.sort(fault._depth),
+            np.sort(loaded.depth),
+            np.sort(fault.depth),
             rtol=0.01,
         )
 
@@ -826,8 +830,8 @@ class TestSegIO:
         f = Fault.load(fname, format="seg")
         nL = f.grid_shape[0]
         # First row (j=0) vs last row (j=nW-1)
-        first_row_depth = np.mean(f._depth[:nL])
-        last_row_depth = np.mean(f._depth[-nL:])
+        first_row_depth = np.mean(f.depth[:nL])
+        last_row_depth = np.mean(f.depth[-nL:])
         assert first_row_depth != last_row_depth
 
     def test_seg_geometric_growth_load(self):
@@ -847,7 +851,7 @@ class TestSegIO:
         f = Fault.load(fname, format="seg")
         assert f.n_patches > 0
         # Should have non-uniform widths
-        unique_widths = np.unique(f._width)
+        unique_widths = np.unique(f.width)
         assert len(unique_widths) > 1
         # Widths should sum to total
         np.testing.assert_allclose(np.sum(unique_widths), 30e3)
@@ -892,9 +896,9 @@ class TestFaultSaveNed:
         assert loaded.engine == "tri"
         assert loaded.n_patches == fault.n_patches
         # Round-trip uses flat-earth approximation; ~300 m tolerance (~0.003 deg)
-        np.testing.assert_allclose(loaded._lat, fault._lat, atol=3e-4)
-        np.testing.assert_allclose(loaded._lon, fault._lon, atol=3e-4)
-        np.testing.assert_allclose(loaded._depth, fault._depth, atol=10.0)
+        np.testing.assert_allclose(loaded.lat, fault.lat, atol=3e-4)
+        np.testing.assert_allclose(loaded.lon, fault.lon, atol=3e-4)
+        np.testing.assert_allclose(loaded.depth, fault.depth, atol=10.0)
 
     def test_auto_format_tri_picks_ned(self, tmp_path):
         """format=None on a tri fault should default to ned."""

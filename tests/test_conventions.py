@@ -73,12 +73,12 @@ def _gnss(lat: np.ndarray, lon: np.ndarray, d: np.ndarray) -> GNSS:
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=d[:, 0],
-        vn=d[:, 1],
-        vu=d[:, 2],
-        se=s,
-        sn=s,
-        su=s,
+        east=d[:, 0],
+        north=d[:, 1],
+        up=d[:, 2],
+        sigma_east=s,
+        sigma_north=s,
+        sigma_up=s,
     )
 
 
