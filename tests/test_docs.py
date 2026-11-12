@@ -104,3 +104,29 @@ def test_documented_top_level_names_exist() -> None:
         )
     missing = sorted(name for name in referenced if not hasattr(geodef, name))
     assert not missing, f"docs reference nonexistent geodef.<name>: {missing}"
+
+
+def test_quickstart_example_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The quickstart is the first code a student runs; it must work as written."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    monkeypatch.setattr(plt, "show", lambda: None)
+    quickstart = _python_blocks((DOCS_DIR / "quickstart.md").read_text())[0]
+    namespace: dict[str, object] = {}
+    exec(compile(quickstart, "quickstart.md", "exec"), namespace)  # noqa: S102
+
+    result = namespace["result"]
+    true_slip = namespace["true_slip"]
+    assert 0.5 < result.reduced_chi2 < 2.0
+    assert abs(result.dip_slip.max() - true_slip.max()) < 0.5
+    plt.close("all")
+
+
+def test_readme_quickstart_matches_the_docs() -> None:
+    """The README shows the same quickstart as docs/quickstart.md."""
+    quickstart = _python_blocks((DOCS_DIR / "quickstart.md").read_text())[0]
+    readme = (Path(__file__).parent.parent / "README.md").read_text()
+    assert quickstart in readme

@@ -92,23 +92,30 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 
 ---
 
-## Properties
+## Attributes and properties
 
-| Property | Shape | Description |
-|----------|-------|-------------|
+| Name | Shape | Description |
+|------|-------|-------------|
 | `n_patches` | scalar | Number of patches |
-| `engine` | `str` | `"okada"` or `"tri"` |
-| `frame` | `LocalFrame` | Frame defining every local-coordinate view and triangular vertex |
+| `lon`, `lat` | `(N,)` | Patch center coordinates in degrees |
+| `depth` | `(N,)` | Patch center depth in meters, positive down |
+| `strike`, `dip` | `(N,)` | Degrees clockwise from north; degrees from horizontal |
+| `length`, `width` | `(N,)` or `None` | Rectangular patch dimensions in meters (`None` for triangles) |
+| `vertices` | `(N, 3, 3)` or `None` | Triangle corners in local `[east, north, up]` meters (`None` for rectangles) |
+| `engine` | `str` | `"okada"` (rectangles) or `"tri"` (triangles) |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
-| `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |
-| `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` (lazy, cached) |
-| `strike` | `(N,)` | Patch strike angles in degrees clockwise from north |
-| `dip` | `(N,)` | Patch dip angles in degrees from horizontal |
+| `medium` | `ElasticMedium` | Shear modulus and Poisson's ratio |
+| `frame` | `LocalFrame` | Frame defining every local-coordinate view |
+| `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` |
+| `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` |
+| `corners` | `(N, 4 or 3, 3)` | Patch corners as `[east_m, north_m, up_m]`; rectangles run top-left, top-right, bottom-right, bottom-left with "top" the shallow edge |
+| `corners_geo` | `(N, 4 or 3, 3)` | Patch corners as `[lon, lat, depth_m]` |
 | `areas` | `(N,)` | Patch areas in m² |
-| `laplacian` | `(N, N)` | Finite-difference (structured) or KNN Laplacian (unstructured); lazy, cached |
-| `vertices_2d` | `(N, 4, 2)` | Rectangular patch corners as `[lon, lat]` |
-| `vertices_3d` | `(N, 4, 3)` | Rectangular patch corners as `[lon, lat, depth_km]` |
-| `patch_outlines` | `(N, 5, 2)` | Closed rectangular patch outlines as `[lon, lat]` |
+| `laplacian` | `(N, N)` | Finite-difference (structured) or nearest-neighbor (unstructured) smoothing operator |
+
+Patches of a planar grid are stored row by row: row 0 is the **shallowest**
+row and each following row is one step down dip, to the right of the strike
+direction. Within a row, patches advance along strike.
 
 All geometry arrays are read-only after construction.
 
@@ -120,9 +127,11 @@ position; incompatible frames are never silently substituted.
 
 ## Forward modeling
 
-### `fault.displacement(lat=obs_lat, lon=obs_lon, strike_slip=slip_strike, dip_slip=0.0)`
+### `fault.displacement(lon=, lat=, strike_slip=0.0, dip_slip=0.0)`
 
-Compute surface displacements from strike-slip and dip-slip scalars or arrays.
+Compute surface displacements from strike-slip and dip-slip scalars or
+per-patch arrays. Coordinates are keyword-only and may have any shape; the
+three returned arrays have that same shape.
 
 ```python
 strike_slip = np.zeros(fault.n_patches)
@@ -134,7 +143,7 @@ east, north, up = fault.displacement(
 )
 ```
 
-### `fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="displacement", depth=None)`
+### `fault.greens_matrix(lon=, lat=, kind="displacement", depth=None)`
 
 Build the raw Green's matrix.
 
@@ -145,7 +154,7 @@ G = fault.greens_matrix(lon=obs_lon, lat=obs_lat)
 ```
 
 `kind='strain'` returns shape `(4*n_obs, 2*N)` for rectangular faults and
-`(6*n_obs, 2*N)` for triangular faults. Pass `obs_depth` in meters, positive
+`(6*n_obs, 2*N)` for triangular faults. Pass `depth` in meters, positive
 down, for internal strain points; otherwise observations are at the surface.
 
 ---

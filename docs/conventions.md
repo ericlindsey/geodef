@@ -144,7 +144,7 @@ kinematic superposition, not a friction or earthquake-timing law.
 
 | Quantity | Sign |
 |---|---|
-| `depth`, `obs_depth`, fault files | positive down (m) |
+| `depth`, fault files | positive down (m) |
 | ENU `up` / `z` coordinates, `Mesh.vertices_enu` | positive up (m) |
 | `Fault.planar(depth=...)` | centroid depth, positive down |
 

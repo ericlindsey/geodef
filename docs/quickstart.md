@@ -2,8 +2,7 @@
 
 This complete example creates a small thrust fault, generates reproducible
 synthetic GNSS observations, recovers dip slip, and compares observations with
-predictions. It uses the base install and avoids manual slip packing and data
-slicing.
+predictions. It uses the base install.
 
 ```python
 import matplotlib.pyplot as plt
@@ -11,73 +10,38 @@ import numpy as np
 
 import geodef
 
-rng = np.random.default_rng(0)
-
-# Geometry is in meters and degrees; depth is positive down.
+# A thrust fault divided into 6 x 3 patches. Lengths are in meters, angles in
+# degrees, and depth is the depth of the fault center (positive down).
 fault = geodef.Fault.planar(
-    lat=34.0,
-    lon=-118.0,
-    depth=8_000.0,
-    strike=90.0,
-    dip=30.0,
-    length=24_000.0,
-    width=12_000.0,
-    n_length=6,
-    n_width=3,
+    lon=-118.0, lat=34.0, depth=8_000.0, strike=90.0, dip=30.0,
+    length=24_000.0, width=12_000.0, n_length=6, n_width=3,
 )
 
-# A compact GNSS network around the fault.
+# A smooth patch of thrust slip (meters), one value per fault patch.
+east_km, north_km, _ = fault.centers_local.T / 1e3
+true_slip = 1.2 * np.exp(-((east_km / 7) ** 2) - ((north_km + 2) / 5) ** 2)
+
+# The noisy GNSS displacements that slip would produce at a 7 x 5 network.
 station_lon, station_lat = np.meshgrid(
-    np.linspace(-118.18, -117.82, 7),
-    np.linspace(33.88, 34.12, 5),
+    np.linspace(-118.18, -117.82, 7), np.linspace(33.88, 34.12, 5)
 )
-station_lon = station_lon.ravel()
-station_lat = station_lat.ravel()
-
-# A smooth synthetic dip-slip distribution and its surface displacement.
-centers = fault.centers_local
-true_dip_slip = 1.2 * np.exp(
-    -(centers[:, 0] / 7_000.0) ** 2
-    - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
-)
-east, north, up = fault.displacement(
-    lon=station_lon, lat=station_lat,
-    strike_slip=0.0,
-    dip_slip=true_dip_slip,
+gnss = geodef.GNSS.synthetic(
+    fault, lon=station_lon.ravel(), lat=station_lat.ravel(),
+    dip_slip=true_slip, sigma=0.004, sigma_up=0.008, rng=0,
 )
 
-# Add seeded measurement noise and declare the same uncertainties to GeoDef.
-sigma_horizontal = 0.004
-sigma_vertical = 0.008
-gnss = geodef.GNSS(
-    lon=station_lon,
-    lat=station_lat,
-    east=east + rng.normal(0.0, sigma_horizontal, east.size),
-    north=north + rng.normal(0.0, sigma_horizontal, north.size),
-    up=up + rng.normal(0.0, sigma_vertical, up.size),
-    sigma_east=sigma_horizontal,
-    sigma_north=sigma_horizontal,
-    sigma_up=sigma_vertical,
-    name="synthetic_gnss",
-)
-
-# Solve one dip-slip amplitude per patch with smoothness and non-negativity.
+# Recover the slip: one dip-slip value per patch, smooth and non-negative.
 result = geodef.solve(
-    fault,
-    datasets=gnss,
-    components="dip",
-    regularization="laplacian",
-    regularization_strength=1.0,
+    fault, gnss, components="dip",
+    regularization="laplacian", regularization_strength=1.0,
     bounds=(0.0, None),
 )
+print(result.summary())
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
 geodef.plot.slip(
-    fault,
-    result.dip_slip,
-    ax=axes[0],
-    title="Recovered dip slip",
-    colorbar_label="Slip (m)",
+    fault, result.dip_slip, ax=axes[0],
+    title="Recovered dip slip", colorbar_label="Slip (m)",
 )
 geodef.plot.prediction(result, ax=axes[1])
 plt.show()
@@ -94,8 +58,8 @@ geometry or regularization assumption is correct.
 | Step | Scientific role | Learn it in |
 |---|---|---|
 | `Fault.planar(...)` | Declare source geometry and discretization | Tutorials 01–02 |
-| `fault.displacement(...)` | Evaluate the elastic forward model | Tutorial 01 |
-| `GNSS(...)` | Pair observations with uncertainty and metadata | Tutorials 03 and 05 |
+| `GNSS.synthetic(...)` | Evaluate the elastic forward model and add noise | Tutorials 01 and 04 |
+| `GNSS(...)` | Pair real observations with uncertainty and metadata | Tutorials 03 and 05 |
 | `solve(...)` | Estimate slip from the observations | Tutorials 03–04 |
 | `regularization="laplacian"` | Prefer spatially smooth slip | Tutorial 04 |
 | `bounds=(0, None)` | Exclude opposite-sense slip | Tutorial 07 |

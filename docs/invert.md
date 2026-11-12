@@ -38,21 +38,21 @@ result = geodef.solve(fault, [gnss, insar])
 
 # Laplacian smoothing, non-negative
 result = geodef.solve(fault, [gnss, insar],
-                             regularization='laplacian',
-                             regularization_strength=1e3,
-                             bounds=(0, None))
+                      regularization='laplacian',
+                      regularization_strength=1e3,
+                      bounds=(0, None))
 
 # One-parameter slip bases
 result = geodef.solve(fault, gnss, components='rake', rake=90.0)
 result = geodef.solve(fault, gnss,
-                             components='azimuth', slip_azimuth=15.0)
+                      components='azimuth', slip_azimuth=15.0)
 
 # Two plate-motion coordinates, suitable for variable-orientation meshes
 plate_rake = geodef.slip.plate_rake_from_euler(
     fault, (pole_lat, pole_lon, rate)
 )
 result = geodef.solve(fault, gnss,
-                             components='plate', plate_rake=plate_rake)
+                      components='plate', plate_rake=plate_rake)
 ```
 
 ### Key parameters
@@ -140,7 +140,7 @@ through `result.strike_slip` and `result.dip_slip`.
 Use the named physical arrays for interpretation and plotting. Use
 `slip_vector` when assembling linear algebra in the solved basis.
 
-For ordinary assessment, use functions rather than slicing stacked rows:
+For ordinary assessment, use the result's methods rather than slicing stacked rows:
 
 ```python
 predictions = result.prediction()  # {dataset_name: array}
@@ -159,9 +159,17 @@ The mappings always follow solve order, including for one dataset. The stacked
 
 ```python
 result.save("result.npz")
-result.save_table("result.txt", fault)
-result = geodef.InversionResult.load("result.npz")
+result.save_table("result.txt")
+loaded = geodef.InversionResult.load("result.npz")
+loaded = geodef.InversionResult.load("result.npz", fault=fault, datasets=[gnss, insar])
 ```
+
+A result remembers the fault and datasets it was solved on (`result.fault`,
+`result.datasets`), which is what lets `covariance()`, `uncertainty()`, and
+`resolution()` take no arguments. A result file stores the solution but not
+the problem, so pass `fault=` and `datasets=` to `load` (or call
+`loaded.attach(fault, datasets)`) before using those methods on a loaded
+result.
 
 `result.save(path)` writes `result.npz` and a readable `result.manifest.json`. The
 same versioned manifest is embedded in the NumPy archive, so the `.npz` remains
@@ -175,33 +183,26 @@ marked with a warning; saving the loaded result writes the current schema.
 
 ## `LinearSystem`
 
-Use `LinearSystem` directly when reusing the same fault and datasets across
-multiple analyses. It precomputes and caches the projected Green's matrix,
-weights, and optional smoothing matrix.
+`geodef.solve(fault, datasets, ...)` builds a `LinearSystem` and solves it
+once. Build one yourself to look at the matrices, or to run several analyses on
+the same fault and data without reassembling them:
 
 ```python
 system = geodef.LinearSystem(
-    fault, [gnss, insar],
-    regularization='laplacian',
-    components='azimuth',
-    slip_azimuth=15.0,
+    fault, [gnss, insar], regularization="laplacian", components="dip",
 )
+system.G, system.d, system.W, system.L   # Green's matrix, data, weights, regularizer
 
-lc = system.lcurve(regularization_range=(1e-2, 1e6))
-result = system.solve(regularization_strength=lc.optimal, bounds=(0, None))
-diagnostics = system.dataset_diagnostics(result)
+lc = system.lcurve(regularization_range=(1e-2, 1e6), n=50)
+ac = system.abic_curve(regularization_range=(1e-2, 1e6), n=50)
+result = system.solve(regularization_strength=ac.optimal, bounds=(0, None))
 ```
 
-`LinearSystem.condition_report()` returns conditioning diagnostics for the
-prepared (whitened) system: `cond_G`, its square `cond_normal_equations`
-(what the unregularized normal-equations solve experiences — values near
-`1/eps`, about `4.5e15` in float64, mean roundoff dominates), the numerical
-`rank_G`, and, given a `regularization_strength`, `cond_H` for the
-regularized matrix `H = G^T W G + lambda L^T L`.
-
-```python
-report = system.condition_report(regularization_strength=lc.optimal)
-```
+The constructor takes the arguments that define the matrices (`regularization`,
+`components`, `rake`, `slip_azimuth`, `plate_rake`); `solve` takes the ones
+that define a single solution (`regularization_strength`, `bounds`, `method`,
+`regularization_target`, `constraints`, `cv_folds`).
+`system.condition_report()` summarizes how well conditioned the problem is.
 
 ---
 
@@ -214,18 +215,18 @@ cross-validation tests prediction of held-out observations. Agreement among
 methods is reassuring, while disagreement is useful evidence that covariance,
 mesh, or prior assumptions deserve examination.
 
-### `lcurve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → LCurveResult`
+### `system.lcurve(regularization_range, n=50, bounds=None, method=None) → LCurveResult`
 
 ```python
-lc = geodef.LinearSystem(fault, [gnss, insar], regularization='laplacian').lcurve(regularization_range=(1e-2, 1e6), n=50)
+lc = system.lcurve(regularization_range=(1e-2, 1e6), n=50)
 lc.plot()        # log-log misfit vs model norm; optimal marked
 lc.optimal       # λ at maximum curvature
 ```
 
-### `abic_curve(fault, datasets, regularization, regularization_range, n=50, **kwargs) → ABICCurveResult`
+### `system.abic_curve(regularization_range, n=50) → ABICCurveResult`
 
 ```python
-ac = geodef.LinearSystem(fault, [gnss, insar], regularization='laplacian').abic_curve(regularization_range=(1e-2, 1e8), n=50)
+ac = system.abic_curve(regularization_range=(1e-2, 1e8), n=50)
 ac.plot()        # ABIC vs λ; optimal marked
 ac.optimal       # λ at minimum ABIC
 ```
@@ -317,9 +318,10 @@ Notes:
 
 ## Model assessment
 
-These are computed on demand (not during `invert()`) as they require forming and inverting dense matrices.
+These are methods of the result, computed on demand because they form and
+invert dense matrices.
 
-### `model_covariance(result, fault, datasets, kind='posterior') → np.ndarray`
+### `result.covariance(kind='posterior') → np.ndarray`
 
 ```python
 Cm = result.covariance()
@@ -330,7 +332,7 @@ With `H = GᵀWG + λ LᵀL` (the convention in
 [`conventions.md`](conventions.md)):
 
 - `kind='posterior'` (default) is the linear-Gaussian posterior covariance
-  `H⁻¹`, treating `λ LᵀL` as a prior precision — the quantity Tutorial 09
+  `H⁻¹`, treating `λ LᵀL` as a prior precision — the quantity Tutorial 08
   teaches and the one consistent with `geodef.bayes` slip draws.
 - `kind='estimator'` is the frequentist covariance of the penalized
   estimator under data noise alone, `H⁻¹ GᵀWG H⁻¹` (Tarantola, 2005). It
@@ -339,34 +341,34 @@ With `H = GᵀWG + λ LᵀL` (the convention in
 
 Both reduce to `(GᵀWG)⁻¹` when the inversion is unregularized.
 
-### `model_resolution(result, fault, datasets) → np.ndarray`
+### `result.resolution() → np.ndarray`
 
 ```python
 R = result.resolution()
 # shape (P, P); R=I for perfect resolution, diag(R)<1 where regularization dominates
 ```
 
-### `model_uncertainty(result, fault, datasets, kind='posterior') → np.ndarray`
+### `result.uncertainty(kind='posterior') → np.ndarray`
 
 ```python
 sigma = result.uncertainty()
 # shape (P,); per-parameter 1-sigma from sqrt(diag(Cm))
 ```
 
-### `diagnostics(result) → dict[str, DatasetDiagnostics]`
+### `result.diagnostics() → dict[str, DatasetDiagnostics]`
 
-Per-dataset fit statistics are computed during the solve and retained in the
-result, so assessment does not need the live fault and datasets.
+Per-dataset fit statistics are computed during the solve and stored in the
+result, so they are also available on a result loaded from a file.
 
 ```python
-diags = result.diagnostics()
-for name, d in diags.items():
-    print(name)
-    print(d.chi2, d.reduced_chi2, d.wrms, d.n_obs, d.dof)
+for name, d in result.diagnostics().items():
+    print(name, d.chi2, d.reduced_chi2, d.wrms, d.n_obs, d.dof)
 ```
 
-### `compute_abic(result, fault, datasets) → float`
+### `compute_abic(G, d, W, L, regularization_strength) → float`
+
+The standalone single-λ reference implementation, from raw matrices:
 
 ```python
-abic = geodef.invert.compute_abic(result, fault, [gnss, insar])
+abic = geodef.invert.compute_abic(system.G, system.d, system.W, system.L, 10.0)
 ```

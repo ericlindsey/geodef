@@ -68,44 +68,41 @@ plot the fit with the base install:
 ```python
 import matplotlib.pyplot as plt
 import numpy as np
+
 import geodef
 
-rng = np.random.default_rng(0)
+# A thrust fault divided into 6 x 3 patches. Lengths are in meters, angles in
+# degrees, and depth is the depth of the fault center (positive down).
 fault = geodef.Fault.planar(
-    lat=34.0, lon=-118.0, depth=8_000.0, strike=90.0, dip=30.0,
+    lon=-118.0, lat=34.0, depth=8_000.0, strike=90.0, dip=30.0,
     length=24_000.0, width=12_000.0, n_length=6, n_width=3,
 )
+
+# A smooth patch of thrust slip (meters), one value per fault patch.
+east_km, north_km, _ = fault.centers_local.T / 1e3
+true_slip = 1.2 * np.exp(-((east_km / 7) ** 2) - ((north_km + 2) / 5) ** 2)
+
+# The noisy GNSS displacements that slip would produce at a 7 x 5 network.
 station_lon, station_lat = np.meshgrid(
     np.linspace(-118.18, -117.82, 7), np.linspace(33.88, 34.12, 5)
 )
-station_lon, station_lat = station_lon.ravel(), station_lat.ravel()
-centers = fault.centers_local
-true_dip_slip = 1.2 * np.exp(
-    -(centers[:, 0] / 7_000.0) ** 2
-    - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
+gnss = geodef.GNSS.synthetic(
+    fault, lon=station_lon.ravel(), lat=station_lat.ravel(),
+    dip_slip=true_slip, sigma=0.004, sigma_up=0.008, rng=0,
 )
-east, north, up = fault.displacement(
-    lon=station_lon, lat=station_lat,
-    strike_slip=0.0,
-    dip_slip=true_dip_slip,
-)
-gnss = geodef.GNSS(
-    lon=station_lon, lat=station_lat,
-    east=east + rng.normal(0.0, 0.004, east.size),
-    north=north + rng.normal(0.0, 0.004, north.size),
-    up=up + rng.normal(0.0, 0.008, up.size),
-    sigma_east=0.004, sigma_north=0.004, sigma_up=0.008,
-    name="synthetic_gnss",
-)
+
+# Recover the slip: one dip-slip value per patch, smooth and non-negative.
 result = geodef.solve(
-    fault, datasets=gnss, components="dip",
+    fault, gnss, components="dip",
     regularization="laplacian", regularization_strength=1.0,
     bounds=(0.0, None),
 )
+print(result.summary())
+
 fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
 geodef.plot.slip(
-    fault, result.dip_slip, ax=axes[0], title="Recovered dip slip",
-    colorbar_label="Slip (m)",
+    fault, result.dip_slip, ax=axes[0],
+    title="Recovered dip slip", colorbar_label="Slip (m)",
 )
 geodef.plot.prediction(result, ax=axes[1])
 plt.show()
