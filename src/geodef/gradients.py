@@ -134,7 +134,6 @@ def _planar_patches(theta, n_length: int, n_width: int):
     # Offset from center to top-left corner of the fault
     fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
     fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
-    fault_u0 = -0.5 * width * sin_dip
 
     jj_grid, ii_grid = np.meshgrid(
         np.arange(n_width), np.arange(n_length), indexing="ij"
@@ -154,7 +153,8 @@ def _planar_patches(theta, n_length: int, n_width: int):
         + (ii + 0.5) * patch_L * cos_str
         - (jj + 0.5) * patch_W * cos_dip * sin_str
     )
-    depth_c = depth - (fault_u0 + (jj + 0.5) * patch_W * sin_dip)
+    # Row 0 is the shallowest; each row down dip is deeper.
+    depth_c = depth + (jj + 0.5 - 0.5 * n_width) * patch_W * sin_dip
 
     return e_c, n_c, depth_c, strike, dip, patch_L, patch_W
 

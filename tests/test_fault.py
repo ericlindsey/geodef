@@ -555,6 +555,15 @@ class TestCorners:
         assert corners[:, 0].min() <= single_patch.lon[0] <= corners[:, 0].max()
         assert corners[:, 1].min() <= single_patch.lat[0] <= corners[:, 1].max()
 
+    def test_neighboring_rows_share_an_edge(self):
+        fault = Fault.planar(
+            lat=0.0, lon=100.0, depth=20e3, strike=20.0, dip=35.0,
+            length=20e3, width=20e3, n_length=1, n_width=2,
+        )  # fmt: skip
+        np.testing.assert_allclose(
+            fault.corners[0, [3, 2]], fault.corners[1, [0, 1]], atol=0.05
+        )
+
     def test_triangular_corners_are_the_vertices(self):
         vertices = np.array([[[0.0, 0.0, -1e3], [1e3, 0.0, -1e3], [0.0, 1e3, -2e3]]])
         fault = Fault.from_triangles(vertices)
@@ -562,6 +571,41 @@ class TestCorners:
         np.testing.assert_allclose(
             fault.corners_geo[0, :, 2], [1e3, 1e3, 2e3], atol=1.0
         )
+
+
+class TestPlanarGridGeometry:
+    """A subdivided planar fault must be the same plane as its single patch."""
+
+    KWARGS = dict(
+        lat=0.0, lon=100.0, depth=20e3, strike=25.0, dip=30.0,
+        length=40e3, width=40e3,
+    )  # fmt: skip
+
+    def test_first_row_is_the_shallowest(self):
+        fault = Fault.planar(n_length=2, n_width=3, **self.KWARGS)
+        depth = fault.reshape_patches(fault.depth)
+        assert np.all(np.diff(depth, axis=0) > 0)
+        patch_height = 40e3 / 3 * np.sin(np.radians(30.0))
+        np.testing.assert_allclose(
+            depth[:, 0], 20e3 + patch_height * np.array([-1, 0, 1])
+        )
+
+    def test_deeper_rows_lie_to_the_right_of_strike(self):
+        fault = Fault.planar(n_length=1, n_width=2, **{**self.KWARGS, "strike": 0.0})
+        east = fault.centers_local[:, 0]
+        assert east[1] > east[0]
+        assert fault.depth[1] > fault.depth[0]
+
+    @pytest.mark.parametrize("n_length, n_width", [(1, 2), (3, 1), (2, 4)])
+    def test_uniform_slip_is_independent_of_the_subdivision(self, n_length, n_width):
+        lon = np.linspace(99.6, 100.4, 9)
+        lat = np.linspace(-0.3, 0.3, 9)
+        whole = Fault.planar(**self.KWARGS)
+        pieces = Fault.planar(n_length=n_length, n_width=n_width, **self.KWARGS)
+        for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
+            expected = whole.displacement(lon=lon, lat=lat, **slip)
+            actual = pieces.displacement(lon=lon, lat=lat, **slip)
+            np.testing.assert_allclose(actual, expected, atol=1e-5)
 
 
 # ======================================================================
@@ -670,7 +714,9 @@ class TestCrossValidation:
         for j in range(nW):
             for i in range(nL):
                 u_offset = fault_u0 + (j + 0.5) * patchW * sin_dip
-                expected_depths.append(depth0 - u_offset)
+                # The legacy code passes depth as translate_flat's altitude
+                # argument, so the offset is added: row 0 is the shallowest.
+                expected_depths.append(depth0 + u_offset)
 
         np.testing.assert_allclose(
             fault.depth,

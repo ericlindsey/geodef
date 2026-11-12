@@ -7,6 +7,22 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Fault.planar` assigned row depths in reverse.** With `n_width > 1`
+  the row on the up-dip side of the plane was given the deepest depth and
+  the row on the down-dip side the shallowest, so a subdivided planar
+  fault was not the plane its arguments described: uniform slip on a
+  2-row fault differed from the single-patch solution by tens of percent.
+  The same sign error was copied into the JAX layout used by
+  `gradients.rect_greens`, `invert.geometry_search`, and
+  `bayes.RectPosterior`, and into `planar_from_corner`. Row 0 is now the
+  shallowest, as documented, and subdividing a fault no longer changes
+  its uniform-slip displacement. Single-row faults, file loaders, and
+  triangular meshes were unaffected. Any saved result, figure, or
+  geometry estimate from a multi-row `Fault.planar` should be
+  regenerated. `KERNEL_VERSION` is bumped so cached matrices are rebuilt.
+
 ### Changed
 
 - Renamed the regularization keyword family for a single, math-aligned

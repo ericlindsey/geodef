@@ -203,7 +203,6 @@ class Fault:
         # Offset from center to top-left corner of the fault
         fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
         fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
-        fault_u0 = -0.5 * width * sin_dip
 
         # Vectorized grid of patch center offsets
         i_idx = np.arange(n_length)
@@ -222,7 +221,8 @@ class Fault:
             + (ii + 0.5) * patch_L * cos_str
             - (jj + 0.5) * patch_W * cos_dip * sin_str
         )
-        u_offsets = fault_u0 + (jj + 0.5) * patch_W * sin_dip
+        # Row 0 is the shallowest; each row down dip is deeper.
+        down_offsets = (jj + 0.5 - 0.5 * n_width) * patch_W * sin_dip
 
         geographic = selected_frame.to_geographic(
             east=center[0] + e_offsets,
@@ -231,7 +231,7 @@ class Fault:
         )
         lon_c = geographic[:, 0]
         lat_c = geographic[:, 1]
-        depth_c = depth - u_offsets
+        depth_c = depth + down_offsets
 
         n_patches = n_length * n_width
         strike_arr = np.full(n_patches, strike)
