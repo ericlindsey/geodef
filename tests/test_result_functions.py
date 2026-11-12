@@ -232,3 +232,26 @@ def test_linear_system_solves_repeatedly_without_reassembly(fault):
 
     assert weak.system is system and strong.system is system
     assert np.linalg.norm(strong.slip_vector) < np.linalg.norm(weak.slip_vector)
+
+
+def test_prediction_and_residual_select_one_dataset_by_object_or_name(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+
+    np.testing.assert_array_equal(
+        result.prediction(vertical), result.prediction()["leveling"]
+    )
+    np.testing.assert_array_equal(result.prediction("gnss"), result.predicted[:9])
+    np.testing.assert_allclose(
+        result.residual(gnss), gnss.obs - result.prediction(gnss)
+    )
+
+
+def test_prediction_rejects_a_dataset_that_was_not_inverted(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, gnss)
+
+    with pytest.raises(ValueError, match="not one of the datasets"):
+        result.prediction(vertical)
+    with pytest.raises(KeyError, match="leveling"):
+        result.prediction("leveling")

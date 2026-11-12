@@ -18,8 +18,8 @@ carried over from the retired phase plans are kept with each item.
 ## The current architecture, briefly
 
 It helps to have the shape of the package in mind. GeoDef is organized in
-layers, where each layer may only depend on the layers below it (enforced
-by `tests/test_layering.py`):
+layers, where each layer should only depend on the layers below it (a
+convention to follow when adding modules; it is no longer test-enforced):
 
 | Layer | Modules | Role |
 |---|---|---|
@@ -30,13 +30,20 @@ by `tests/test_layering.py`):
 | 2. Kernels | `okada85`, `okada92`, `tri`, `okada` | published physics ports |
 | 1. Foundation | `backend`, `validation`, `medium`, `transforms`, `cache` | shared plumbing |
 
-A typical inversion flows top-down: `invert.solve` asks a `Fault` for its
-Green's matrix, which is assembled by `greens` from the kernel ports, then
-weighted, regularized, and solved in `invert._system`/`_solvers`. The
-Priority 3 work already split the four largest modules into small private
-files behind unchanged public names, added the layer test, and introduced a
-private *engine registry* (`_engines.py`) describing what each deformation
-engine can do.
+A typical inversion flows top-down: `geodef.solve` builds a `LinearSystem`,
+which asks the `Fault` for its Green's matrix; `greens` assembles it from
+the kernel ports; `invert._system`/`_solvers` weight, regularize, and solve.
+`invert`, `bayes`, and `plot` are packages of small private files behind
+their public names.
+
+**November 2026 simplification pass.** The interface was unified (one
+dataset constructor, keyword `lon`/`lat`, `strike_slip`/`dip_slip`
+everywhere, assessment as result methods, `LinearSystem` as the single
+reusable object) and three pieces of scaffolding were removed because they
+cost more to read than they saved: the private engine registry, the
+API-tier stability map with its enforcing tests, and the import-layering
+test. Items below are updated accordingly; `PLAN.md` lists the remaining
+simplification candidates.
 
 The items below finish that program and add the load-bearing pieces the
 feature menu needs.
@@ -47,7 +54,7 @@ feature menu needs.
 
 | # | Item | What you get | Effort | When |
 |---|---|---|---|---|
-| A1 | Finish the engine registry | New engines become one registration, not a scavenger hunt | Small–medium | Anytime; before any new engine |
+| A1 | Engine dispatch (registry dropped) | Revisit only when a third engine arrives | — | With the first new engine (C2/C3) |
 | A2 | Kernel adapter layer | Ports stay verifiable; JAX strain becomes possible | Medium | Before differentiable strain (F9) |
 | A3 | Whitening + operator solve paths | Realistic InSAR sizes stop being impossible | Large | Before/with the noise & scale features (F3–F6) |
 | A4 | Solver factorization & conditioning | Protection against silent digit loss; faster sweeps | Small–medium | After benchmarks; with large-problem work |
@@ -67,63 +74,27 @@ turns out not to want.
 
 ---
 
-## A1. Finish the engine registry and capability contracts
+## A1. Engine dispatch (registry dropped)
 
-**What this is.** GeoDef has two deformation "engines": rectangular Okada
-patches and triangular dislocations. Historically, code that needed to
-behave differently per engine asked `if engine == "okada": ... elif
-engine == "tri": ...` — and those branches were scattered across roughly
-fifteen call sites in `fault`, `plot`, `invert`, and `geomap`. Adding a
-third engine meant finding every one. The fix, already half done, is a
-*registry*: one table (`src/geodef/_engines.py`) where each engine declares
-its name, geometry type, the functions that compute its Green's matrices,
-and its capabilities (surface/internal observation support, strain support,
-autodiff support, how to draw its patch outlines):
+**Status.** The private engine registry (`_engines.py`, `EngineSpec`) was
+removed in the November 2026 simplification pass. GeoDef has two
+engines, rectangles and triangles, and the registry added a module, a
+dataclass, four adapter functions, and a lookup step between
+`Fault.greens_matrix` and the assembly functions it calls. A student
+tracing "where does `G` come from" had to read all of it to find two
+branches.
 
-```python
-@dataclass(frozen=True)
-class EngineSpec:
-    name: str                      # "okada" | "tri"
-    geometry: str                  # "rect" | "tri"
-    displacement_greens: Callable
-    strain_greens: Callable | None # None => capability absent
-    surface: bool
-    internal: bool
-    autodiff: bool
-    patch_outlines: Callable       # vertex arrays for plotting
-```
+**What replaced it.** `Fault.engine` is derived from the geometry
+(`"tri"` when the fault has `vertices`), `Fault.greens_matrix` branches
+on it directly, and `Fault.corners` is the single source of patch-corner
+geometry for plotting, maps, and GMT export (previously five copies).
 
-Green's-matrix assembly already dispatches through this table, and
-requesting an unsupported capability already raises a typed error naming
-the engine, the missing capability, and the engines that have it.
-
-**What remains.**
-
-- The plotting and map code (`plot/_shared.py`, `plot/_fault_plots.py`,
-  `geomap.py`) still holds per-engine branches that build patch outlines.
-  Give the outline builders one shared home, move them into
-  `EngineSpec.patch_outlines`, and delete the branches.
-- The remaining cosmetic branches (`fault.areas`, `validate`, save-format
-  defaults) then read `spec.geometry` instead of comparing strings.
-- Write down the *shape* of the pluggable functions as private `Protocol`
-  types (Python's way of saying "any function with this exact signature
-  and meaning counts"): the two Green's-callable signatures, the
-  regularization operator, whitening (defined here, implemented under A3),
-  and solver callables. Private means they live in `_engines.py` /
-  `_contracts.py` and carry no public stability promise yet.
-- The registry itself **stays private** until at least two external
-  engines exist. The Meade and point-source engines (capabilities menu C2,
-  C3) are the acceptance test for making registration public.
-
-**Why it helps.** Every new physics capability on the menu — Meade,
-volcanic sources, layered half-space — arrives as one registration instead
-of edits to fifteen files, and a user who asks a new engine for something
-it cannot do gets a sentence, not a stack trace. Finishing the migration
-now, while the branch inventory is fresh, is cheap; doing it alongside a
-new engine port doubles the review burden of both.
-
-**Cost and risk.** Small-to-medium; mechanical and behavior-preserving.
-The existing tests plus the public-surface snapshots guard it. Risk: low.
+**When to revisit.** When a third engine actually arrives (Meade C2,
+point sources C3, layered half-space C7). At that point the right shape
+will be visible from three concrete cases: most likely a small
+`PatchGeometry` protocol on the fault (corners, areas, Green's assembly)
+rather than a registry of callables. Do not rebuild the registry
+speculatively.
 
 ---
 
@@ -343,29 +314,15 @@ questions that never get asked.
 
 ---
 
-## A8. Finish the top-level export trim (shipped)
+## A8. Top-level exports (shipped, then simplified)
 
-**What this is.** The 1.6 API work trimmed `geodef.__all__` to the
-beginner vocabulary but deliberately left the expert names (`lcurve`,
-`abic_curve`, `model_covariance`, `LinearSystem`, `stack_obs`, and
-friends) importable at top level as redundant aliases, so the notebooks
-could be migrated once rather than twice. This has now landed: the
-notebooks, examples, and `docs/*.md` use the module paths
-(`geodef.invert.lcurve`, `geodef.greens.stack_obs`, ...), the top-level
-aliases are deleted from `geodef/__init__.py`, and the change went in as
-**one atomic commit** so the tutorial suite stayed green.
-`tests/test_public_api.py` now asserts those names are **no longer
-reachable** at the top level, and the "Transitional top-level aliases"
-section has been removed from `docs/api_stability.md`.
-
-**Why it helped.** The real public surface now matches the documented
-one. This had to land **before any public v0.2 tag**, because a release
-freezes the top level into a compatibility promise, and every day of
-delay added new notebook cells and user habits to migrate.
-
-**Cost and risk.** Small but coordinated — the one item here that
-touched many files at once. Risk was low (mechanical, fully
-test-guarded).
+The top level is the everyday vocabulary: `Fault`, `GNSS`, `InSAR`,
+`Vertical`, `DataSet`, `LocalFrame`, `ElasticMedium`, `DEFAULT_MEDIUM`,
+`solve`, `LinearSystem`, `InversionResult`, plus the modules. Everything
+else is reached through its module. The beginner/expert tier map
+(`docs/api_stability.md`) and the test that parsed it were removed in the
+November 2026 pass; `tests/test_docs.py` still checks that every public
+member is documented and that documented names exist.
 
 ---
 

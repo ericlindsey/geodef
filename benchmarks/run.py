@@ -99,7 +99,7 @@ def measure(scale: str, spec: dict) -> dict:
 
     record["stages"]["system_preparation"] = timed(prepare)
     record["stages"]["regularized_solve"] = timed(
-        lambda: holder["system"].invert(regularization_strength=1.0)
+        lambda: holder["system"].solve(regularization_strength=1.0)
     )
     return record
 

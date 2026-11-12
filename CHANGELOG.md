@@ -1,8 +1,8 @@
 # Changelog
 
 All notable changes to GeoDef are recorded here, newest first. The format
-follows [Keep a Changelog](https://keepachangelog.com/); versions follow the
-compatibility policy in [COMPATIBILITY.md](COMPATIBILITY.md). Entries that
+follows [Keep a Changelog](https://keepachangelog.com/). GeoDef is pre-1.0:
+the API may change between releases, and this file records how. Entries that
 change numerical output beyond documented tolerances are tagged **numerical**.
 
 ## [Unreleased]
@@ -22,6 +22,35 @@ change numerical output beyond documented tolerances are tagged **numerical**.
   triangular meshes were unaffected. Any saved result, figure, or
   geometry estimate from a multi-row `Fault.planar` should be
   regenerated. `KERNEL_VERSION` is bumped so cached matrices are rebuilt.
+
+### Changed — one way to do each thing
+
+A simplification pass removed parallel spellings. There are no aliases;
+update calls as follows.
+
+| Before | After |
+|---|---|
+| `data.gnss(...)`, `data.horizontal_gnss(...)`, `GNSS(ve=, vn=, vu=, se=, sn=, su=)` | `GNSS(lon=, lat=, east=, north=, up=, sigma=)`; omit `up` for horizontal-only; `sigma_east`/`sigma_north`/`sigma_up` override `sigma` |
+| `data.insar(...)`, `data.vertical(...)` | `InSAR(...)`, `Vertical(...)` (scalars broadcast) |
+| `GNSS(name=<station labels>, dataset_name=...)` | `GNSS(station_names=..., name=...)`; `dataset.name` is the dataset name |
+| `data.from_table(table, kind="vertical", columns=...)` | `Vertical.from_table(table, columns=...)` |
+| building synthetic data from `G @ m` and `[0::3]` slices | `GNSS.synthetic(fault, lon=, lat=, dip_slip=, sigma=, rng=)` |
+| `fault.displacement(lat, lon, slip_strike=, slip_dip=)` | `fault.displacement(lon=, lat=, strike_slip=, dip_slip=)`; keeps the shape of `lon`/`lat` |
+| `fault.greens_matrix(lat, lon, obs_depth=)` | `fault.greens_matrix(lon=, lat=, depth=)` |
+| `fault.vertices_2d`, `vertices_3d` (depth in km), `patch_outlines` | `fault.corners` (local meters), `fault.corners_geo` (`[lon, lat, depth_m]`), for both rectangles and triangles |
+| `Fault(lat, lon, depth, ..., engine=...)` | `Fault(lon=, lat=, depth=, ...)`, keyword-only; the engine follows from `vertices` |
+| `invert.model_covariance(result, fault, data)`, `model_uncertainty`, `model_resolution` | `result.covariance()`, `result.uncertainty()`, `result.resolution()` |
+| `invert.prediction(result)`, `residual`, `diagnostics`, `summary` | `result.prediction()`, `.residual()`, `.diagnostics()`, `.summary()` |
+| `invert.prediction(result)[gnss.dataset_name]` | `result.prediction(gnss)` (works for unnamed datasets) |
+| `invert.save(result, path)`, `invert.load(path)`, `invert.save_table(result, path, fault)` | `result.save(path)`, `InversionResult.load(path, fault=, datasets=)`, `result.save_table(path)` |
+| `invert.lcurve(fault, data, ...)`, `invert.abic_curve(fault, data, ...)` | `system = geodef.LinearSystem(fault, data, regularization=...)`; `system.lcurve(...)`, `system.abic_curve(...)` |
+| `LinearSystem.invert(...)` | `LinearSystem.solve(...)` |
+
+Also removed: the private engine registry (`_engines`), the `format=`
+argument of dataset `save` (only `"dat"` existed), the dataframe-interchange
+reader behind `from_table` (tables are read with `table[column]`), and the
+API-tier stability map, layering test, and deprecation policy that enforced
+the previous structure. `geodef.LinearSystem` is exported at the top level.
 
 ### Changed
 

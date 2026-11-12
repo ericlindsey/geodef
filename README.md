@@ -177,7 +177,6 @@ Full API docs with examples are in `docs/`:
 | [`docs/quickstart.md`](docs/quickstart.md) | Complete first forward model and inversion |
 | [`docs/workflow.md`](docs/workflow.md) | API-level map and scientific decision guides |
 | [`docs/glossary.md`](docs/glossary.md) | Geophysical and inverse-theory notation |
-| [`docs/usability.md`](docs/usability.md) | Golden beginner workflows and usability baselines |
 | [`docs/fault.md`](docs/fault.md) | `Fault` class — factory methods, forward modeling, I/O |
 | [`docs/slip.md`](docs/slip.md) | Slip-vector functions, plate-motion coordinates, and patch ordering |
 | [`docs/medium.md`](docs/medium.md) | `ElasticMedium` half-space parameters |
@@ -202,7 +201,9 @@ Full API docs with examples are in `docs/`:
 uv run pytest -q
 ```
 
-The tutorial notebooks and a Gorkha example smoke test run as part of the suite.
+The tutorial notebooks, the plot gallery, the quickstart, and a Gorkha example
+smoke test run as part of the suite; `uv run pytest -m slow` adds the solution
+notebooks.
 Tests are skipped rather than failed when their optional dependency is absent:
 the JAX/blackjax-gated backend, gradient, and Bayesian tests skip without
 `geodef[jax]` / `geodef[bayes]`, and a handful of `Fault.load` tests need
@@ -212,11 +213,12 @@ reference data under `related/stress-shadows/`.
 
 Contributor and roadmap docs live at the repository root:
 
-- [`PYTHON.md`](PYTHON.md) — mandatory coding standards and tooling (read before editing any code).
-- [`PLAN.md`](PLAN.md) — the forward-looking roadmap (GPU/autodiff, earthquake-cycle modeling, more Green's engines).
-- [`CHANGELOG.md`](CHANGELOG.md) — notable changes per release.
-- [`COMPATIBILITY.md`](COMPATIBILITY.md) — public-API, versioning, and deprecation policy.
-- [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) — agent onboarding guides for automated contributors.
+- [`CLAUDE.md`](CLAUDE.md) — the contributor guide: design priorities, the
+  API rules, conventions, coding standards, and commands. Read it before
+  editing any code. [`AGENTS.md`](AGENTS.md) points to it.
+- [`PLAN.md`](PLAN.md) — the forward-looking roadmap.
+- [`CHANGELOG.md`](CHANGELOG.md) — notable changes per release. The API is
+  pre-1.0 and may change between releases; the changelog records how.
 
 ## AI co-authorship
 

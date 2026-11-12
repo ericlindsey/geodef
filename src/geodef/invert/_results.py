@@ -1,15 +1,14 @@
 """Result records for slip inversion, hyperparameter, and geometry analyses.
 
 Private submodule of :mod:`geodef.invert`; the public names defined here
-are re-exported by the package ``__init__`` and are stable under
-``geodef.invert.<name>`` (see ``docs/api_stability.md``).
+are re-exported by the package ``__init__`` as ``geodef.invert.<name>``.
 """
 
 from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 
@@ -174,13 +173,43 @@ class InversionResult:
     # Fit: predictions, residuals, diagnostics
     # ------------------------------------------------------------------
 
-    def prediction(self) -> dict[str, np.ndarray]:
-        """Model predictions keyed by dataset name, in solve order."""
-        return self._by_dataset(self.predicted)
+    @overload
+    def prediction(self, dataset: None = None) -> dict[str, np.ndarray]: ...
+    @overload
+    def prediction(self, dataset: DataSet | str) -> np.ndarray: ...
+    def prediction(
+        self, dataset: DataSet | str | None = None
+    ) -> dict[str, np.ndarray] | np.ndarray:
+        """Model predictions, for every dataset or for one.
 
-    def residual(self) -> dict[str, np.ndarray]:
-        """Observed-minus-predicted residuals keyed by dataset name."""
-        return self._by_dataset(self.residuals)
+        Args:
+            dataset: A dataset that was inverted (the object itself or its
+                name in ``dataset_names``). ``None`` returns every dataset.
+
+        Returns:
+            The predicted observation vector for ``dataset``, or a
+            name-keyed mapping of all of them in solve order.
+        """
+        return self._by_dataset(self.predicted, dataset)
+
+    @overload
+    def residual(self, dataset: None = None) -> dict[str, np.ndarray]: ...
+    @overload
+    def residual(self, dataset: DataSet | str) -> np.ndarray: ...
+    def residual(
+        self, dataset: DataSet | str | None = None
+    ) -> dict[str, np.ndarray] | np.ndarray:
+        """Observed-minus-predicted residuals, for every dataset or for one.
+
+        Args:
+            dataset: A dataset that was inverted (the object itself or its
+                name in ``dataset_names``). ``None`` returns every dataset.
+
+        Returns:
+            The residual vector for ``dataset``, or a name-keyed mapping of
+            all of them in solve order.
+        """
+        return self._by_dataset(self.residuals, dataset)
 
     def diagnostics(self) -> dict[str, DatasetDiagnostics]:
         """Fit diagnostics keyed by dataset name, in solve order."""
@@ -189,13 +218,24 @@ class InversionResult:
         )
         return dict(zip(names, self.dataset_diagnostics))
 
-    def _by_dataset(self, stacked: np.ndarray) -> dict[str, np.ndarray]:
-        if not self.dataset_names:
-            return {"data": stacked}
-        return {
-            name: stacked[rows]
-            for name, rows in zip(self.dataset_names, self.dataset_slices)
-        }
+    def _by_dataset(
+        self, stacked: np.ndarray, dataset: DataSet | str | None
+    ) -> dict[str, np.ndarray] | np.ndarray:
+        """Split a stacked row vector by dataset, or select one dataset's rows."""
+        names = self.dataset_names or ("data",)
+        slices = self.dataset_slices or (slice(None),)
+        if dataset is None:
+            return {name: stacked[rows] for name, rows in zip(names, slices)}
+        if isinstance(dataset, str):
+            if dataset not in names:
+                raise KeyError(f"no dataset named {dataset!r}; names are {names}")
+            return stacked[slices[names.index(dataset)]]
+        for candidate, rows in zip(self.datasets, slices):
+            if candidate is dataset:
+                return stacked[rows]
+        raise ValueError(
+            "that dataset is not one of the datasets this result was fit to"
+        )
 
     def summary(self) -> str:
         """Format the essential assumptions and fit statistics as text."""

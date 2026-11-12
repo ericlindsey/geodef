@@ -197,7 +197,7 @@ class TestAbicSweepJax:
     def test_abic_curve_matches_numpy(self) -> None:
         from geodef.data import GNSS
         from geodef.fault import Fault
-        from geodef.invert import abic_curve
+        from tests.helpers import abic_curve
 
         fault = Fault.planar(
             lat=0.0,

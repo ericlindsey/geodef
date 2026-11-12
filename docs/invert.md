@@ -145,6 +145,7 @@ For ordinary assessment, use the result's methods rather than slicing stacked ro
 ```python
 predictions = result.prediction()  # {dataset_name: array}
 residuals = result.residual()      # {dataset_name: array}
+gnss_fit = result.prediction(gnss)  # one dataset, by object or by name
 diagnostics = result.diagnostics() # {dataset_name: diagnostics}
 print(result.summary())
 

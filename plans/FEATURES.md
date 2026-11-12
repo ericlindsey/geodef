@@ -41,22 +41,31 @@ opportunistic.
 
 ## F1. Synthetic-test helpers and the scenario builder
 
-**What.** A new `geodef.synthetic` module — `scenario(...)` (the
-documented builder for the course's recurring thrust-fault setup),
-`checkerboard(fault, ...)`, `spike(fault, ...)`, and
-`noisy_data(fault, slip, ..., seed=...)` — plus
-`geodef.invert.compare(result, true_slip)` for recovered-versus-input
-comparison. All pure functions; the design is settled in
-`tutorials/OUTLINE.md` §11 (decision 7), including the naming decision
-that `compare` lives in `invert`, unaliased.
+**Shipped (November 2026).** Forward-modeling slip into a noisy dataset
+is `GNSS.synthetic(fault, lon=, lat=, dip_slip=, sigma=, rng=)` (and the
+same classmethod on `InSAR` and `Vertical`); `dataset.with_obs(values)`
+wraps a prediction or residual as a dataset. Tutorial chapters 04-10 use
+it in place of hand-built `G @ m` plus `[0::3]` slicing. This replaces
+the planned `synthetic.noisy_data`.
+
+**Remaining.** Small pure helpers, each of which a chapter currently
+writes inline:
+
+- `checkerboard(fault, ...)` and `spike(fault, ...)` slip patterns for
+  resolution tests (Chapter 08 builds its checkerboard by hand);
+- a recovered-versus-input comparison (per-patch difference, recovery
+  fraction within a mask), most naturally a method on the result:
+  `result.compare(true_slip)`;
+- optionally `scenario(...)`, the course's recurring megathrust setup in
+  one call. Weigh this against the teaching value of students seeing the
+  five lines that build it.
+
+Decide the home when the first of these is written: methods on `Fault`
+and `InversionResult` fit the current API better than a new module.
 
 **Value and priority.** High priority, small effort, zero dependencies.
-The tutorials teach checkerboard/spike resolution testing, but every
-student currently re-implements it from notebook cells — the last
-"taught but not supported" gap from the structural audit. Also the
-prerequisite for replacing repeated tutorial setup cells with one
-documented builder (the remaining 2.2 notebook item), and for the golden
-workflow tests in F10. `tutorials/OUTLINE.md` is retired once this ships.
+
+---
 
 ## F2. First-class interseismic coupling
 
