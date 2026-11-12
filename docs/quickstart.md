@@ -41,8 +41,7 @@ true_dip_slip = 1.2 * np.exp(
     - ((centers[:, 1] + 2_000.0) / 5_000.0) ** 2
 )
 east, north, up = fault.displacement(
-    lat=station_lat,
-    lon=station_lon,
+    lon=station_lon, lat=station_lat,
     strike_slip=0.0,
     dip_slip=true_dip_slip,
 )

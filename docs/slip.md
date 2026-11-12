@@ -24,8 +24,7 @@ three arrays:
 
 ```python
 east, north, up = fault.displacement(
-    lat=obs_lat,
-    lon=obs_lon,
+    lon=obs_lon, lat=obs_lat,
     strike_slip=strike_slip,
     dip_slip=dip_slip,
 )

@@ -581,6 +581,13 @@ class TestPlanarGridGeometry:
         length=40e3, width=40e3,
     )  # fmt: skip
 
+    def test_plane_reaching_above_the_surface_is_rejected(self):
+        with pytest.raises(ValueError, match="above the surface"):
+            Fault.planar(
+                lat=0.0, lon=100.0, depth=5e3, strike=0.0, dip=50.0,
+                length=40e3, width=25e3, n_width=4,
+            )  # fmt: skip
+
     def test_first_row_is_the_shallowest(self):
         fault = Fault.planar(n_length=2, n_width=3, **self.KWARGS)
         depth = fault.reshape_patches(fault.depth)

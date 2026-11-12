@@ -194,6 +194,14 @@ class Fault:
         as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
         patch_L = length / n_length
         patch_W = width / n_width
+        shallowest_center = depth - 0.5 * (width - patch_W) * np.sin(np.radians(dip))
+        if shallowest_center < 0.0:
+            raise ValueError(
+                f"the top row of patches is centered {-shallowest_center:.0f} m "
+                "above the surface: depth is the depth of the fault center, "
+                "which must exceed half the width times sin(dip). Increase "
+                "depth or reduce width."
+            )
 
         sin_str = np.sin(np.radians(strike))
         cos_str = np.cos(np.radians(strike))

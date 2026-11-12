@@ -128,8 +128,7 @@ Compute surface displacements from strike-slip and dip-slip scalars or arrays.
 strike_slip = np.zeros(fault.n_patches)
 dip_slip = np.ones(fault.n_patches)
 east, north, up = fault.displacement(
-    lat=obs_lat,
-    lon=obs_lon,
+    lon=obs_lon, lat=obs_lat,
     strike_slip=strike_slip,
     dip_slip=dip_slip,
 )
@@ -140,7 +139,7 @@ east, north, up = fault.displacement(
 Build the raw Green's matrix.
 
 ```python
-G = fault.greens_matrix(lat=obs_lat, lon=obs_lon)
+G = fault.greens_matrix(lon=obs_lon, lat=obs_lat)
 # shape (3*n_obs, 2*N) for displacement
 # Columns [:N] = strike-slip, [N:] = dip-slip
 ```
