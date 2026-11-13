@@ -644,6 +644,40 @@ class TestSharedFrame:
             actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
             np.testing.assert_allclose(actual, expected, atol=1e-9)
 
+    @pytest.mark.parametrize("winding", ["counterclockwise", "clockwise"])
+    def test_triangles_match_the_rectangle_whatever_their_winding(self, winding):
+        """Thrust is positive dip slip and strike follows the right-hand rule
+        for triangles, as for rectangles, whichever way the corners are
+        listed."""
+        rectangle = Fault.planar(**{**self.KWARGS, "length": 80e3, "width": 40e3})
+        corners = rectangle.corners[0]
+        order = [[0, 2, 1], [0, 3, 2]] if winding == "counterclockwise" else [
+            [0, 1, 2], [0, 2, 3]]  # fmt: skip
+        triangles = Fault.from_triangles(
+            np.array([corners[i] for i in order]), frame=rectangle.frame
+        )
+        np.testing.assert_allclose(triangles.strike, 25.0, atol=1e-9)
+        np.testing.assert_allclose(triangles.dip, 30.0, atol=1e-9)
+        for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
+            expected = rectangle.displacement(lon=self.LON, lat=self.LAT, **slip)
+            actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
+            np.testing.assert_allclose(actual, expected, atol=1e-9)
+
+    def test_generated_meshes_are_thrust_positive(self):
+        """A mesh dipping east under a north trace is a north-striking fault."""
+        from geodef import mesh
+
+        dipping_east = mesh.from_trace(
+            np.array([100.0, 100.0]), np.array([39.7, 40.3]), 20e3, 30.0,
+            dip_direction=90.0, n_downdip=3, target_length=10e3,
+        )  # fmt: skip
+        fault = Fault.from_mesh(dipping_east)
+        np.testing.assert_allclose(fault.strike, 0.0, atol=0.5)
+        # thrust on an east-dipping fault lifts the hanging wall, to the east
+        _, _, up_east = fault.displacement(lon=100.12, lat=40.0, dip_slip=1.0)
+        _, _, up_west = fault.displacement(lon=99.85, lat=40.0, dip_slip=1.0)
+        assert up_east > 0.0 > up_west
+
     def test_planar_from_corner_is_the_same_plane(self):
         center = Fault.planar(n_length=3, n_width=2, **self.KWARGS)
         top_left = center.corners_geo[0, 0]

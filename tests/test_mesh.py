@@ -7,7 +7,8 @@ import numpy.testing as npt
 import pytest
 
 from geodef.fault import Fault
-from geodef.mesh import Mesh, _compute_strike_dip
+from geodef.geometry import triangle_strike_dip
+from geodef.mesh import Mesh
 from geodef.transforms import LocalFrame
 
 requires_meshpy = pytest.mark.skipif(
@@ -167,7 +168,7 @@ class TestMeshVerticesENU:
 
 
 # ======================================================================
-# _compute_strike_dip helper
+# triangle_strike_dip on mesh vertices
 # ======================================================================
 
 
@@ -175,19 +176,19 @@ class TestComputeStrikeDip:
     def test_horizontal_plane_dip_zero(self, horizontal_mesh):
         """Horizontal triangles should have dip ≈ 0."""
         verts = horizontal_mesh.vertices_enu(frame=LocalFrame(lon=100.05, lat=0.05))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         npt.assert_allclose(dip, 0.0, atol=1.0)
 
     def test_vertical_plane_dip_90(self, vertical_mesh):
         """Vertical N-S plane should have dip ≈ 90."""
         verts = vertical_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.05))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         npt.assert_allclose(dip, 90.0, atol=2.0)
 
     def test_vertical_ns_strike_zero_or_180(self, vertical_mesh):
         """Vertical N-S plane should have strike ≈ 0 or 180."""
         verts = vertical_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.05))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         # Strike should be ~0 or ~180 for a N-S plane
         for s in strike:
             assert s == pytest.approx(0.0, abs=5.0) or s == pytest.approx(
@@ -209,26 +210,26 @@ class TestComputeStrikeDip:
             ],
             dtype=float,
         )
-        strike, dip = _compute_strike_dip(v)
+        strike, dip = triangle_strike_dip(v)
         npt.assert_allclose(dip[0], 45.0, atol=1.0)
 
     def test_output_shapes(self, simple_mesh):
         verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         assert strike.shape == (2,)
         assert dip.shape == (2,)
 
     def test_dip_range(self, simple_mesh):
         """Dip should be in [0, 90]."""
         verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         assert np.all(dip >= 0)
         assert np.all(dip <= 90)
 
     def test_strike_range(self, simple_mesh):
         """Strike should be in [0, 360)."""
         verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
-        strike, dip = _compute_strike_dip(verts)
+        strike, dip = triangle_strike_dip(verts)
         assert np.all(strike >= 0)
         assert np.all(strike < 360)
 

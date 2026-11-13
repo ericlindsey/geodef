@@ -27,6 +27,7 @@ __all__ = [
     "PLANAR_PARAMETER_NAMES",
     "as_planar_vector",
     "planar_parameter_dict",
+    "orient_triangles",
     "triangle_strike_dip",
     "vertices_from_nodes",
 ]
@@ -125,16 +126,46 @@ def vertices_from_nodes(
     return np.array(nodes[connectivity], copy=True)
 
 
+def orient_triangles(vertices_enu: npt.ArrayLike) -> np.ndarray:
+    """Reorder triangle corners so every normal points up.
+
+    The triangular dislocation kernel takes its strike and dip directions
+    from the order of the corners. With corners counterclockwise seen from
+    above (normal pointing up), its strike follows the right-hand rule and
+    positive dip slip is thrust, matching rectangular patches. Listed the
+    other way round, positive dip slip would be normal faulting. Vertical
+    triangles, whose normal is horizontal, are left as given.
+
+    Args:
+        vertices_enu: Per-triangle corners ``[east, north, up]``, shape
+            ``(N, 3, 3)``.
+
+    Returns:
+        A copy with the second and third corners swapped wherever the
+        normal pointed down.
+    """
+    vertices = np.array(vertices_enu, dtype=float)
+    normal = np.cross(vertices[:, 1] - vertices[:, 0], vertices[:, 2] - vertices[:, 0])
+    downward = normal[:, 2] < 0.0
+    vertices[downward] = vertices[downward][:, [0, 2, 1]]
+    return vertices
+
+
 def triangle_strike_dip(
     vertices_enu: npt.ArrayLike,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Derive right-hand-rule strike and dip from triangle vertices.
 
+    Strike is the direction the triangular kernel uses for strike slip once
+    the triangle is oriented with :func:`orient_triangles`: horizontal, with
+    the plane dipping to its right. A horizontal triangle has strike 0.
+
     Args:
         vertices_enu: Per-triangle vertices with shape ``(N, 3, 3)``.
 
     Returns:
-        ``(strike_degrees, dip_degrees)`` arrays, each shape ``(N,)``.
+        ``(strike_degrees, dip_degrees)`` arrays, each shape ``(N,)``; strike
+        in ``[0, 360)`` clockwise from the frame's North axis.
 
     Raises:
         ValueError: If vertices have the wrong shape or contain non-finite
@@ -147,17 +178,13 @@ def triangle_strike_dip(
         )
     if not np.all(np.isfinite(vertices)):
         raise ValueError("vertices_enu must contain only finite values")
-    edge1 = vertices[:, 1, :] - vertices[:, 0, :]
-    edge2 = vertices[:, 2, :] - vertices[:, 0, :]
-    normal = np.cross(edge1, edge2)
-    normal[normal[:, 2] < 0.0] *= -1.0
+    vertices = orient_triangles(vertices)
+    normal = np.cross(vertices[:, 1] - vertices[:, 0], vertices[:, 2] - vertices[:, 0])
     normal /= np.maximum(np.linalg.norm(normal, axis=1, keepdims=True), 1e-30)
-
     dip = np.degrees(np.arccos(np.clip(np.abs(normal[:, 2]), 0.0, 1.0)))
-    strike = np.zeros(vertices.shape[0], dtype=float)
-    dipping = dip > 0.1
-    updip_azimuth = (
-        np.degrees(np.arctan2(normal[dipping, 0], normal[dipping, 1])) % 360.0
-    )
-    strike[dipping] = (updip_azimuth + 90.0) % 360.0
+    # strike direction = vertical x normal = (-n_north, n_east, 0)
+    strike_east, strike_north = -normal[:, 1], normal[:, 0]
+    horizontal = np.hypot(strike_east, strike_north) < 1e-12
+    strike = np.degrees(np.arctan2(strike_east, strike_north)) % 360.0
+    strike[horizontal] = 0.0
     return strike, dip

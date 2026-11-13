@@ -72,3 +72,14 @@ fault = geodef.Fault.from_triangles(
 
 `Fault.from_mesh(mesh)` is the shortest path when geographic nodes and
 connectivity already live in a `Mesh`.
+
+### Corner order and the sign of slip
+
+The triangular dislocation kernel takes its strike and dip directions from
+the order of a triangle's corners. Listed counterclockwise seen from above
+(normal pointing up), positive dip slip is thrust and strike follows the
+right-hand rule, exactly as for rectangles. Listed the other way, positive
+dip slip would be normal faulting. `geodef.geometry.orient_triangles`
+reorders corners so every normal points up, and `Fault.from_triangles` applies
+it, so a fault's slip conventions never depend on how a mesh file lists its
+triangles. `triangle_strike_dip` reports the strike of the oriented triangle.

@@ -15,6 +15,7 @@ from geodef import greens as _greens
 from geodef._fault_io import _seg_to_patches as _seg_to_patches
 from geodef.geometry import (
     as_planar_vector,
+    orient_triangles,
     triangle_strike_dip,
     vertices_from_nodes,
 )
@@ -327,7 +328,11 @@ class Fault:
         """Create a triangular fault from local East-North-Up vertices.
 
         Per-triangle strike, dip, and geographic centers are derived from
-        the vertex geometry. Two input forms are supported:
+        the vertex geometry. Corners may be listed in either order: each
+        triangle is reordered so its normal points up, which makes positive
+        dip slip thrust and strike follow the right-hand rule, as for
+        rectangles (see :func:`geodef.geometry.orient_triangles`). Two input
+        forms are supported:
 
         - **Explicit vertices** (``triangles=None``): ``vertices`` is an
           ``(N, 3, 3)`` array giving the three corners of each triangle.
@@ -370,6 +375,7 @@ class Fault:
             north=centers_enu[:, 1],
             up=centers_enu[:, 2],
         )
+        vertices_array = orient_triangles(vertices_array)
         strike, dip = triangle_strike_dip(vertices_array)
 
         return cls(

@@ -9,6 +9,21 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Fixed
 
+- **numerical** **Triangular faults from the mesh generators had positive
+  dip slip as normal faulting, and a strike 180 degrees off.** The triangular
+  kernel takes its slip directions from the order of each triangle's
+  corners, and `mesh.from_trace` and the other generators list them
+  clockwise seen from above; for those triangles positive dip slip moved the
+  hanging wall down. Separately, `triangle_strike_dip` reported the strike
+  reversed (180 degrees for a north-striking, east-dipping plane), breaking
+  the dips-to-the-right rule. `Fault.from_triangles` now orients every
+  triangle with its normal up (`geometry.orient_triangles`), so dip slip is
+  thrust-positive and the strike is right-hand-rule whatever order the
+  corners arrive in, and a rectangle equals the two triangles that tile it
+  for both slip components. Synthetic tests that generated and inverted data
+  with the same mesh were unaffected, which is why this went unnoticed;
+  results that interpreted the sign of dip slip on a generated mesh, or used
+  `components="azimuth"` or `"plate"` on one, should be regenerated.
 - **numerical** Rectangles and triangles are flattened by one map
   projection. Rectangular patches were each placed in their own tangent
   plane while observation points and triangles used the fault's shared

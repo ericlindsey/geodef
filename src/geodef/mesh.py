@@ -316,61 +316,6 @@ class Mesh:
 # ======================================================================
 
 
-def _compute_strike_dip(
-    vertices: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Derive strike and dip angles from triangle vertices in local ENU.
-
-    Args:
-        vertices: Triangle vertices, shape (N, 3, 3), in local ENU meters
-            where columns are [east, north, up].
-
-    Returns:
-        strike: Strike angles in degrees [0, 360), shape (N,).
-            Measured clockwise from north, with the fault dipping to
-            the right when looking along strike.
-        dip: Dip angles in degrees [0, 90], shape (N,).
-    """
-    edge1 = vertices[:, 1, :] - vertices[:, 0, :]
-    edge2 = vertices[:, 2, :] - vertices[:, 0, :]
-    normal = np.cross(edge1, edge2)
-
-    # Ensure normal points upward (positive z component)
-    flip = normal[:, 2] < 0
-    normal[flip] *= -1
-
-    norm_mag = np.linalg.norm(normal, axis=1, keepdims=True)
-    norm_mag = np.maximum(norm_mag, 1e-30)
-    normal = normal / norm_mag
-
-    # Dip = angle between normal and vertical (z-axis)
-    dip = np.degrees(np.arccos(np.clip(np.abs(normal[:, 2]), 0, 1)))
-
-    # For dip ≈ 0 (horizontal), strike is undefined; default to 0
-    strike = np.zeros(len(vertices), dtype=float)
-
-    not_horizontal = dip > 0.1
-    if np.any(not_horizontal):
-        # Updip direction: steepest ascent projected to horizontal
-        # For a plane with upward normal (nx, ny, nz), the horizontal
-        # component of the updip direction is (-nx, -ny) (opposite of
-        # the horizontal projection of the normal for upward-pointing normals
-        # is actually the downdip direction, so updip = horizontal normal dir)
-        # Actually: the updip direction on the plane is the direction of
-        # steepest ascent. The gradient of z on the plane points updip.
-        # Horizontal updip = (nx, ny) / sqrt(nx^2 + ny^2) when normal points up.
-        nx = normal[not_horizontal, 0]
-        ny = normal[not_horizontal, 1]
-
-        # Updip horizontal azimuth (degrees from north, CW positive)
-        updip_az = np.degrees(np.arctan2(nx, ny)) % 360
-
-        # Strike = updip azimuth + 90 (right-hand rule: dip to the right)
-        strike[not_horizontal] = (updip_az + 90) % 360
-
-    return strike, dip
-
-
 def _nan_aware_griddata(
     xin: np.ndarray,
     yin: np.ndarray,
