@@ -743,7 +743,7 @@ def matrix(
             (fixed rake), ``'azimuth'`` (fixed geographic slip azimuth), or
             ``'plate'`` (plate-rake-parallel/perpendicular coordinates).
             The reduction uses the same semantics as
-            :func:`geodef.invert.solve`.
+            :func:`geodef.solve`.
         rake: Fixed rake angle in degrees, required for ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``components='azimuth'``.

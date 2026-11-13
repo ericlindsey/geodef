@@ -1,4 +1,4 @@
-"""Tests for geodef.invert — Phase 4.1 one-call inversion.
+"""Tests for geodef.invert — one-call inversion.
 
 Covers: InversionResult structure, WLS/NNLS/bounded_ls solvers,
 Laplacian/damping/custom regularization, regularization_target,

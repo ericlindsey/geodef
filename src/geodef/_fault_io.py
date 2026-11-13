@@ -1,6 +1,6 @@
 """Fault file-format I/O: center/topleft tables, unicycle seg/ned, GMT.
 
-Private sibling of :mod:`geodef.fault` (roadmap 3.2c). ``Fault.load``,
+Private sibling of :mod:`geodef.fault`. ``Fault.load``,
 ``Fault.save``, and ``Fault.to_gmt`` dispatch to the format readers and
 writers here; the geometry itself stays in the ``Fault`` class. Imports
 of :class:`Fault` are deferred to call time so ``fault`` can import this

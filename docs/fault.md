@@ -2,7 +2,7 @@
 
 > Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
 
-The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Always create via factory classmethods, not `__init__` directly.
+The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Create one with a factory classmethod; the keyword-only constructor `Fault(lon=, lat=, depth=, strike=, dip=, length=, width=)` (or `vertices=` for triangles) is for file readers and tests.
 
 ## What a discretized fault represents
 
@@ -13,29 +13,35 @@ stronger data coverage or regularization. Patch size is a modeling choice, not
 the resolution of the resulting inversion; use model-resolution and synthetic
 recovery tests to learn what the data actually resolve.
 
-Strike is clockwise from north, dip is downward from horizontal, and rake is
-measured within the fault plane. GeoDef follows the local frame East, North,
-Up and uses depth positive downward.
+Strike is clockwise from north, dip is downward from horizontal, and the fault
+dips to the **right** of the strike direction. GeoDef follows the local frame
+East, North, Up and uses depth positive downward.
 
 ---
 
 ## Factory classmethods
 
-### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
+### `Fault.planar(*, lon, lat, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
 
 Create a discretized planar fault directly from named geographic parameters:
 
 ```python
-fault = Fault.planar(
-    lat=0.0, lon=100.0, depth=30_000.0,
+fault = geodef.Fault.planar(
+    lon=100.0, lat=0.0, depth=30_000.0,
     strike=90.0, dip=15.0,
     length=100_000.0, width=50_000.0,
     n_length=10, n_width=5,
 )
-# → Fault with 50 rectangular patches, engine='okada'
+# → Fault(n_patches=50, engine='okada', grid_shape=(10, 5))
 ```
 
-Geographic arguments are keyword-only so latitude/longitude order cannot be
+`lon`, `lat`, and `depth` locate the **center** of the plane, so `depth` must be
+at least `0.5 * width * sin(dip)` for the fault to stay below the surface.
+`n_length` and `n_width` divide it into a grid whose first row is the
+shallowest. Subdividing does not change the plane: uniform slip on a 10 x 5
+grid produces the same displacement as on the single 100 km x 50 km patch.
+
+All arguments are keyword-only so latitude/longitude order cannot be
 confused. Pass an explicit frame when the fault must share local coordinates
 with another object:
 
@@ -44,7 +50,7 @@ frame = geodef.LocalFrame(-2.0, 100.0)
 fault = Fault.planar(..., frame=frame)
 ```
 
-### `Fault.planar_from_corner(lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1)`
+### `Fault.planar_from_corner(*, lon, lat, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None)`
 
 Same as `planar()` but the reference point is the top-left (shallowest, along-strike start) corner instead of the centroid.
 
@@ -58,7 +64,7 @@ mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6))
 fault = Fault.from_mesh(mesh)
 ```
 
-### `Fault.from_triangles(vertices, *, frame=None, ref_lat=None, ref_lon=None, triangles=None)`
+### `Fault.from_triangles(vertices, *, triangles=None, frame=None, ref_lat=None, ref_lon=None, medium=None)`
 
 Create a triangular fault from ENU arrays in either of two forms:
 
@@ -73,7 +79,10 @@ fault = Fault.from_triangles(
 )
 ```
 
-### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0)`
+`frame` is the `LocalFrame` the vertices are expressed in;
+`ref_lat=..., ref_lon=...` is shorthand for `frame=LocalFrame(ref_lat, ref_lon)`.
+
+### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0, medium=None)`
 
 Load from a text file. Supported formats:
 
@@ -214,12 +223,27 @@ values = fault.flatten_patches(grid)  # inverse conversion
 fault.save("output.txt", format="center")
 fault.save("output.seg", format="seg", ref_lat=0.0, ref_lon=100.0)
 fault.save("triangular_fault", format="ned")  # writes .ned + .tri
+fault.to_gmt("patches.gmt", values=result.slip_magnitude)  # closed polygons, -Z colored
 ```
+
+---
+
+## Checking and copying
+
+```python
+print(fault.validate())            # errors and warnings as a ValidationReport
+stiffer = fault.with_medium(geodef.ElasticMedium(shear_modulus=40e9))
+shared = fault.to_frame(other.frame)   # same physical fault, another local frame
+```
+
+`validate()` reports patches or vertices above the free surface, degenerate
+triangles, extreme aspect ratios, and suspicious strike values. `Fault` objects
+are immutable; `with_medium` and `to_frame` return new faults.
 
 ---
 
 ## Coordinate conventions
 
-- Geographic: latitude, longitude, depth in meters (positive down).
+- Geographic: longitude, latitude (degrees), depth in meters (positive down).
 - Local Cartesian: East, North, Up in meters.
 - The `.seg` format uses local Cartesian (North, East, Depth) with a user-supplied `ref_lat`/`ref_lon`.

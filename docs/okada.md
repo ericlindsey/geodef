@@ -77,21 +77,28 @@ numerical precision.
 
 Observation points at any depth.
 
-### `okada92.okada92(e, n, z, depth, strike, dip, length, width, slip_strike, slip_dip, opening, mu, nu, allow_singular=False)`
+### `okada92.okada92(X, Y, Z, depth, strike, dip, length, width, strike_slip, dip_slip, opening, G, nu, allow_singular=False)`
 
-Returns `(disp, strain)`:
-- `disp`: `(3,)` array `[ue, un, uz]`
-- `strain`: `(3, 3)` displacement gradient tensor
+`X`, `Y` are East and North offsets from the fault centroid in meters, `Z` is
+the observation height (zero at the surface, negative below), and `G` is the
+shear modulus in Pa. The argument names follow the published routine.
+
+Returns `(disp, strain)`. For arrays of `n` observation points:
+- `disp`: `[ue, un, uz]` per point, shape `(n, 3)`
+- `strain`: displacement-gradient tensor per point, shape `(n, 3, 3)`
+
+Scalar coordinates return a single `(3, 3)` strain tensor and a `(3, 1)`
+displacement column.
 
 ```python
 from geodef.okada92 import okada92
 
 disp, strain = okada92(
-    e=1000.0, n=500.0, z=-5000.0,
+    X=1000.0, Y=500.0, Z=-5000.0,
     depth=20_000.0, strike=90.0, dip=15.0,
     length=50_000.0, width=20_000.0,
     strike_slip=1.0, dip_slip=0.0, opening=0.0,
-    mu=30e9, nu=0.25,
+    G=30e9, nu=0.25,
 )
 ```
 

@@ -52,11 +52,20 @@ class LinearSystem:
     cached, so they are shared across ``solve``, ``lcurve``,
     ``abic_curve``, and the post-inversion analysis methods.
 
-    Use this class directly when performing multiple analyses on the same
-    fault and datasets (e.g. comparing L-curve and ABIC, then running
-    diagnostics after inversion).  The module-level convenience functions
-    (``solve``, ``lcurve``, etc.) create a ``LinearSystem`` internally
-    and are fully backward-compatible.
+    ``geodef.solve(fault, datasets, ...)`` builds one of these and solves
+    it once. Build it yourself to inspect ``G``, ``d``, ``W``, and ``L``,
+    or to run several analyses on the same fault and data (an L-curve, an
+    ABIC curve, then solves at the chosen strengths) without reassembling
+    the matrices.
+
+    Attributes:
+        G: Green's matrix in the selected slip basis, shape (M, P).
+        d: Stacked observation vector, shape (M,).
+        W: Block-diagonal inverse data covariance, shape (M, M).
+        L: Regularization operator, or ``None`` when unregularized.
+        fault: The fault the system was built for.
+        datasets: The datasets, in stacked-row order.
+        dataset_names: A name for each dataset (given or generated).
 
     Args:
         fault: Fault geometry.

@@ -23,7 +23,7 @@ operator, kernel, or repeated expert computation.
 
 | Level | Use it when | Primary entry points | Course |
 |---|---|---|---|
-| Domain workflow | Building a forward model or estimating slip | `Fault`, `data.*`, `solve`, named result views | 01, 03–08 |
+| Domain workflow | Building a forward model or estimating slip | `Fault`, `GNSS`/`InSAR`/`Vertical`, `solve`, result views and methods | 01, 03–08 |
 | Matrices/operators | Inspecting ordering, custom priors, repeated sweeps, or diagnostics | `greens.matrix`, `geodef.LinearSystem`, `result.covariance()` | 02–04, 08 |
 | Physics kernels | Validating a formulation or needing displacement/strain features below `Fault` | `okada`, `okada85`, `okada92`, `tri` | 01, 11 |
 

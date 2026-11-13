@@ -123,9 +123,8 @@ or systematic model error.
 GNSS displacement/velocity vectors as quiver arrows.
 
 ```python
-predictions = result.prediction()
 geodef.plot.vectors(gnss, fault,
-    predicted=predictions[gnss.name],  # optional overlay
+    predicted=result.prediction(gnss),  # optional overlay
     scale=10,
     obs_color='black', pred_color='red',
     components='both',          # 'horizontal', 'vertical', 'both'
@@ -152,7 +151,7 @@ InSAR LOS data as colored scatter points.
 
 ```python
 geodef.plot.insar(insar, fault,
-    predicted=predictions[insar.name],
+    predicted=result.prediction(insar),
     layout='obs_pred_res',    # 'obs', 'pred', 'residual', 'obs_pred_res'
     cmap='RdBu_r',
     vmin=-0.1, vmax=0.1,
@@ -169,8 +168,8 @@ geodef.plot.insar(insar, fault,
 Observed vs. predicted scatter or residual histogram.
 
 ```python
-geodef.plot.fit(gnss.obs, predictions[gnss.name])
-geodef.plot.fit(gnss.obs, predictions[gnss.name],
+geodef.plot.fit(gnss.obs, result.prediction(gnss))
+geodef.plot.fit(gnss.obs, result.prediction(gnss),
     style='residual_histogram')
 ```
 
@@ -241,8 +240,11 @@ Since every function accepts `ax`, plots can be layered freely:
 
 ```python
 fig, ax = plt.subplots()
-geodef.plot.slip(fault, result.slip_vector, ax=ax, cmap='YlOrRd')
-geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
+# coords='geographic' puts the slip in the same East/North km axes as the data
+geodef.plot.slip(fault, result.slip_magnitude, ax=ax, coords='geographic',
+                 cmap='YlOrRd')
+geodef.plot.vectors(gnss, fault, ax=ax, scale=10,
+                    predicted=result.prediction(gnss))
 ```
 
 ---
@@ -252,7 +254,8 @@ geodef.plot.vectors(gnss, fault, ax=ax, scale=10)
 `LCurveResult` and `ABICCurveResult` have `.plot()` methods that follow the same pattern:
 
 ```python
-lc = geodef.LinearSystem(fault, data, regularization='laplacian').lcurve(regularization_range=(1e-2, 1e6))
+system = geodef.LinearSystem(fault, data, regularization='laplacian')
+lc = system.lcurve(regularization_range=(1e-2, 1e6))
 ax = lc.plot()           # optimal λ annotated automatically
-ax = lc.plot(ax=ax, color='navy')
+ax = lc.plot(ax=ax, line_kwargs={'color': 'navy'})
 ```

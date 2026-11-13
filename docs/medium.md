@@ -13,7 +13,7 @@ dislocation kernels, and the shear modulus sets the default for
 import geodef
 
 medium = geodef.ElasticMedium(shear_modulus=35e9, poisson_ratio=0.27)
-fault = geodef.Fault.planar(lat=0.0, lon=100.0, depth=20e3,
+fault = geodef.Fault.planar(lon=100.0, lat=0.0, depth=20e3,
                             strike=90.0, dip=30.0,
                             length=40e3, width=20e3,
                             n_length=4, n_width=2,

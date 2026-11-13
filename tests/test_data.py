@@ -1,4 +1,4 @@
-"""Tests for geodef.DataSet classes (Phase 3.2).
+"""Tests for geodef.DataSet classes.
 
 Covers: construction, validation, properties, project() methods,
 covariance, component filtering (GNSS), and file I/O.

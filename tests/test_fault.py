@@ -1,4 +1,4 @@
-"""Tests for the geodef.Fault class (Phase 3.1).
+"""Tests for the geodef.Fault class.
 
 Covers: construction, factory classmethods, properties, forward modeling,
 moment/magnitude, laplacian, file I/O, and vertex computation.

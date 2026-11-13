@@ -1,4 +1,4 @@
-"""Tests for geodef package structure and imports (Phase 2.1).
+"""Tests for geodef package structure and imports.
 
 Verifies that the package is importable, modules are accessible,
 the okada dispatcher works correctly, and the top-level API is usable.

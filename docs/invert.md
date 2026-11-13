@@ -280,7 +280,7 @@ geometry0 = {
     'length': 180e3, 'width': 90e3,
 }
 
-result = geodef.invert.geometry_search(
+search = geodef.invert.geometry_search(
     geometry0, gnss, frame=frame,
     free=['dip', 'depth'],           # parameters to optimize; rest fixed
     bounds={'dip': (5.0, 45.0)},
@@ -289,19 +289,19 @@ result = geodef.invert.geometry_search(
     regularization='laplacian', regularization_strength=1.0,
 )
 
-result.fault          # concrete optimal Fault
-result.frame          # frame defining the local parameter vector
-result.theta          # expert/JAX seven-vector for the same geometry
-result.slip           # inner-solve slip at the optimal geometry
-result.theta_cov      # Gauss-Newton covariance of the free parameters
-result.reduced_chi2
+search.fault          # concrete optimal Fault
+search.frame          # frame defining the local parameter vector
+search.theta          # expert/JAX seven-vector for the same geometry
+search.slip           # inner-solve slip at the optimal geometry
+search.theta_cov      # Gauss-Newton covariance of the free parameters
+search.reduced_chi2
 ```
 
 Notes:
 
 - For expert/JAX workflows, the seven-element `theta0` array remains
   supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
-- `result.fault` is the ordinary domain view. `result.theta` is the exact
+- `search.fault` is the ordinary domain view. `search.theta` is the exact
   `[e0, n0, depth, strike, dip, length, width]` array view.
 - The inner solve is unconstrained WLS with fixed `regularization_strength`;
   choose λ first (e.g. with `abic_curve` at a reasonable starting

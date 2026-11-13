@@ -1,4 +1,4 @@
-"""Tests for polymorphic Green's matrix assembly (Phase 3.3).
+"""Tests for polymorphic Green's matrix assembly.
 
 Covers: matrix() with single and joint datasets, all data types (GNSS,
 InSAR, Vertical), consistency with fault.displacement(), stack_obs(),
@@ -397,11 +397,7 @@ class TestProjectGreens:
 
 
 class TestTopLevelAPI:
-    """Verify the greens helpers are accessible from the greens namespace.
-
-    The roadmap 2.2 export trim removed the transitional top-level aliases,
-    so these names live only under ``geodef.greens`` now.
-    """
+    """The greens helpers live under ``geodef.greens``, not the top level."""
 
     def test_greens_accessible(self):
         assert hasattr(geodef.greens, "matrix")

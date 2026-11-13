@@ -1,4 +1,4 @@
-"""Property-based numerical contracts (roadmap 3.4).
+"""Property-based numerical contracts.
 
 Round trips, linearity, and basis invariants checked over generated
 inputs with hypothesis. The dependency is dev-only: these tests skip
