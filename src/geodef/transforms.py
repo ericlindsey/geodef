@@ -562,38 +562,41 @@ def midpoint(lat0: float, lon0: float, lat1: float, lon1: float) -> Tuple[float,
 # Local frames
 # ======================================================================
 
-DEFAULT_PROJECTION = "wgs84-enu"
-"""Current geographic-to-local projection identifier."""
-
 
 @dataclass(frozen=True, kw_only=True)
 class LocalFrame:
-    """A local East-North-Up frame tied to a geographic origin.
+    """A flat local East-North-Up frame tied to a geographic origin.
 
-    The only projection currently supported is ``"wgs84-enu"``: geographic
-    WGS84 coordinates are converted through Earth-centered Earth-fixed (ECEF)
-    coordinates and rotated into the tangent ENU frame at the origin.
+    Elastic half-space models assume a flat Earth, so a geographic problem
+    has to be flattened onto a plane. ``LocalFrame`` does that one way for
+    everything in GeoDef:
+
+    - **Horizontal** position is the East/North of the point on the
+      reference surface (WGS84 ellipsoid, at the origin's altitude) in the
+      plane tangent to the Earth at the origin.
+    - **Vertical** position is height above that surface, unchanged. A
+      point at 10 km depth has ``up = -10 km`` wherever it is.
+
+    ``to_enu`` and ``to_geographic`` are exact inverses. Distances are
+    distorted by about ``(d / R)**2 / 6`` at distance ``d`` from the origin
+    (4e-4 at 300 km), which is the usual limit of a flat-Earth model.
 
     Args:
         lon: Origin longitude in degrees.
         lat: Origin latitude in degrees.
-        alt: Origin ellipsoidal altitude in meters.
-        projection: Geographic-to-local projection identifier. Currently only
-            ``"wgs84-enu"`` is supported.
+        alt: Ellipsoidal altitude of the reference surface in meters.
 
     Raises:
-        ValueError: If an origin value is non-finite or out of range, or the
-            projection is unsupported.
+        ValueError: If an origin value is non-finite or out of range.
 
     Examples:
         >>> frame = LocalFrame(lon=100.0, lat=-2.0)
-        >>> enu = frame.to_enu(lon=100.1, lat=-2.0, alt=0.0)
+        >>> east, north, up = frame.to_enu(lon=100.1, lat=-2.0).T
     """
 
     lon: float
     lat: float
     alt: float = 0.0
-    projection: str = DEFAULT_PROJECTION
 
     def __post_init__(self) -> None:
         for name in ("lon", "lat", "alt"):
@@ -604,27 +607,25 @@ class LocalFrame:
             object.__setattr__(self, name, value)
         check_range("lat", self.lat, -90.0, 90.0, unit="degrees")
         check_range("lon", self.lon, -360.0, 360.0, unit="degrees")
-        if self.projection != DEFAULT_PROJECTION:
-            raise ValueError(
-                f"projection must be {DEFAULT_PROJECTION!r}; got {self.projection!r}"
-            )
 
     def to_enu(
         self,
         *,
         lon: npt.ArrayLike,
         lat: npt.ArrayLike,
-        alt: npt.ArrayLike,
+        alt: npt.ArrayLike = 0.0,
     ) -> np.ndarray:
-        """Convert geographic coordinates to ENU meters in this frame.
+        """Convert geographic coordinates to local East, North, Up meters.
 
         Args:
             lon: Longitude in degrees.
             lat: Latitude in degrees.
-            alt: Ellipsoidal altitude in meters.
+            alt: Height in meters relative to the frame's reference surface
+                (negative for depth). Defaults to the surface.
 
         Returns:
-            Array with final axis ``[east_m, north_m, up_m]``.
+            Array with final axis ``[east_m, north_m, up_m]`` and the
+            broadcast shape of the inputs.
         """
         lon_array, lat_array, alt_array = np.broadcast_arrays(
             np.asarray(lon, dtype=float),
@@ -635,34 +636,37 @@ class LocalFrame:
             np.isfinite(np.stack([lon_array, lat_array, alt_array], axis=-1))
         ):
             raise ValueError("lon, lat, and alt must contain only finite values")
-        shape = lon_array.shape
-        east, north, up = geod2enu(
+        east, north, _ = geod2enu(
             lat_array.ravel(),
             lon_array.ravel(),
-            alt_array.ravel(),
+            np.full(lon_array.size, self.alt),
             self.lat,
             self.lon,
             self.alt,
         )
-        return np.stack([east, north, up], axis=-1).reshape((*shape, 3))
+        return np.stack([east, north, alt_array.ravel()], axis=-1).reshape(
+            (*lon_array.shape, 3)
+        )
 
     def to_geographic(
         self,
         *,
         east: npt.ArrayLike,
         north: npt.ArrayLike,
-        up: npt.ArrayLike,
+        up: npt.ArrayLike = 0.0,
     ) -> np.ndarray:
-        """Convert ENU meters in this frame to geographic coordinates.
+        """Convert local East, North, Up meters to geographic coordinates.
+
+        The exact inverse of :meth:`to_enu`.
 
         Args:
             east: East coordinate in meters.
             north: North coordinate in meters.
-            up: Up coordinate in meters.
+            up: Height in meters relative to the reference surface.
 
         Returns:
             Array with final axis ``[longitude_degrees, latitude_degrees,
-            altitude_m]``.
+            height_m]`` and the broadcast shape of the inputs.
         """
         east_array, north_array, up_array = np.broadcast_arrays(
             np.asarray(east, dtype=float),
@@ -673,21 +677,49 @@ class LocalFrame:
             np.isfinite(np.stack([east_array, north_array, up_array], axis=-1))
         ):
             raise ValueError("east, north, and up must contain only finite values")
-        shape = east_array.shape
-        lat, lon, alt = enu2geod(
-            east_array.ravel(),
-            north_array.ravel(),
-            up_array.ravel(),
-            self.lat,
-            self.lon,
-            self.alt,
+        e, n = east_array.ravel(), north_array.ravel()
+        # Find the point of the curved reference surface that projects onto
+        # (east, north): start in the tangent plane and step down the local
+        # vertical until its height is zero. Each pass shrinks the error by
+        # about (distance / Earth radius)**2.
+        tangent_up = np.zeros_like(e)
+        for _ in range(5):
+            lat, lon, height = enu2geod(e, n, tangent_up, self.lat, self.lon, self.alt)
+            tangent_up = tangent_up - (height - self.alt)
+        return np.stack([lon, lat, up_array.ravel()], axis=-1).reshape(
+            (*east_array.shape, 3)
         )
-        return np.stack([lon, lat, alt], axis=-1).reshape((*shape, 3))
+
+    def north_azimuth(self, *, lon: npt.ArrayLike, lat: npt.ArrayLike) -> np.ndarray:
+        """Direction of true north at a point, as an azimuth in this frame.
+
+        Meridians converge toward the poles, so away from the origin "north
+        at that point" is not the frame's North axis. Add this angle to a
+        geographic azimuth (a strike read from a map or a file) to express
+        it in the frame; subtract it to go back.
+
+        Args:
+            lon: Longitude in degrees.
+            lat: Latitude in degrees.
+
+        Returns:
+            Azimuth of true north in degrees clockwise from the frame's
+            North axis, with the broadcast shape of the inputs. Zero at the
+            origin.
+        """
+        lon_array, lat_array = np.broadcast_arrays(
+            np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
+        )
+        step = 1e-4  # degrees of latitude, about 11 m
+        south = self.to_enu(lon=lon_array, lat=lat_array - step)
+        north = self.to_enu(lon=lon_array, lat=lat_array + step)
+        delta = north - south
+        return np.degrees(np.arctan2(delta[..., 0], delta[..., 1]))
 
     def transform_enu(
         self, coordinates: npt.ArrayLike, *, target: LocalFrame
     ) -> np.ndarray:
-        """Explicitly re-express ENU coordinates in another local frame.
+        """Re-express local coordinates in another frame.
 
         Args:
             coordinates: ENU coordinates with shape ``(..., 3)``.
@@ -708,7 +740,7 @@ class LocalFrame:
         return target.to_enu(
             lon=geographic[..., 0],
             lat=geographic[..., 1],
-            alt=geographic[..., 2],
+            alt=geographic[..., 2] + self.alt - target.alt,
         )
 
     def is_compatible(self, other: LocalFrame) -> bool:
@@ -722,7 +754,7 @@ class LocalFrame:
             other: Frame that will be combined with this one.
 
         Raises:
-            ValueError: If the origins or projection differ.
+            ValueError: If the origins differ.
         """
         if not self.is_compatible(other):
             raise ValueError(

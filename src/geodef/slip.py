@@ -250,4 +250,4 @@ def plate_rake_from_euler(fault: Fault, pole: tuple[float, float, float]) -> np.
     if np.any(np.hypot(east, north) == 0.0):
         raise ValueError("Euler pole produces zero velocity at a patch center")
     azimuth = np.degrees(np.arctan2(east, north))
-    return np.asarray(azimuth - fault.strike)
+    return np.asarray(azimuth - fault.geographic_strike)

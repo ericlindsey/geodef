@@ -253,21 +253,21 @@ class TestRectGreens:
                     )
 
     def test_matches_displacement_greens_layout(self):
-        """Row/column layout agrees with greens.displacement_greens on a
-        small-extent fault (flat-earth vs geodetic transform differences
-        stay below the loose tolerance)."""
+        """The traced model is the same plane as ``Fault.planar``: both lay
+        out patches in one flat local frame, so they agree to rounding."""
         backend.set_backend("numpy")
-        from geodef import greens
         from geodef.fault import Fault
+        from geodef.transforms import LocalFrame
 
         theta = np.array([0.0, 0.0, 4e3, 37.0, 55.0, 3e3, 2e3])
         n_length, n_width = 2, 2
         e_obs = np.array([1.5e3, -1e3, 2e3])
         n_obs = np.array([0.5e3, 2e3, -1.5e3])
+        frame = LocalFrame(lon=0.0, lat=0.0)
 
         fault = Fault.planar(
-            lat=0.0,
             lon=0.0,
+            lat=0.0,
             depth=theta[2],
             strike=theta[3],
             dip=theta[4],
@@ -275,28 +275,14 @@ class TestRectGreens:
             width=theta[6],
             n_length=n_length,
             n_width=n_width,
+            frame=frame,
         )
-        # small-angle conversion of local ENU obs to geographic
-        lat_obs = n_obs / 111194.9266
-        lon_obs = e_obs / 111194.9266
-        G_ref = greens.displacement_greens(
-            lat_obs,
-            lon_obs,
-            fault.lat,
-            fault.lon,
-            fault.depth,
-            fault.strike * np.ones(fault.n_patches),
-            fault.dip * np.ones(fault.n_patches),
-            fault.length,
-            fault.width,
-        )
+        obs = frame.to_geographic(east=e_obs, north=n_obs)
+        G_ref = fault.greens_matrix(lon=obs[:, 0], lat=obs[:, 1])
         G = gradients.rect_greens(
             theta, e_obs, n_obs, n_length=n_length, n_width=n_width
         )
-        # loose tolerances: the reference pipeline places patches with
-        # geodetic transforms while rect_greens is flat-Cartesian; the
-        # comparison verifies layout and conventions, not kernel accuracy
-        np.testing.assert_allclose(G, G_ref, rtol=2e-2, atol=2e-5)
+        np.testing.assert_allclose(G, G_ref, rtol=1e-9, atol=1e-15)
 
     def test_theta_jacobian_matches_finite_differences(self):
         jax_mod = jax

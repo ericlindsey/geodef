@@ -541,7 +541,7 @@ class TestGreensComponents:
         G_full = greens(fault_4x3, gnss_4station)
         az = 350.0
         G_az = greens(fault_4x3, gnss_4station, components="azimuth", slip_azimuth=az)
-        theta = np.deg2rad(az - fault_4x3.strike)
+        theta = np.deg2rad(az - fault_4x3.geographic_strike)
         expected = G_full[:, :12] * np.cos(theta) + G_full[:, 12:] * np.sin(theta)
         np.testing.assert_allclose(G_az, expected)
 

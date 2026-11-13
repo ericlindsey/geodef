@@ -5,12 +5,12 @@ from geometric parameters, files, or slab2.0 grids. Supports forward
 modeling via Green's function matrices and seismic moment calculation.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
 
-from geodef import _fault_io, transforms
+from geodef import _fault_io
 from geodef import greens as _greens
 from geodef._fault_io import _seg_to_patches as _seg_to_patches
 from geodef.geometry import (
@@ -24,7 +24,6 @@ from geodef.validation import (
     ValidationReport,
     _ReportBuilder,
     as_1d_floats,
-    check_finite_scalar,
     check_positive,
     check_range,
 )
@@ -53,7 +52,8 @@ class Fault:
         lon: Patch center longitudes in degrees, shape (N,).
         lat: Patch center latitudes in degrees, shape (N,).
         depth: Patch centroid depths in meters (positive down), shape (N,).
-        strike: Strike angles in degrees, shape (N,).
+        strike: Strike angles in degrees clockwise from the North axis of
+            ``frame``, shape (N,). See :attr:`geographic_strike`.
         dip: Dip angles in degrees, shape (N,).
         length: Along-strike patch lengths in meters, shape (N,).
             Rectangular faults only.
@@ -155,8 +155,8 @@ class Fault:
     def planar(
         cls,
         *,
-        lat: float,
         lon: float,
+        lat: float,
         depth: float,
         strike: float,
         dip: float,
@@ -167,14 +167,20 @@ class Fault:
         medium: ElasticMedium | None = None,
         frame: LocalFrame | None = None,
     ) -> "Fault":
-        """Create a discretized planar fault from its center.
+        """Create a planar fault, divided into a grid of patches, from its center.
+
+        The plane is flat in the fault's local frame. Patches are stored row
+        by row: row 0 is the shallowest and each later row is one step down
+        dip (to the right of strike); within a row patches advance along
+        strike. Subdividing does not change the plane.
 
         Args:
-            lat: Latitude of fault centroid.
-            lon: Longitude of fault centroid.
-            depth: Depth of fault centroid in meters (positive down).
-            strike: Strike angle in degrees from North.
-            dip: Dip angle in degrees from horizontal.
+            lon: Longitude of the fault center in degrees.
+            lat: Latitude of the fault center in degrees.
+            depth: Depth of the fault center in meters (positive down). Must
+                exceed half the width times sin(dip).
+            strike: Strike in degrees clockwise from north.
+            dip: Dip in degrees from horizontal, down to the right of strike.
             length: Total along-strike length in meters.
             width: Total down-dip width in meters.
             n_length: Number of patches along strike.
@@ -182,90 +188,30 @@ class Fault:
             medium: Elastic half-space parameters. Defaults to the 30 GPa
                 Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
             frame: Local frame for local-coordinate views. Defaults to a frame
-                centered horizontally on the fault.
+                centered on the fault.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
+
+        Examples:
+            >>> fault = Fault.planar(
+            ...     lon=100.0, lat=-2.0, depth=25e3, strike=315.0, dip=15.0,
+            ...     length=180e3, width=90e3, n_length=12, n_width=6,
+            ... )
         """
-        if n_length < 1 or n_width < 1:
-            raise ValueError("n_length and n_width must be positive integers")
-        selected_frame = LocalFrame(lon=lon, lat=lat) if frame is None else frame
-        center = selected_frame.to_enu(lon=lon, lat=lat, alt=selected_frame.alt)
-        as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
-        patch_L = length / n_length
-        patch_W = width / n_width
-        shallowest_center = depth - 0.5 * (width - patch_W) * np.sin(np.radians(dip))
-        if shallowest_center < 0.0:
-            raise ValueError(
-                f"the top row of patches is centered {-shallowest_center:.0f} m "
-                "above the surface: depth is the depth of the fault center, "
-                "which must exceed half the width times sin(dip). Increase "
-                "depth or reduce width."
-            )
-
-        sin_str = np.sin(np.radians(strike))
-        cos_str = np.cos(np.radians(strike))
-        sin_dip = np.sin(np.radians(dip))
-        cos_dip = np.cos(np.radians(dip))
-
-        # Offset from center to top-left corner of the fault
-        fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
-        fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
-
-        # Vectorized grid of patch center offsets
-        i_idx = np.arange(n_length)
-        j_idx = np.arange(n_width)
-        jj_grid, ii_grid = np.meshgrid(j_idx, i_idx, indexing="ij")
-        ii = ii_grid.ravel()
-        jj = jj_grid.ravel()
-
-        e_offsets = (
-            fault_e0
-            + (ii + 0.5) * patch_L * sin_str
-            + (jj + 0.5) * patch_W * cos_dip * cos_str
-        )
-        n_offsets = (
-            fault_n0
-            + (ii + 0.5) * patch_L * cos_str
-            - (jj + 0.5) * patch_W * cos_dip * sin_str
-        )
-        # Row 0 is the shallowest; each row down dip is deeper.
-        down_offsets = (jj + 0.5 - 0.5 * n_width) * patch_W * sin_dip
-
-        geographic = selected_frame.to_geographic(
-            east=center[0] + e_offsets,
-            north=center[1] + n_offsets,
-            up=np.zeros_like(e_offsets),
-        )
-        lon_c = geographic[:, 0]
-        lat_c = geographic[:, 1]
-        depth_c = depth + down_offsets
-
-        n_patches = n_length * n_width
-        strike_arr = np.full(n_patches, strike)
-        dip_arr = np.full(n_patches, dip)
-        length_arr = np.full(n_patches, patch_L)
-        width_arr = np.full(n_patches, patch_W)
-
-        return cls(
-            lon=lon_c,
-            lat=lat_c,
-            depth=depth_c,
-            strike=strike_arr,
-            dip=dip_arr,
-            length=length_arr,
-            width=width_arr,
-            grid_shape=(n_length, n_width),
-            medium=medium,
-            frame=selected_frame,
-        )
+        frame = LocalFrame(lon=lon, lat=lat) if frame is None else frame
+        center = frame.to_enu(lon=lon, lat=lat)
+        return cls._planar_grid(
+            frame, center[0], center[1], depth, strike, dip, length, width,
+            n_length, n_width, medium,
+        )  # fmt: skip
 
     @classmethod
     def planar_from_corner(
         cls,
         *,
-        lat: float,
         lon: float,
+        lat: float,
         depth: float,
         strike: float,
         dip: float,
@@ -274,69 +220,99 @@ class Fault:
         n_length: int = 1,
         n_width: int = 1,
         medium: ElasticMedium | None = None,
+        frame: LocalFrame | None = None,
     ) -> "Fault":
-        """Create a discretized planar fault from its top-left corner.
+        """Create a planar fault from its top-left corner.
 
         The top-left corner is the shallowest point at the start of the
-        along-strike direction.
+        along-strike direction. Otherwise identical to :meth:`planar`.
 
         Args:
-            lat: Latitude of top-left corner.
-            lon: Longitude of top-left corner.
-            depth: Depth of top-left corner in meters (positive down).
-            strike: Strike angle in degrees from North.
-            dip: Dip angle in degrees from horizontal.
+            lon: Longitude of the top-left corner in degrees.
+            lat: Latitude of the top-left corner in degrees.
+            depth: Depth of the top edge in meters (positive down).
+            strike: Strike in degrees clockwise from north.
+            dip: Dip in degrees from horizontal.
             length: Total along-strike length in meters.
             width: Total down-dip width in meters.
             n_length: Number of patches along strike.
             n_width: Number of patches down dip.
+            medium: Elastic half-space parameters.
+            frame: Local frame. Defaults to a frame centered on the corner.
 
         Returns:
             A Fault with ``n_length * n_width`` rectangular patches.
         """
-        for pname, val, unit in (
-            ("lat", lat, "degrees"),
-            ("lon", lon, "degrees"),
-            ("depth", depth, "meters"),
-            ("strike", strike, "degrees"),
-            ("dip", dip, "degrees"),
-            ("length", length, "meters"),
-            ("width", width, "meters"),
-        ):
-            check_finite_scalar(pname, val, unit=unit)
-        sin_str = np.sin(np.radians(strike))
-        cos_str = np.cos(np.radians(strike))
-        sin_dip = np.sin(np.radians(dip))
-        cos_dip = np.cos(np.radians(dip))
-
-        # Compute center of the fault from the corner
-        center_e = 0.5 * length * sin_str + 0.5 * width * cos_dip * cos_str
-        center_n = 0.5 * length * cos_str - 0.5 * width * cos_dip * sin_str
-        center_u = 0.5 * width * sin_dip
-
-        center_lat, center_lon, _ = transforms.translate_flat(
-            lat,
-            lon,
-            0.0,
-            center_e,
-            center_n,
-            0.0,
+        frame = LocalFrame(lon=lon, lat=lat) if frame is None else frame
+        corner = frame.to_enu(lon=lon, lat=lat)
+        along_strike, down_dip = _plane_axes(strike, dip)
+        center = (
+            np.array([corner[0], corner[1], -depth])
+            + 0.5 * length * along_strike
+            + 0.5 * width * down_dip
         )
-        center_depth = depth + center_u  # deeper = more positive
+        return cls._planar_grid(
+            frame, center[0], center[1], -center[2], strike, dip, length, width,
+            n_length, n_width, medium,
+        )  # fmt: skip
 
-        # Delegate to planar() which handles the grid generation
-        # Note: we negate center_u because depth convention is positive-down
-        return cls.planar(
-            lat=float(center_lat),
-            lon=float(center_lon),
-            depth=float(center_depth),
-            strike=strike,
-            dip=dip,
-            length=length,
-            width=width,
-            n_length=n_length,
-            n_width=n_width,
+    @classmethod
+    def _planar_grid(
+        cls,
+        frame: LocalFrame,
+        east: float,
+        north: float,
+        depth: float,
+        strike: float,
+        dip: float,
+        length: float,
+        width: float,
+        n_length: int,
+        n_width: int,
+        medium: ElasticMedium | None,
+    ) -> "Fault":
+        """Lay out the patch grid of a plane centered at (east, north, depth)."""
+        if n_length < 1 or n_width < 1:
+            raise ValueError("n_length and n_width must be positive integers")
+        as_planar_vector([east, north, depth, strike, dip, length, width])
+        patch_length = length / n_length
+        patch_width = width / n_width
+        shallowest_center = depth - 0.5 * (width - patch_width) * np.sin(
+            np.radians(dip)
+        )
+        if shallowest_center < 0.0:
+            raise ValueError(
+                f"the top row of patches is centered {-shallowest_center:.0f} m "
+                "above the surface: depth is the depth of the fault center, "
+                "which must exceed half the width times sin(dip). Increase "
+                "depth or reduce width."
+            )
+
+        # Offsets of each patch center from the fault center, in units of the
+        # two in-plane axes. Rows (index j) step down dip; columns (i) along
+        # strike; storage order is row by row.
+        row, column = np.divmod(np.arange(n_length * n_width), n_length)
+        along_strike, down_dip = _plane_axes(strike, dip)
+        centers = (
+            np.array([east, north, -depth])
+            + ((column + 0.5) * patch_length - 0.5 * length)[:, None] * along_strike
+            + ((row + 0.5) * patch_width - 0.5 * width)[:, None] * down_dip
+        )
+        geographic = frame.to_geographic(
+            east=centers[:, 0], north=centers[:, 1], up=centers[:, 2]
+        )
+        n_patches = n_length * n_width
+        return cls(
+            lon=geographic[:, 0],
+            lat=geographic[:, 1],
+            depth=-geographic[:, 2],
+            strike=np.full(n_patches, float(strike)),
+            dip=np.full(n_patches, float(dip)),
+            length=np.full(n_patches, patch_length),
+            width=np.full(n_patches, patch_width),
+            grid_shape=(n_length, n_width),
             medium=medium,
+            frame=frame,
         )
 
     @classmethod
@@ -522,13 +498,8 @@ class Fault:
             if self.vertices is not None:
                 self._centers_local = np.mean(self.vertices, axis=1)
             else:
-                enu = self.frame.to_enu(
-                    lon=self.lon,
-                    lat=self.lat,
-                    alt=np.full(self.n_patches, self.frame.alt),
-                )
-                self._centers_local = np.column_stack(
-                    [enu[:, 0], enu[:, 1], -self.depth]
+                self._centers_local = self.frame.to_enu(
+                    lon=self.lon, lat=self.lat, alt=-self.depth
                 )
         return self._centers_local
 
@@ -543,19 +514,16 @@ class Fault:
         if self.vertices is not None:
             return self.vertices
         assert self.length is not None and self.width is not None
-        strike = np.radians(self.strike)[:, None]
-        dip = np.radians(self.dip)[:, None]
-        along_strike = 0.5 * self.length[:, None] * np.array([-1.0, 1.0, 1.0, -1.0])
-        up_dip = 0.5 * self.width[:, None] * np.array([1.0, 1.0, -1.0, -1.0])
-        offsets = np.stack(
-            [
-                along_strike * np.sin(strike) - up_dip * np.cos(dip) * np.cos(strike),
-                along_strike * np.cos(strike) + up_dip * np.cos(dip) * np.sin(strike),
-                up_dip * np.sin(dip),
-            ],
-            axis=-1,
+        along_strike, down_dip = _plane_axes(self.strike, self.dip)
+        half_length = 0.5 * self.length[:, None, None] * along_strike[:, None, :]
+        half_width = 0.5 * self.width[:, None, None] * down_dip[:, None, :]
+        strike_sign = np.array([-1.0, 1.0, 1.0, -1.0])[None, :, None]
+        dip_sign = np.array([-1.0, -1.0, 1.0, 1.0])[None, :, None]
+        return (
+            self.centers_local[:, None, :]
+            + strike_sign * half_length
+            + dip_sign * half_width
         )
-        return self.centers_local[:, None, :] + offsets
 
     @property
     def corners_geo(self) -> np.ndarray:
@@ -565,19 +533,23 @@ class Fault:
         :attr:`corners`.
         """
         corners = self.corners
-        if self.vertices is not None:
-            geographic = self.frame.to_geographic(
-                east=corners[..., 0], north=corners[..., 1], up=corners[..., 2]
-            )
-            geographic[..., 2] *= -1.0
-            return geographic
         geographic = self.frame.to_geographic(
-            east=corners[..., 0],
-            north=corners[..., 1],
-            up=np.full(corners.shape[:-1], self.frame.alt),
+            east=corners[..., 0], north=corners[..., 1], up=corners[..., 2]
         )
-        geographic[..., 2] = -corners[..., 2]
+        geographic[..., 2] *= -1.0
         return geographic
+
+    @property
+    def geographic_strike(self) -> np.ndarray:
+        """Strike of each patch measured from true north at the patch, degrees.
+
+        :attr:`strike` is measured from the North axis of the fault's local
+        frame, which is true north only at the frame origin; meridians
+        converge away from it. Use this property when comparing a strike with
+        a geographic azimuth, such as a GNSS velocity direction or a map
+        bearing. The two agree to within about ``dlon * sin(lat)`` degrees.
+        """
+        return self.strike - self.frame.north_azimuth(lon=self.lon, lat=self.lat)
 
     @property
     def areas(self) -> np.ndarray:
@@ -676,8 +648,8 @@ class Fault:
     def to_frame(self, frame: LocalFrame) -> "Fault":
         """Return this fault re-expressed in another local frame.
 
-        The physical (geographic) geometry is unchanged; triangular
-        vertices are transformed into the new frame.
+        The geographic position of every patch is unchanged. Strikes and
+        triangle vertices, which are measured in the frame, are converted.
 
         Args:
             frame: Destination local frame.
@@ -690,7 +662,13 @@ class Fault:
         if self.vertices is not None:
             vertices = self.frame.transform_enu(self.vertices, target=frame)
             return Fault.from_triangles(vertices, frame=frame, medium=self.medium)
-        return self._replace(frame=frame)
+        true_north = {"lon": self.lon, "lat": self.lat}
+        strike = (
+            self.strike
+            - self.frame.north_azimuth(**true_north)
+            + frame.north_azimuth(**true_north)
+        )
+        return self._replace(frame=frame, strike=strike)
 
     def _replace(self, **changes: object) -> "Fault":
         """Return a copy with some constructor arguments replaced."""
@@ -745,31 +723,33 @@ class Fault:
         """
         if kind not in {"displacement", "strain"}:
             raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
-        lon = np.atleast_1d(np.asarray(lon, dtype=float))
-        lat = np.atleast_1d(np.asarray(lat, dtype=float))
-        if depth is not None:
-            depth = np.atleast_1d(np.asarray(depth, dtype=float))
+        obs = self.frame.to_enu(
+            lon=np.atleast_1d(np.asarray(lon, dtype=float)),
+            lat=np.atleast_1d(np.asarray(lat, dtype=float)),
+        )
+        points: dict[str, Any] = {"obs_east": obs[:, 0], "obs_north": obs[:, 1]}
+        if kind == "strain" and depth is not None:
+            points["obs_depth"] = np.atleast_1d(np.asarray(depth, dtype=float))
         nu = self.medium.poisson_ratio
-        centers = (self.lat, self.lon, self.depth)
         if self.vertices is not None:
             if kind == "displacement":
                 return _greens.tri_displacement_greens(
-                    lat, lon, *centers, self.vertices, nu=nu, frame=self.frame
+                    **points, vertices=self.vertices, nu=nu
                 )
-            return _greens.tri_strain_greens(
-                lat,
-                lon,
-                *centers,
-                self.vertices,
-                nu=nu,
-                obs_depth=depth,
-                frame=self.frame,
-            )
-        assert self.length is not None and self.width is not None
-        patches = (*centers, self.strike, self.dip, self.length, self.width)
+            return _greens.tri_strain_greens(**points, vertices=self.vertices, nu=nu)
+        centers = self.centers_local
+        patches: dict[str, Any] = {
+            "east": centers[:, 0],
+            "north": centers[:, 1],
+            "depth": self.depth,
+            "strike": self.strike,
+            "dip": self.dip,
+            "length": self.length,
+            "width": self.width,
+        }
         if kind == "displacement":
-            return _greens.displacement_greens(lat, lon, *patches, nu=nu)
-        return _greens.strain_greens(lat, lon, *patches, nu=nu, obs_depth=depth)
+            return _greens.displacement_greens(**points, **patches, nu=nu)
+        return _greens.strain_greens(**points, **patches, nu=nu)
 
     def displacement(
         self,
@@ -857,10 +837,7 @@ class Fault:
             key["fault_width"] = self.width
         else:
             key["fault_vertices"] = self.vertices
-            key["frame_origin_lat"] = self.frame.lat
-            key["frame_origin_lon"] = self.frame.lon
-            key["frame_origin_alt"] = self.frame.alt
-            key["frame_projection"] = self.frame.projection
+        key["frame"] = np.array([self.frame.lon, self.frame.lat, self.frame.alt])
         return key
 
     # ==================================================================
@@ -1060,6 +1037,26 @@ class Fault:
     def __repr__(self) -> str:
         grid = f", grid_shape={self.grid_shape}" if self.grid_shape else ""
         return f"Fault(n_patches={self.n_patches}, engine={self.engine!r}{grid})"
+
+
+def _plane_axes(
+    strike: float | np.ndarray, dip: float | np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Unit vectors along strike and down dip, as ``[east, north, up]``.
+
+    The fault dips to the right of strike, so the down-dip direction points
+    toward ``strike + 90`` degrees and downward.
+
+    Returns:
+        ``(along_strike, down_dip)``, each with a trailing axis of 3.
+    """
+    strike_rad = np.radians(strike)
+    dip_rad = np.radians(dip)
+    sin_s, cos_s = np.sin(strike_rad), np.cos(strike_rad)
+    sin_d, cos_d = np.sin(dip_rad), np.cos(dip_rad)
+    along_strike = np.stack([sin_s, cos_s, np.zeros_like(sin_s)], axis=-1)
+    down_dip = np.stack([cos_d * cos_s, -cos_d * sin_s, -sin_d], axis=-1)
+    return along_strike, down_dip
 
 
 # ======================================================================

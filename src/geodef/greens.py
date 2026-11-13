@@ -1,10 +1,14 @@
-"""Green's matrix assembly and fault geometry utilities.
+"""Green's matrix assembly, dataset projection, and Laplacian operators.
 
-Combines displacement/strain Green's matrix construction (from okada_greens)
-with patch grid generation, component Green's functions, and Laplacian
-regularization operators (from okada_utils). Also provides the polymorphic
-``matrix()`` function for assembling projected Green's matrices from
-``Fault`` and ``DataSet`` objects.
+Three levels, from most to least convenient:
+
+- :func:`matrix` builds ``G`` for a ``Fault`` and its datasets, in each
+  dataset's observation layout.
+- ``Fault.greens_matrix`` builds the raw three-component ``G`` at geographic
+  points.
+- :func:`displacement_greens`, :func:`strain_greens`, and their ``tri_``
+  counterparts work purely in local Cartesian meters and call the kernels
+  in :mod:`geodef.kernels`. Geography stops at ``Fault``.
 """
 
 from __future__ import annotations
@@ -14,13 +18,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 import scipy.linalg
 import scipy.sparse
 
-from geodef import backend, transforms
+from geodef import backend
 from geodef import cache as _cache
 from geodef.kernels import okada85, tri
-from geodef.transforms import LocalFrame
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -30,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 # ======================================================================
-# Green's matrix assembly (geographic coordinates)
+# Green's matrix assembly for rectangular patches (local Cartesian)
 # ======================================================================
 
 
@@ -196,435 +200,244 @@ def _get_batch_kernel(name: str):
     return _jitted_batch_kernels[name]
 
 
+# The largest (patches x observations) block evaluated at once on NumPy.
+_BLOCK_ELEMENTS = 250_000
+
+
+def _patch_blocks(n_patches: int, n_obs: int) -> list[slice]:
+    """Split the patches into blocks whose kernel arrays stay small.
+
+    The kernels broadcast over (patches, observations). On NumPy that
+    array is bounded so a large fault does not exhaust memory; on JAX the
+    whole problem is one block so the kernel compiles once.
+    """
+    if backend.get_backend() == "jax":
+        return [slice(0, n_patches)]
+    size = max(1, _BLOCK_ELEMENTS // max(n_obs, 1))
+    return [slice(i, min(i + size, n_patches)) for i in range(0, n_patches, size)]
+
+
+def _rectangles(
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    east: npt.ArrayLike,
+    north: npt.ArrayLike,
+    depth: npt.ArrayLike,
+    strike: npt.ArrayLike,
+    dip: npt.ArrayLike,
+    length: npt.ArrayLike,
+    width: npt.ArrayLike,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, tuple[np.ndarray, ...]]:
+    """Validate rectangular-patch inputs and return them as float arrays."""
+    obs = [np.atleast_1d(np.asarray(a, dtype=float)) for a in (obs_east, obs_north)]
+    if obs[0].shape != obs[1].shape or obs[0].ndim != 1:
+        raise ValueError("obs_east and obs_north must be 1-D arrays of equal length")
+    patches = [
+        np.atleast_1d(np.asarray(a, dtype=float))
+        for a in (east, north, depth, strike, dip, length, width)
+    ]
+    if len({a.shape for a in patches}) != 1 or patches[0].ndim != 1:
+        raise ValueError(
+            "east, north, depth, strike, dip, length, and width must be 1-D "
+            "arrays of equal length"
+        )
+    return obs[0], obs[1], patches[0], patches[1], tuple(patches[2:])
+
+
 def displacement_greens(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    lat0: np.ndarray,
-    lon0: np.ndarray,
-    depth: np.ndarray,
-    strike: np.ndarray,
-    dip: np.ndarray,
-    L: np.ndarray,
-    W: np.ndarray,
+    *,
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    east: npt.ArrayLike,
+    north: npt.ArrayLike,
+    depth: npt.ArrayLike,
+    strike: npt.ArrayLike,
+    dip: npt.ArrayLike,
+    length: npt.ArrayLike,
+    width: npt.ArrayLike,
     nu: float = 0.25,
 ) -> np.ndarray:
-    """Build displacement Green's matrix for rectangular fault patches.
+    """Build the surface-displacement Green's matrix for rectangular patches.
 
-    Each set of 3 rows corresponds to [E, N, U] displacements for one
-    observation point. Columns are blocked: the first ``npatch`` columns
-    are strike-slip, the next ``npatch`` are dip-slip.
+    Everything is in one local Cartesian frame, in meters and degrees. Each
+    set of 3 rows is the ``[east, north, up]`` displacement at one
+    observation point; the first ``N`` columns are unit strike-slip on each
+    patch, the next ``N`` unit dip-slip.
 
     Args:
-        lat: Observation latitudes (nobs,).
-        lon: Observation longitudes (nobs,).
-        lat0: Patch center latitudes (npatch,).
-        lon0: Patch center longitudes (npatch,).
-        depth: Patch centroid depths (npatch,).
-        strike: Patch strike angles in degrees (npatch,).
-        dip: Patch dip angles in degrees (npatch,).
-        L: Along-strike patch lengths (npatch,).
-        W: Down-dip patch widths (npatch,).
+        obs_east: Observation East coordinates, shape (M,).
+        obs_north: Observation North coordinates, shape (M,).
+        east: Patch-center East coordinates, shape (N,).
+        north: Patch-center North coordinates, shape (N,).
+        depth: Patch-center depths, positive down, shape (N,).
+        strike: Patch strikes in degrees clockwise from North, shape (N,).
+        dip: Patch dips in degrees from horizontal, shape (N,).
+        length: Along-strike patch lengths, shape (N,).
+        width: Down-dip patch widths, shape (N,).
         nu: Poisson's ratio.
 
     Returns:
-        G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
-        strike-slip, columns ``[npatch:]`` are dip-slip.
+        Green's matrix of shape (3*M, 2*N).
     """
-    alt = np.zeros_like(np.asarray(lon, dtype=float))
-    nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
-
-    G = np.zeros((3 * nobs, 2 * npatch))
-
-    if backend.get_backend() == "jax":
-        # Batched path: evaluate all patches in one JIT-compiled kernel call
-        # instead of looping. The geodetic transform stays on NumPy.
-        e2 = np.empty((npatch, nobs))
-        n2 = np.empty((npatch, nobs))
-        for ipatch in range(npatch):
-            e2[ipatch], n2[ipatch], _ = transforms.geod2enu(
-                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-            )
-        patch_args = tuple(
-            np.asarray(a, dtype=float) for a in (depth, strike, dip, L, W)
-        )
-        kernel = _get_batch_kernel("displacement")
-        str_e, str_n, str_u = kernel(e2, n2, *patch_args, 0.0, nu)
-        dip_e, dip_n, dip_u = kernel(e2, n2, *patch_args, 90.0, nu)
-        G[0::3, :npatch] = backend.to_numpy(str_e).T
-        G[1::3, :npatch] = backend.to_numpy(str_n).T
-        G[2::3, :npatch] = backend.to_numpy(str_u).T
-        G[0::3, npatch:] = backend.to_numpy(dip_e).T
-        G[1::3, npatch:] = backend.to_numpy(dip_n).T
-        G[2::3, npatch:] = backend.to_numpy(dip_u).T
-        return G
-
-    for ipatch in range(npatch):
-        e, n, _ = transforms.geod2enu(lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0)
-
-        str_e, str_n, str_u = okada85.displacement(
-            e,
-            n,
-            float(depth[ipatch]),
-            float(strike[ipatch]),
-            float(dip[ipatch]),
-            float(L[ipatch]),
-            float(W[ipatch]),
-            0.0,
-            1.0,
-            0.0,
-            nu,
-        )
-        dip_e, dip_n, dip_u = okada85.displacement(
-            e,
-            n,
-            float(depth[ipatch]),
-            float(strike[ipatch]),
-            float(dip[ipatch]),
-            float(L[ipatch]),
-            float(W[ipatch]),
-            90.0,
-            1.0,
-            0.0,
-            nu,
-        )
-
-        gstr = np.zeros(3 * nobs)
-        gdip = np.zeros(3 * nobs)
-        gstr[::3] = str_e
-        gstr[1::3] = str_n
-        gstr[2::3] = str_u
-        gdip[::3] = dip_e
-        gdip[1::3] = dip_n
-        gdip[2::3] = dip_u
-        G[:, ipatch] = gstr
-        G[:, npatch + ipatch] = gdip
-
+    obs_e, obs_n, east, north, shape = _rectangles(
+        obs_east, obs_north, east, north, depth, strike, dip, length, width
+    )
+    n_obs, n_patches = obs_e.size, east.size
+    kernel = _get_batch_kernel("displacement")
+    G = np.empty((3 * n_obs, 2 * n_patches))
+    for block in _patch_blocks(n_patches, n_obs):
+        e = obs_e[None, :] - east[block, None]
+        n = obs_n[None, :] - north[block, None]
+        patch = [a[block] for a in shape]
+        for first_column, rake in ((0, 0.0), (n_patches, 90.0)):
+            columns = slice(first_column + block.start, first_column + block.stop)
+            for row, component in enumerate(kernel(e, n, *patch, rake, nu)):
+                G[row::3, columns] = backend.to_numpy(component).T
     return G
 
 
 def strain_greens(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    lat0: np.ndarray,
-    lon0: np.ndarray,
-    depth: np.ndarray,
-    strike: np.ndarray,
-    dip: np.ndarray,
-    L: np.ndarray,
-    W: np.ndarray,
+    *,
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    east: npt.ArrayLike,
+    north: npt.ArrayLike,
+    depth: npt.ArrayLike,
+    strike: npt.ArrayLike,
+    dip: npt.ArrayLike,
+    length: npt.ArrayLike,
+    width: npt.ArrayLike,
     nu: float = 0.25,
-    obs_depth: np.ndarray | None = None,
+    obs_depth: npt.ArrayLike | None = None,
 ) -> np.ndarray:
-    """Build strain Green's matrix for rectangular fault patches.
+    """Build the horizontal-strain Green's matrix for rectangular patches.
 
-    Each set of 4 rows corresponds to [NN, NE, EN, EE] strain components
-    for one observation point. Columns are blocked: the first ``npatch``
-    columns are strike-slip, the next ``npatch`` are dip-slip.
+    Each set of 4 rows is ``[NN, NE, EN, EE]`` (displacement gradients) at
+    one observation point. Columns are blocked as in
+    :func:`displacement_greens`.
 
     Args:
-        lat: Observation latitudes (nobs,).
-        lon: Observation longitudes (nobs,).
-        lat0: Patch center latitudes (npatch,).
-        lon0: Patch center longitudes (npatch,).
-        depth: Patch centroid depths (npatch,), positive down.
-        strike: Patch strike angles in degrees (npatch,).
-        dip: Patch dip angles in degrees (npatch,).
-        L: Along-strike patch lengths (npatch,).
-        W: Down-dip patch widths (npatch,).
+        obs_east: Observation East coordinates, shape (M,).
+        obs_north: Observation North coordinates, shape (M,).
+        east: Patch-center East coordinates, shape (N,).
+        north: Patch-center North coordinates, shape (N,).
+        depth: Patch-center depths, positive down, shape (N,).
+        strike: Patch strikes in degrees clockwise from North, shape (N,).
+        dip: Patch dips in degrees from horizontal, shape (N,).
+        length: Along-strike patch lengths, shape (N,).
+        width: Down-dip patch widths, shape (N,).
         nu: Poisson's ratio.
-        obs_depth: Observation depths (nobs,), positive down. If None,
-            observations are at the surface (uses okada85). If provided,
-            uses okada92 (DC3D) for internal deformation at depth.
+        obs_depth: Observation depths, positive down, shape (M,). ``None``
+            evaluates at the surface with Okada (1985); otherwise Okada
+            (1992) is used for internal strain.
 
     Returns:
-        G matrix of shape (4*nobs, 2*npatch). Columns ``[:npatch]`` are
-        strike-slip, columns ``[npatch:]`` are dip-slip.
+        Green's matrix of shape (4*M, 2*N).
     """
-    alt = np.zeros_like(np.asarray(lon, dtype=float))
-    nobs, npatch = _check_lengths(lat, lon, lat0, lon0, depth, strike, dip, L, W)
-
-    G = np.zeros((4 * nobs, 2 * npatch))
-
-    if backend.get_backend() == "jax":
-        # Batched path: all patches in one JIT-compiled kernel call. The
-        # geodetic transform stays on NumPy.
-        e2 = np.empty((npatch, nobs))
-        n2 = np.empty((npatch, nobs))
-        for ipatch in range(npatch):
-            e2[ipatch], n2[ipatch], _ = transforms.geod2enu(
-                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-            )
-        patch_args = tuple(
-            np.asarray(a, dtype=float) for a in (depth, strike, dip, L, W)
-        )
-        if obs_depth is None:
-            kernel = _get_batch_kernel("strain_surface")
-            str_c = kernel(e2, n2, *patch_args, 0.0, nu)
-            dip_c = kernel(e2, n2, *patch_args, 90.0, nu)
-            for i in range(4):  # rows: NN, NE, EN, EE
-                G[i::4, :npatch] = backend.to_numpy(str_c[i]).T
-                G[i::4, npatch:] = backend.to_numpy(dip_c[i]).T
-        else:
-            z_obs = -np.asarray(obs_depth, dtype=float)
-            kernel = _get_batch_kernel("strain_depth")
-            s_ss = backend.to_numpy(
-                kernel(e2, n2, z_obs, *patch_args, 1.0, 0.0, 0.0, nu)
-            )
-            s_ds = backend.to_numpy(
-                kernel(e2, n2, z_obs, *patch_args, 0.0, 1.0, 0.0, nu)
-            )
-            # rows: NN, NE, EN, EE from the 3x3 gradient tensors
-            for i, (a, b) in enumerate([(1, 1), (1, 0), (0, 1), (0, 0)]):
-                G[i::4, :npatch] = s_ss[:, :, a, b].T
-                G[i::4, npatch:] = s_ds[:, :, a, b].T
-        return G
-
-    if obs_depth is None:
-        for ipatch in range(npatch):
-            e, n, _ = transforms.geod2enu(
-                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-            )
-
-            str_nn, str_ne, str_en, str_ee = okada85.strain(
-                e,
-                n,
-                float(depth[ipatch]),
-                float(strike[ipatch]),
-                float(dip[ipatch]),
-                float(L[ipatch]),
-                float(W[ipatch]),
-                0.0,
-                1.0,
-                0.0,
-                nu,
-            )
-            dip_nn, dip_ne, dip_en, dip_ee = okada85.strain(
-                e,
-                n,
-                float(depth[ipatch]),
-                float(strike[ipatch]),
-                float(dip[ipatch]),
-                float(L[ipatch]),
-                float(W[ipatch]),
-                90.0,
-                1.0,
-                0.0,
-                nu,
-            )
-
-            gstr = np.zeros(4 * nobs)
-            gdip = np.zeros(4 * nobs)
-            gstr[::4] = str_nn
-            gstr[1::4] = str_ne
-            gstr[2::4] = str_en
-            gstr[3::4] = str_ee
-            gdip[::4] = dip_nn
-            gdip[1::4] = dip_ne
-            gdip[2::4] = dip_en
-            gdip[3::4] = dip_ee
-            G[:, ipatch] = gstr
-            G[:, npatch + ipatch] = gdip
-    else:
-        from geodef.kernels import okada92
-
-        obs_depth = np.asarray(obs_depth, dtype=float)
-        z_obs = -obs_depth  # okada92 convention: Z <= 0
-        G_mu = 1.0  # unit shear modulus; actual scaling done by caller
-        for ipatch in range(npatch):
-            e, n, _ = transforms.geod2enu(
-                lat, lon, alt, lat0[ipatch], lon0[ipatch], 0.0
-            )
-            patch_params = (
-                float(depth[ipatch]),
-                float(strike[ipatch]),
-                float(dip[ipatch]),
-                float(L[ipatch]),
-                float(W[ipatch]),
-            )
-            _, strain_ss = okada92.okada92(
-                e,
-                n,
-                z_obs,
-                *patch_params,
-                1.0,
-                0.0,
-                0.0,
-                G_mu,
-                nu,
-                allow_singular=True,
-            )
-            _, strain_ds = okada92.okada92(
-                e,
-                n,
-                z_obs,
-                *patch_params,
-                0.0,
-                1.0,
-                0.0,
-                G_mu,
-                nu,
-                allow_singular=True,
-            )
-            strain_ss = backend.to_numpy(strain_ss)
-            strain_ds = backend.to_numpy(strain_ds)
-            # NN, NE, EN, EE from the 3x3 gradient tensor
-            G[0::4, ipatch] = strain_ss[:, 1, 1]
-            G[1::4, ipatch] = strain_ss[:, 1, 0]
-            G[2::4, ipatch] = strain_ss[:, 0, 1]
-            G[3::4, ipatch] = strain_ss[:, 0, 0]
-            G[0::4, npatch + ipatch] = strain_ds[:, 1, 1]
-            G[1::4, npatch + ipatch] = strain_ds[:, 1, 0]
-            G[2::4, npatch + ipatch] = strain_ds[:, 0, 1]
-            G[3::4, npatch + ipatch] = strain_ds[:, 0, 0]
-
+    obs_e, obs_n, east, north, shape = _rectangles(
+        obs_east, obs_north, east, north, depth, strike, dip, length, width
+    )
+    n_obs, n_patches = obs_e.size, east.size
+    G = np.empty((4 * n_obs, 2 * n_patches))
+    z_obs = None if obs_depth is None else -np.asarray(obs_depth, dtype=float)
+    kernel = _get_batch_kernel("strain_surface" if z_obs is None else "strain_depth")
+    # (row, column) of NN, NE, EN, EE in the 3x3 displacement-gradient tensor
+    gradient_index = ((1, 1), (1, 0), (0, 1), (0, 0))
+    for block in _patch_blocks(n_patches, n_obs):
+        e = obs_e[None, :] - east[block, None]
+        n = obs_n[None, :] - north[block, None]
+        patch = [a[block] for a in shape]
+        for first_column, rake, unit_slip in (
+            (0, 0.0, (1.0, 0.0, 0.0)),
+            (n_patches, 90.0, (0.0, 1.0, 0.0)),
+        ):
+            columns = slice(first_column + block.start, first_column + block.stop)
+            if z_obs is None:
+                components = kernel(e, n, *patch, rake, nu)
+            else:
+                tensor = backend.to_numpy(kernel(e, n, z_obs, *patch, *unit_slip, nu))
+                components = [tensor[:, :, i, j] for i, j in gradient_index]
+            for row, component in enumerate(components):
+                G[row::4, columns] = backend.to_numpy(component).T
     return G
 
 
 # ======================================================================
-# Green's matrix assembly for triangular patches (geographic coordinates)
+# Green's matrix assembly for triangular patches (local Cartesian)
 # ======================================================================
+
+
+def _tri_greens(
+    kernel: Callable[..., np.ndarray],
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    obs_depth: npt.ArrayLike | None,
+    vertices: npt.ArrayLike,
+    nu: float,
+) -> np.ndarray:
+    """Assemble a triangular Green's matrix from a per-triangle kernel."""
+    obs_e = np.atleast_1d(np.asarray(obs_east, dtype=float))
+    obs_n = np.atleast_1d(np.asarray(obs_north, dtype=float))
+    obs_up = np.zeros_like(obs_e) if obs_depth is None else -np.asarray(obs_depth)
+    obs = np.column_stack([obs_e, obs_n, obs_up])
+    triangles = np.asarray(vertices, dtype=float)
+    blocks = []
+    for unit_slip in (np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])):
+        # each kernel call returns (M, n_components); one column per triangle
+        columns = [
+            kernel(obs, triangle, unit_slip, nu).ravel() for triangle in triangles
+        ]
+        blocks.append(np.column_stack(columns))
+    return np.hstack(blocks)
 
 
 def tri_displacement_greens(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    lat0: np.ndarray,
-    lon0: np.ndarray,
-    depth: np.ndarray,
-    vertices: np.ndarray,
-    nu: float = 0.25,
     *,
-    frame: LocalFrame | None = None,
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    vertices: npt.ArrayLike,
+    nu: float = 0.25,
 ) -> np.ndarray:
-    """Build displacement Green's matrix for triangular fault patches.
-
-    Each set of 3 rows corresponds to [E, N, U] displacements for one
-    observation point. Columns are blocked: the first ``npatch`` columns
-    are strike-slip, the next ``npatch`` are dip-slip.
+    """Build the surface-displacement Green's matrix for triangular patches.
 
     Args:
-        lat: Observation latitudes (nobs,).
-        lon: Observation longitudes (nobs,).
-        lat0: Patch center latitudes (npatch,).
-        lon0: Patch center longitudes (npatch,).
-        depth: Patch centroid depths (npatch,), positive down.
-        vertices: Triangle vertices in local ENU, shape (npatch, 3, 3).
+        obs_east: Observation East coordinates, shape (M,).
+        obs_north: Observation North coordinates, shape (M,).
+        vertices: Triangle corners as ``[east, north, up]`` in the same
+            frame, shape (N, 3, 3).
         nu: Poisson's ratio.
-        frame: Local frame defining ``vertices``. Defaults to the legacy
-            mean-centroid frame inferred from ``lat0`` and ``lon0``.
 
     Returns:
-        G matrix of shape (3*nobs, 2*npatch). Columns ``[:npatch]`` are
-        strike-slip, columns ``[npatch:]`` are dip-slip.
+        Green's matrix of shape (3*M, 2*N): rows are ``[east, north, up]``
+        per observation point; columns are strike-slip then dip-slip.
     """
-    lat = np.asarray(lat, dtype=float)
-    lon = np.asarray(lon, dtype=float)
-    alt = np.zeros_like(lon)
-    nobs = lat.shape[0]
-    npatch = vertices.shape[0]
-    selected_frame = (
-        LocalFrame(lon=float(np.mean(lon0)), lat=float(np.mean(lat0)))
-        if frame is None
-        else frame
-    )
-    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
-    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], np.zeros(nobs)])
-
-    G = np.zeros((3 * nobs, 2 * npatch))
-
-    for ipatch in range(npatch):
-        tri_verts = vertices[ipatch]  # (3, 3) in local ENU
-
-        # Strike-slip: slip = [1, 0, 0]
-        disp_ss = tri.TDdispHS(obs, tri_verts, np.array([1.0, 0.0, 0.0]), nu)
-        # Dip-slip: slip = [0, 1, 0]
-        disp_ds = tri.TDdispHS(obs, tri_verts, np.array([0.0, 1.0, 0.0]), nu)
-
-        gstr = np.zeros(3 * nobs)
-        gdip = np.zeros(3 * nobs)
-        gstr[::3] = disp_ss[:, 0]  # East
-        gstr[1::3] = disp_ss[:, 1]  # North
-        gstr[2::3] = disp_ss[:, 2]  # Up
-        gdip[::3] = disp_ds[:, 0]
-        gdip[1::3] = disp_ds[:, 1]
-        gdip[2::3] = disp_ds[:, 2]
-        G[:, ipatch] = gstr
-        G[:, npatch + ipatch] = gdip
-
-    return G
+    return _tri_greens(tri.TDdispHS, obs_east, obs_north, None, vertices, nu)
 
 
 def tri_strain_greens(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    lat0: np.ndarray,
-    lon0: np.ndarray,
-    depth: np.ndarray,
-    vertices: np.ndarray,
-    nu: float = 0.25,
-    obs_depth: np.ndarray | None = None,
     *,
-    frame: LocalFrame | None = None,
+    obs_east: npt.ArrayLike,
+    obs_north: npt.ArrayLike,
+    vertices: npt.ArrayLike,
+    nu: float = 0.25,
+    obs_depth: npt.ArrayLike | None = None,
 ) -> np.ndarray:
-    """Build strain Green's matrix for triangular fault patches.
-
-    Each set of 6 rows corresponds to [xx, yy, zz, xy, xz, yz] strain
-    components for one observation point. Columns are blocked: the first
-    ``npatch`` columns are strike-slip, the next ``npatch`` are dip-slip.
+    """Build the strain Green's matrix for triangular patches.
 
     Args:
-        lat: Observation latitudes (nobs,).
-        lon: Observation longitudes (nobs,).
-        lat0: Patch center latitudes (npatch,).
-        lon0: Patch center longitudes (npatch,).
-        depth: Patch centroid depths (npatch,), positive down.
-        vertices: Triangle vertices in local ENU, shape (npatch, 3, 3).
+        obs_east: Observation East coordinates, shape (M,).
+        obs_north: Observation North coordinates, shape (M,).
+        vertices: Triangle corners as ``[east, north, up]`` in the same
+            frame, shape (N, 3, 3).
         nu: Poisson's ratio.
-        obs_depth: Observation depths (nobs,), positive down. If None,
-            observations are at the surface. If provided, the z-coordinate
-            of observation points is set to ``-obs_depth`` (negative = below
-            surface in the ENU frame used by TDstrainHS).
-        frame: Local frame defining ``vertices``. Defaults to the legacy
-            mean-centroid frame inferred from ``lat0`` and ``lon0``.
+        obs_depth: Observation depths, positive down, shape (M,). ``None``
+            evaluates at the surface.
 
     Returns:
-        G matrix of shape (6*nobs, 2*npatch). Columns ``[:npatch]`` are
-        strike-slip, columns ``[npatch:]`` are dip-slip.
+        Green's matrix of shape (6*M, 2*N): rows are ``[xx, yy, zz, xy, xz,
+        yz]`` per observation point; columns are strike-slip then dip-slip.
     """
-    lat = np.asarray(lat, dtype=float)
-    lon = np.asarray(lon, dtype=float)
-    alt = np.zeros_like(lon)
-    nobs = lat.shape[0]
-    npatch = vertices.shape[0]
-    selected_frame = (
-        LocalFrame(lon=float(np.mean(lon0)), lat=float(np.mean(lat0)))
-        if frame is None
-        else frame
-    )
-    obs_enu = selected_frame.to_enu(lon=lon, lat=lat, alt=alt)
-    if obs_depth is not None:
-        obs_z = -np.asarray(obs_depth, dtype=float)
-    else:
-        obs_z = np.zeros(nobs)
-    obs = np.column_stack([obs_enu[:, 0], obs_enu[:, 1], obs_z])
-
-    G = np.zeros((6 * nobs, 2 * npatch))
-
-    for ipatch in range(npatch):
-        tri_verts = vertices[ipatch]
-
-        strain_ss = tri.TDstrainHS(obs, tri_verts, np.array([1.0, 0.0, 0.0]), nu)
-        strain_ds = tri.TDstrainHS(obs, tri_verts, np.array([0.0, 1.0, 0.0]), nu)
-
-        gstr = np.zeros(6 * nobs)
-        gdip = np.zeros(6 * nobs)
-        for c in range(6):
-            gstr[c::6] = strain_ss[:, c]
-            gdip[c::6] = strain_ds[:, c]
-        G[:, ipatch] = gstr
-        G[:, npatch + ipatch] = gdip
-
-    return G
+    return _tri_greens(tri.TDstrainHS, obs_east, obs_north, obs_depth, vertices, nu)
 
 
 # ======================================================================
@@ -675,8 +488,9 @@ def select_slip_columns(
             geographic slip azimuth, per-patch local rake), or ``'plate'``
             (two components parallel/perpendicular to a per-patch plate rake).
         rake: Fixed rake angle in degrees, required for ``'rake'``.
-        fault_strike: Per-patch strike angles in degrees, shape (N,),
-            required for ``'azimuth'``.
+        fault_strike: Per-patch strike angles in degrees from true north
+            (``Fault.geographic_strike``), shape (N,), required for
+            ``'azimuth'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``'azimuth'``.
         plate_rake: Large-scale plate direction expressed as local rake in
@@ -780,7 +594,7 @@ def matrix(
         fault.n_patches,
         components,
         rake,
-        fault_strike=fault.strike,
+        fault_strike=fault.geographic_strike,
         slip_azimuth=slip_azimuth,
         plate_rake=plate_rake,
     )
@@ -886,41 +700,6 @@ def resolution_matrix(G: np.ndarray) -> np.ndarray:
         Resolution matrix of shape (ncols, ncols).
     """
     return np.linalg.pinv(G) @ G
-
-
-def _check_lengths(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    lat0: np.ndarray,
-    lon0: np.ndarray,
-    depth: np.ndarray,
-    strike: np.ndarray,
-    dip: np.ndarray,
-    L: np.ndarray,
-    W: np.ndarray,
-) -> tuple[int, int]:
-    """Validate that observation and patch arrays have consistent lengths.
-
-    Args:
-        lat, lon: Observation coordinate arrays.
-        lat0, lon0, depth, strike, dip, L, W: Patch parameter arrays.
-
-    Returns:
-        Tuple (nobs, npatch).
-
-    Raises:
-        ValueError: If array lengths are inconsistent.
-    """
-    nobs = len(lat)
-    npatch = len(strike)
-    if len(lon) != nobs:
-        raise ValueError("lat and lon must have the same length")
-    patch_lens = {len(lat0), len(lon0), len(depth), len(dip), len(L), len(W)}
-    if len(patch_lens) > 1 or npatch not in patch_lens:
-        raise ValueError(
-            "lat0, lon0, depth, strike, dip, L, W must all have the same length"
-        )
-    return nobs, npatch
 
 
 # ======================================================================

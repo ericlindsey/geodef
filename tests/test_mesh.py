@@ -76,7 +76,6 @@ class TestMeshConstruction:
         assert simple_mesh.n_triangles == 2
 
     def test_records_inferred_frame(self, simple_mesh):
-        assert simple_mesh.frame.projection == "wgs84-enu"
         assert simple_mesh.frame.lat == pytest.approx(np.mean(simple_mesh.lat))
         assert simple_mesh.frame.lon == pytest.approx(np.mean(simple_mesh.lon))
 

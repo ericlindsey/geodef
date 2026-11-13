@@ -108,7 +108,8 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `n_patches` | scalar | Number of patches |
 | `lon`, `lat` | `(N,)` | Patch center coordinates in degrees |
 | `depth` | `(N,)` | Patch center depth in meters, positive down |
-| `strike`, `dip` | `(N,)` | Degrees clockwise from north; degrees from horizontal |
+| `strike`, `dip` | `(N,)` | Strike in degrees clockwise from the frame's North axis; dip in degrees from horizontal |
+| `geographic_strike` | `(N,)` | Strike from true north at each patch (differs from `strike` by meridian convergence) |
 | `length`, `width` | `(N,)` or `None` | Rectangular patch dimensions in meters (`None` for triangles) |
 | `vertices` | `(N, 3, 3)` or `None` | Triangle corners in local `[east, north, up]` meters (`None` for rectangles) |
 | `engine` | `str` | `"okada"` (rectangles) or `"tri"` (triangles) |

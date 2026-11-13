@@ -9,6 +9,23 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Fixed
 
+- **numerical** Rectangles and triangles are flattened by one map
+  projection. Rectangular patches were each placed in their own tangent
+  plane while observation points and triangles used the fault's shared
+  frame, so a large fault was not one plane: subdividing a 300 km fault at
+  40° latitude into 5 x 4 patches changed its uniform-slip displacement by
+  0.3% (1.4 mm per meter of slip), and the JAX geometry model behind
+  `geometry_search` and `RectPosterior` disagreed with `Fault.planar` by 1%
+  for that fault. Every patch, vertex, and observation now goes through
+  `fault.frame`: subdivision is exact to 1e-13, the JAX model matches
+  `Fault.planar` to 1e-12, and a rectangle and the two triangles that tile
+  it agree to rounding. `LocalFrame` now keeps depth as
+  height rather than measuring it along the curved Earth, and `to_enu` /
+  `to_geographic` are exact inverses. For faults a few tens of kilometers
+  across the change is below 1e-7 relative. `fault.strike` is now the azimuth in
+  the fault's frame; `Fault.geographic_strike` gives it from true north, and
+  fault files and slip-azimuth and plate-motion bases use the true-north
+  value. `KERNEL_VERSION` is bumped.
 - **`Fault.planar` assigned row depths in reverse.** With `n_width > 1`
   the row on the up-dip side of the plane was given the deepest depth and
   the row on the down-dip side the shallowest, so a subdivided planar
@@ -52,6 +69,8 @@ update calls as follows.
 | `invert.lcurve(fault, data, ...)`, `invert.abic_curve(fault, data, ...)` | `system = geodef.LinearSystem(fault, data, regularization=...)`; `system.lcurve(...)`, `system.abic_curve(...)` |
 | `LinearSystem.invert(...)` | `LinearSystem.solve(...)` |
 | `geodef.okada85`, `geodef.okada92`, `geodef.tri`, `geodef.okada` | `geodef.kernels.okada85`, `.okada92`, `.tri`, `.okada` |
+| `greens.displacement_greens(lat, lon, lat0, lon0, depth, strike, dip, L, W)` and the strain / `tri_` variants | keyword-only local Cartesian: `displacement_greens(obs_east=, obs_north=, east=, north=, depth=, strike=, dip=, length=, width=)`; `tri_displacement_greens(obs_east=, obs_north=, vertices=)` |
+| `LocalFrame(..., projection="wgs84-enu")` | `LocalFrame(lon=, lat=, alt=)`; there is one projection |
 | `LocalFrame(lat, lon)`, `frame.origin_lat` | `LocalFrame(lon=, lat=)` (keyword-only), `frame.lat`; defined in `geodef.transforms` |
 | `ref_lat=, ref_lon=` on `Fault.from_triangles`, `Fault.load`/`save`, `geometry_search`, `RectPosterior`, `Mesh.vertices_enu` | `frame=geodef.LocalFrame(lon=, lat=)` |
 

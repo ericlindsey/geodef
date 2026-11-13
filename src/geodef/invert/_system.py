@@ -196,7 +196,7 @@ class LinearSystem:
             n_patches,
             components,
             rake,
-            fault_strike=fault.strike,
+            fault_strike=fault.geographic_strike,
             slip_azimuth=slip_azimuth,
             plate_rake=self.plate_rake,
         )
@@ -574,7 +574,7 @@ class LinearSystem:
             basis_angle = self.rake
         elif self.components == "azimuth":
             assert self.slip_azimuth is not None
-            basis_angle = self.slip_azimuth - self.fault.strike
+            basis_angle = self.slip_azimuth - self.fault.geographic_strike
         elif self.components == "plate":
             basis_angle = self.plate_rake
         else:
@@ -626,7 +626,7 @@ class LinearSystem:
             slip_azimuth=self.slip_azimuth,
             plate_rake=self.plate_rake,
             local_rake=(
-                self.slip_azimuth - self.fault.strike
+                self.slip_azimuth - self.fault.geographic_strike
                 if self.slip_azimuth is not None
                 else None
             ),

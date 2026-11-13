@@ -80,7 +80,7 @@ just the best-fitting slip model.
 ## Building a posterior
 
 ```python
-frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0)
 geometry0 = {
     "e0": 0.0, "n0": 0.0, "depth": 25e3,
     "strike": 315.0, "dip": 30.0,

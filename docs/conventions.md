@@ -16,20 +16,21 @@ mapping is given here.
   `Fault.centers_geo`, `Fault.corners_geo`, and `Mesh.centers_geo` are
   `[lon, lat, depth]`. A local origin is `geodef.LocalFrame(lon=, lat=)`.
   The one exception is the low-level WGS84 conversion functions in
-  `geodef.transforms` and the assembly functions in `geodef.greens`, which
-  keep the geodesy convention of latitude first; pass their arguments by
-  keyword.
+  `geodef.transforms` (`geod2enu`, `vincenty`, ...), which keep the geodesy
+  convention of latitude first.
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
-  to a `LocalFrame` that records origin longitude, latitude, altitude, and
-  projection. The current projection identifier is `"wgs84-enu"` (WGS84
-  geographic → ECEF → tangent ENU); it is explicit so later projections do
-  not make saved or combined local arrays ambiguous. Anything named `*_enu`
+  to a `LocalFrame` that records the origin's longitude, latitude, and
+  altitude. Rectangles, triangles, and observation points are all flattened
+  by the same frame: horizontal position in the tangent plane at the origin,
+  vertical position equal to height (see [`transforms.md`](transforms.md)).
+  Anything named `*_enu`
   or `*_local` uses its object's `.frame`; `z`/`up` is negative below the
   surface, while `depth` is positive down. Use `LocalFrame.to_enu`,
   `to_geographic`, `transform_enu`, and `Fault.to_frame` to move between frames.
 - Kernel-native frames (Okada's fault-aligned x/y, DC3D internals,
   triangular dislocation coordinates) never appear in public signatures;
-  they are converted at the adapter layer inside `geodef.greens`.
+  they are converted inside `geodef.greens`, whose assembly functions take
+  local Cartesian coordinates only.
 
 ## Angles
 
@@ -37,7 +38,12 @@ All angles are degrees.
 
 - **Strike:** clockwise from North, 0–360. The fault dips to the **right**
   of the strike direction: a fault striking north dips east, so its shallow
-  edge is on the west and its deep edge on the east.
+  edge is on the west and its deep edge on the east. `Fault.strike` is
+  measured from the North axis of the fault's local frame (true north at the
+  frame origin); `Fault.geographic_strike` is measured from true north at each
+  patch. Fault files store true-north strikes and are converted on load and
+  save. Geographic azimuths (`slip_azimuth`, plate-motion directions) are
+  compared with `geographic_strike`.
 - **Dip:** from horizontal, 0–90.
 - **Rake:** direction of hanging-wall slip measured in the fault plane,
   counterclockwise from the strike direction: 0 = left-lateral

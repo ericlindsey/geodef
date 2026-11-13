@@ -100,7 +100,8 @@ related/, geometry/  legacy and reference sources (read-only; not linted)
 
 How a solve flows: `geodef.solve` → `LinearSystem.__init__` (assemble `G`,
 `d`, `W`, `L`) → `greens.matrix` → `Fault.greens_matrix` →
-`greens.displacement_greens` → `kernels.okada85.displacement`.
+`greens.displacement_greens` (local Cartesian, batched over patches) →
+`kernels.okada85.displacement`.
 
 ---
 
@@ -165,11 +166,6 @@ paths, write a message that explains why, and push the working branch.
 Known debts, in rough order of what a student would trip over. Each is a
 candidate for the next simplification pass (see `PLAN.md`):
 
-- `greens.py` has a per-patch NumPy loop and a separate batched JAX path for
-  the same assembly, and its public functions take ten positional arguments
-  in `(lat, lon)` order.
 - `InversionResult` has more than thirty fields, most of them provenance.
 - `invert/_io.py` carries a versioned, checksummed result-file schema with
   migrations.
-- Rectangular patches use a per-patch tangent-plane projection; triangles use
-  one shared `LocalFrame`.

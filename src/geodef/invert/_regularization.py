@@ -59,7 +59,7 @@ def _build_regularization_matrix(
             fault.n_patches,
             components,
             rake,
-            fault_strike=fault.strike,
+            fault_strike=fault.geographic_strike,
             slip_azimuth=slip_azimuth,
             plate_rake=plate_rake,
         )

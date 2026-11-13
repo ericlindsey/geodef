@@ -589,7 +589,7 @@ def save_table(result: InversionResult, fname: str | Path, fault: Fault) -> None
                 fault.lon,
                 fault.lat,
                 fault.depth,
-                fault.strike,
+                fault.geographic_strike,
                 fault.dip,
                 fault.length,
                 fault.width,
@@ -602,7 +602,7 @@ def save_table(result: InversionResult, fname: str | Path, fault: Fault) -> None
                 fault.lon,
                 fault.lat,
                 fault.depth,
-                fault.strike,
+                fault.geographic_strike,
                 fault.dip,
                 fault.areas,
             ]

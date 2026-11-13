@@ -8,11 +8,23 @@ can be passed as `ellps=`.
 
 ## `LocalFrame`
 
-`geodef.LocalFrame` gives local East/North/Up arrays a geographic origin, and
-is the only part of this module most work needs. It is a small immutable value
-(`frame.lon`, `frame.lat`, `frame.alt`) because the origin must travel with
-any local array that is stored, cached, or combined. The origin is always
-given by keyword, longitude first.
+`geodef.LocalFrame` is how GeoDef flattens the Earth. Elastic half-space
+solutions assume a flat surface, so every fault and observation point is placed
+in one local East/North/Up frame before any Green's function is evaluated. A
+frame is a small immutable value (`frame.lon`, `frame.lat`, `frame.alt`) given
+by keyword, longitude first, and it travels with any local array that is
+stored, cached, or combined.
+
+The flattening is the same everywhere in GeoDef:
+
+- **horizontal** position is East and North in the plane tangent to the WGS84
+  ellipsoid at the origin;
+- **vertical** position is height, unchanged: a point 10 km deep has
+  `up = -10_000` wherever it is.
+
+`to_enu` and `to_geographic` are exact inverses. The flat model distorts
+distances by roughly `(d / R)**2 / 6` at distance `d` from the origin (about
+4e-4 at 300 km), the usual limit of half-space modeling.
 
 ```python
 import geodef
@@ -26,6 +38,11 @@ geographic = frame.to_geographic(
     up=enu[..., 2],
 )
 ```
+
+Meridians converge, so true north at a point away from the origin is not the
+frame's North axis. `frame.north_azimuth(lon=, lat=)` gives the azimuth of true
+north at a point, in the frame; `Fault.geographic_strike` uses it to report
+strikes from true north.
 
 `source.transform_enu(coordinates, target=target)` explicitly re-expresses an
 array in another frame. `source.require_compatible(other)` raises rather than

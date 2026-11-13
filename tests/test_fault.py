@@ -105,7 +105,6 @@ class TestConstruction:
             simple_fault.lat[0] = 999.0
 
     def test_direct_fault_has_explicit_frame(self, single_patch):
-        assert single_patch.frame.projection == "wgs84-enu"
         assert single_patch.frame.lat == pytest.approx(0.0)
         assert single_patch.frame.lon == pytest.approx(100.0)
 
@@ -612,7 +611,94 @@ class TestPlanarGridGeometry:
         for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
             expected = whole.displacement(lon=lon, lat=lat, **slip)
             actual = pieces.displacement(lon=lon, lat=lat, **slip)
-            np.testing.assert_allclose(actual, expected, atol=1e-5)
+            np.testing.assert_allclose(actual, expected, atol=1e-11)
+
+
+class TestSharedFrame:
+    """Rectangles and triangles are flattened by the same local frame."""
+
+    KWARGS = dict(
+        lon=100.0, lat=40.0, depth=60e3, strike=25.0, dip=30.0,
+        length=300e3, width=150e3,
+    )  # fmt: skip
+    LON = np.linspace(98.0, 102.0, 7)
+    LAT = np.linspace(38.5, 41.5, 7)
+
+    def test_subdivision_is_exact_for_a_large_high_latitude_fault(self):
+        whole = Fault.planar(**self.KWARGS)
+        pieces = Fault.planar(n_length=5, n_width=4, **self.KWARGS)
+        expected = whole.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        actual = pieces.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        np.testing.assert_allclose(actual, expected, atol=1e-11)
+
+    def test_a_rectangle_equals_the_two_triangles_that_tile_it(self):
+        rectangle = Fault.planar(**{**self.KWARGS, "length": 80e3, "width": 40e3})
+        corners = rectangle.corners[0]
+        # counterclockwise seen from above, the winding the triangle kernel
+        # needs for thrust-positive dip slip
+        triangles = Fault.from_triangles(
+            np.array([corners[[0, 2, 1]], corners[[0, 3, 2]]]), frame=rectangle.frame
+        )
+        for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
+            expected = rectangle.displacement(lon=self.LON, lat=self.LAT, **slip)
+            actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
+            np.testing.assert_allclose(actual, expected, atol=1e-9)
+
+    def test_planar_from_corner_is_the_same_plane(self):
+        center = Fault.planar(n_length=3, n_width=2, **self.KWARGS)
+        top_left = center.corners_geo[0, 0]
+        corner = Fault.planar_from_corner(
+            lon=top_left[0], lat=top_left[1], depth=top_left[2],
+            strike=25.0, dip=30.0, length=300e3, width=150e3,
+            n_length=3, n_width=2, frame=center.frame,
+        )  # fmt: skip
+        np.testing.assert_allclose(
+            corner.centers_local, center.centers_local, atol=1e-5
+        )
+
+    def test_to_frame_keeps_positions_and_converts_strike(self):
+        fault = Fault.planar(n_length=4, n_width=2, **self.KWARGS)
+        other = LocalFrame(lon=101.5, lat=41.0)
+        moved = fault.to_frame(other)
+        np.testing.assert_array_equal(moved.lon, fault.lon)
+        np.testing.assert_array_equal(moved.depth, fault.depth)
+        assert np.all(np.abs(moved.strike - fault.strike) > 0.5)
+        np.testing.assert_allclose(
+            moved.to_frame(fault.frame).strike, fault.strike, atol=1e-9
+        )
+
+    def test_center_file_round_trip_preserves_the_model(self, tmp_path):
+        fault = Fault.planar(n_length=4, n_width=3, **self.KWARGS)
+        path = tmp_path / "fault.txt"
+        fault.save(str(path), format="center")
+        loaded = Fault.load(str(path), format="center")
+        expected = fault.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        actual = loaded.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        np.testing.assert_allclose(actual, expected, atol=2e-4)
+
+    def test_geographic_strike_follows_the_meridians(self):
+        fault = Fault.planar(n_length=5, n_width=1, **{**self.KWARGS, "strike": 90.0})
+        # an east-striking fault: true north rotates against the frame's North
+        # axis by about dlon * sin(lat) at each patch
+        dlon = fault.lon - 100.0
+        np.testing.assert_allclose(
+            fault.geographic_strike, 90.0 + dlon * np.sin(np.radians(40.0)), atol=0.02
+        )
+        np.testing.assert_allclose(fault.strike, 90.0)
+
+    def test_file_strikes_are_true_north_azimuths(self, tmp_path):
+        """A file of due-north strikes follows the meridians, which converge."""
+        lon = np.array([98.0, 100.0, 102.0])
+        rows = np.column_stack(
+            [np.arange(3), np.zeros(3), np.arange(3), lon, np.full(3, 40.0),
+             np.full(3, 20e3), np.full(3, 10e3), np.full(3, 10e3), np.zeros(3),
+             np.full(3, 60.0)]
+        )  # fmt: skip
+        path = tmp_path / "meridians.txt"
+        np.savetxt(path, rows)
+        loaded = Fault.load(str(path), format="center")
+        expected = 2.0 * np.sin(np.radians(40.0))
+        np.testing.assert_allclose(loaded.strike, [expected, 0.0, -expected], atol=2e-3)
 
 
 # ======================================================================
