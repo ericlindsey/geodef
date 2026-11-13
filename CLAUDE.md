@@ -163,5 +163,5 @@ paths, write a message that explains why, and push the working branch.
 
 ## Where complexity remains
 
-`PLAN.md` lists what is left of the simplification backlog and the roadmap
-menus. When you find something a student would trip over, add it there.
+`PLAN.md` holds the roadmap menus and the recommended sequence, and collects
+new simplification candidates: add anything a student would trip over there.

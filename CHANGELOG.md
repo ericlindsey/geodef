@@ -57,6 +57,9 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed — fewer surprises
 
+- Tutorial chapters 11-14 build their data with `GNSS.synthetic`; their noise
+  realizations, and so their printed numbers, change slightly.
+
 - `result.prediction(dataset)` and `result.residual(dataset)` return a dataset
   of the same kind (a `GNSS` prediction has `.east`, `.north`, `.up`), and
   without an argument a name-keyed mapping of datasets. `plot.vectors` and
