@@ -22,12 +22,12 @@ import numpy as np
 from geodef.data import DataSet
 from geodef.fault import Fault
 from geodef.invert._geometry import geometry_search as geometry_search
-from geodef.invert._io import RESULT_SCHEMA_VERSION as RESULT_SCHEMA_VERSION
 from geodef.invert._results import ABICCurveResult as ABICCurveResult
 from geodef.invert._results import DatasetDiagnostics as DatasetDiagnostics
 from geodef.invert._results import GeometrySearchResult as GeometrySearchResult
 from geodef.invert._results import InversionResult as InversionResult
 from geodef.invert._results import LCurveResult as LCurveResult
+from geodef.invert._results import SolveDetails as SolveDetails
 from geodef.invert._selection import compute_abic as compute_abic
 from geodef.invert._solvers import BoundsSpec as BoundsSpec
 from geodef.invert._system import LinearSystem as LinearSystem

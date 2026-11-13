@@ -163,9 +163,5 @@ paths, write a message that explains why, and push the working branch.
 
 ## Where complexity remains
 
-Known debts, in rough order of what a student would trip over. Each is a
-candidate for the next simplification pass (see `PLAN.md`):
-
-- `InversionResult` has more than thirty fields, most of them provenance.
-- `invert/_io.py` carries a versioned, checksummed result-file schema with
-  migrations.
+`PLAN.md` lists what is left of the simplification backlog and the roadmap
+menus. When you find something a student would trip over, add it there.

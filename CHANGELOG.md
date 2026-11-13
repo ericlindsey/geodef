@@ -57,6 +57,17 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed — fewer surprises
 
+- `InversionResult` keeps the fields a student reads (slip views, fit,
+  basis, dataset names, units, warnings); the solver bookkeeping moves to
+  `result.details` (`SolveDetails`): `solver`, `success`, `message`,
+  `regularization_selection`, `backend`, `precision`, `system_hash`,
+  `dataset_slices`, `dataset_diagnostics`, `local_rake`, bounds,
+  `regularization_target`, and constraints. `result.slip` is now derived from
+  `slip_vector` rather than stored twice.
+- Result files are one `.npz` with the metadata as a JSON string. The
+  `.manifest.json` sidecar, schema versions, checksums, migrations of older
+  files, and `invert.RESULT_SCHEMA_VERSION` are removed.
+
 - The disk cache for Green's matrices and stress kernels is **off by
   default**. GeoDef no longer creates `.geodef_cache/` in the working
   directory unless `geodef.cache.enable()` is called.

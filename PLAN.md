@@ -75,8 +75,6 @@ meet it. Each item is independent.
 
 | # | Item | Why it matters | Effort |
 |---|---|---|---|
-| S4 | Slimmer `InversionResult` | More than thirty fields; group provenance (backend, precision, hashes, bounds, constraints) into one nested record so the fields a student prints stand out. | Small |
-| S5 | Simpler result files | `invert/_io.py` is a 600-line versioned, checksummed schema with migrations. With no released files to protect, a plain `.npz` plus JSON metadata would do. | Small |
 | S9 | Tutorial data setup in chapters 11-14 | Still built from `fault.displacement` plus per-component noise; moving to `synthetic` changes their random streams and therefore their printed numbers. | Small |
 | S10 | Dataset-valued predictions | `result.prediction()` returns arrays keyed by name; returning datasets (`gnss.with_obs(...)`) would let `plot.vectors(observed, predicted)` drop its manual slicing. | Small-medium |
 

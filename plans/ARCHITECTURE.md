@@ -328,9 +328,12 @@ member is documented and that documented names exist.
 
 ## A9. Schema-bump discipline (standing rule)
 
-**What this is.** Result files (`InversionResult.save`) carry a schema
-version with migration on load (the `_migrate_v2_regularization_keys`
-precedent). Several menu items add result fields: noise scales and
+**What this is.** Result files (`InversionResult.save`) are one `.npz` with
+JSON metadata and are deliberately unversioned before 1.0 (the versioned,
+checksummed schema with migrations was removed in the November 2026
+simplification pass, since no released files needed protecting). Once a
+release promises that saved results keep loading, versioning returns.
+Several menu items add result fields: noise scales and
 convergence reports (F3/F6), nuisance parameters (F4), coupling views
 (F2), and possibly persisted posterior results (C1). The rule: **batch
 them into one version bump per release**, landed with the first item that

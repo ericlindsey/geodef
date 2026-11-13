@@ -25,6 +25,7 @@ from geodef.invert._results import (
     DatasetDiagnostics,
     InversionResult,
     LCurveResult,
+    SolveDetails,
     _physical_components,
 )
 from geodef.invert._solvers import (
@@ -565,10 +566,6 @@ class LinearSystem:
         reduced_chi2 = _compute_reduced_chi2(residuals, self.W, self._n_params)
         rms = float(np.sqrt(np.mean(residuals**2)))
 
-        if self.components in {"both", "plate"}:
-            slip = np.column_stack([m[: self._n_patches], m[self._n_patches :]])
-        else:
-            slip = m.reshape(-1, 1)
         basis_angle: float | np.ndarray | None
         if self.components == "rake":
             basis_angle = self.rake
@@ -595,23 +592,43 @@ class LinearSystem:
             moment = self.fault.moment(magnitude(strike_slip, dip_slip))
             mw = moment_to_magnitude(moment)
 
-        constraint_matrix: np.ndarray | None = None
-        constraint_bounds: np.ndarray | None = None
-        if constraints is not None:
-            constraint_matrix = np.asarray(constraints[0], dtype=float).copy()
-            constraint_bounds = np.asarray(constraints[1], dtype=float).copy()
-        lower_bounds: np.ndarray | None = None
-        upper_bounds: np.ndarray | None = None
-        if exp_bounds is not None:
-            lower_bounds = exp_bounds[0].copy()
-            upper_bounds = exp_bounds[1].copy()
-        system_hash = _system_hash(self.G, self.d, self.W, self.L)
-        fit_diagnostics = tuple(
-            self._compute_dataset_diagnostics(residuals, reg_strength)
+        local_rake = (
+            self.slip_azimuth - self.fault.geographic_strike
+            if self.slip_azimuth is not None
+            else None
         )
-
+        details = SolveDetails(
+            solver=method,
+            success=True,
+            message=f"{method} completed",
+            regularization_selection=regularization_selection,
+            backend=backend.get_backend(),
+            precision=backend.get_precision(),
+            system_hash=_system_hash(self.G, self.d, self.W, self.L),
+            dataset_slices=self.dataset_slices,
+            dataset_diagnostics=tuple(
+                self._compute_dataset_diagnostics(residuals, reg_strength)
+            ),
+            local_rake=local_rake,
+            lower_bounds=None if exp_bounds is None else exp_bounds[0].copy(),
+            upper_bounds=None if exp_bounds is None else exp_bounds[1].copy(),
+            regularization_target=(
+                None
+                if regularization_target is None
+                else np.asarray(regularization_target, dtype=float).copy()
+            ),
+            constraint_matrix=(
+                None
+                if constraints is None
+                else np.asarray(constraints[0], dtype=float).copy()
+            ),
+            constraint_bounds=(
+                None
+                if constraints is None
+                else np.asarray(constraints[1], dtype=float).copy()
+            ),
+        )
         return InversionResult(
-            slip=slip,
             slip_vector=m,
             residuals=residuals,
             predicted=predicted,
@@ -625,33 +642,11 @@ class LinearSystem:
             rake=self.rake,
             slip_azimuth=self.slip_azimuth,
             plate_rake=self.plate_rake,
-            local_rake=(
-                self.slip_azimuth - self.fault.geographic_strike
-                if self.slip_azimuth is not None
-                else None
-            ),
             dataset_names=self.dataset_names,
-            dataset_slices=self.dataset_slices,
-            solver=method,
-            success=True,
-            message=f"{method} completed",
-            regularization_selection=regularization_selection,
-            backend=backend.get_backend(),
-            precision=backend.get_precision(),
             warnings=tuple(result_warnings),
             quantity=self.quantity,
             units=self.units,
-            system_hash=system_hash,
-            lower_bounds=lower_bounds,
-            upper_bounds=upper_bounds,
-            regularization_target=(
-                None
-                if regularization_target is None
-                else np.asarray(regularization_target, dtype=float).copy()
-            ),
-            constraint_matrix=constraint_matrix,
-            constraint_bounds=constraint_bounds,
-            dataset_diagnostics=fit_diagnostics,
+            details=details,
             system=self,
         )
 

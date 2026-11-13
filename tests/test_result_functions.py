@@ -67,18 +67,18 @@ def test_result_records_named_partitions_and_solver_provenance(fault):
     )
 
     assert result.dataset_names == ("gnss", "leveling")
-    assert result.dataset_slices == (slice(0, 9), slice(9, 12))
-    assert result.solver == "nnls"
-    assert result.success is True
-    assert result.regularization_selection is None
-    assert result.backend == backend.get_backend()
-    assert result.precision == backend.get_precision()
+    assert result.details.dataset_slices == (slice(0, 9), slice(9, 12))
+    assert result.details.solver == "nnls"
+    assert result.details.success is True
+    assert result.details.regularization_selection is None
+    assert result.details.backend == backend.get_backend()
+    assert result.details.precision == backend.get_precision()
     assert result.quantity == "displacement"
     assert result.units == "m"
-    assert len(result.system_hash) == 64
-    np.testing.assert_array_equal(result.lower_bounds, [0.0, 0.0])
-    assert result.upper_bounds is not None
-    assert np.all(np.isposinf(result.upper_bounds))
+    assert len(result.details.system_hash) == 64
+    np.testing.assert_array_equal(result.details.lower_bounds, [0.0, 0.0])
+    assert result.details.upper_bounds is not None
+    assert np.all(np.isposinf(result.details.upper_bounds))
 
 
 def test_automatic_regularization_selection_is_recorded(fault):
@@ -91,7 +91,7 @@ def test_automatic_regularization_selection_is_recorded(fault):
         regularization_strength="abic",
     )
 
-    assert result.regularization_selection == "abic"
+    assert result.details.regularization_selection == "abic"
     assert result.regularization_strength is not None
 
 
@@ -178,7 +178,7 @@ def test_summary_is_human_readable_and_named(fault):
     assert "gnss" in text
     assert "leveling" in text
     assert "reduced chi-squared" in text
-    assert result.solver in text
+    assert result.details.solver in text
 
 
 @pytest.mark.parametrize(
