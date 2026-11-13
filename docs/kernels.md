@@ -1,8 +1,13 @@
-# `geodef.okada` — Green's function engines
+# `geodef.kernels` — Dislocation kernels
 
 > Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
 
-Three modules provide displacement and strain Green's functions. For most workflows, use the `okada` dispatcher; access `okada85` or `okada92` directly only when you need specific features.
+`geodef.kernels` holds the published dislocation solutions everything else is
+built on: `okada85` and `okada92` for rectangles, `tri` for triangles, and the
+`okada` dispatcher that picks between the two rectangular kernels. They work in
+local Cartesian coordinates relative to the source and know nothing about
+longitude, latitude, patches, or datasets; `geodef.Fault` adds those. Reach for
+a kernel directly to validate a formulation or to evaluate a single source.
 
 ## Model assumptions
 
@@ -20,7 +25,7 @@ and [Okada (1992)](https://doi.org/10.1785/BSSA0820021018) papers.
 
 ---
 
-## `geodef.okada` — Unified dispatcher
+## `geodef.kernels.okada` — Unified dispatcher
 
 Auto-selects `okada85` (fast, surface) or `okada92` (3-D) based on observation depth.
 
@@ -30,7 +35,7 @@ Auto-selects `okada85` (fast, surface) or `okada92` (3-D) based on observation d
 import geodef
 
 # Surface observations (z=0) → uses okada85
-ue, un, uz = geodef.okada.displacement(
+ue, un, uz = geodef.kernels.okada.displacement(
     e=obs_east, n=obs_north, z=0.0,
     depth=20_000.0, strike=90.0, dip=15.0,
     length=50_000.0, width=20_000.0,
@@ -38,7 +43,7 @@ ue, un, uz = geodef.okada.displacement(
 )
 
 # Observations at depth (z<0) → uses okada92
-ue, un, uz = geodef.okada.displacement(
+ue, un, uz = geodef.kernels.okada.displacement(
     e=obs_east, n=obs_north, z=-5_000.0,
     depth=20_000.0, strike=90.0, dip=15.0,
     length=50_000.0, width=20_000.0,
@@ -50,7 +55,7 @@ Coordinates are in local Cartesian (east, north) relative to the fault centroid.
 
 ---
 
-## `geodef.okada85` — Surface deformation (Okada 1985)
+## `geodef.kernels.okada85` — Surface deformation (Okada 1985)
 
 Observation points must be at the surface (z = 0).
 
@@ -73,7 +78,7 @@ numerical precision.
 
 ---
 
-## `geodef.okada92` — Internal deformation (Okada 1992 / DC3D)
+## `geodef.kernels.okada92` — Internal deformation (Okada 1992 / DC3D)
 
 Observation points at any depth.
 
@@ -91,7 +96,7 @@ Scalar coordinates return a single `(3, 3)` strain tensor and a `(3, 1)`
 displacement column.
 
 ```python
-from geodef.okada92 import okada92
+from geodef.kernels.okada92 import okada92
 
 disp, strain = okada92(
     X=1000.0, Y=500.0, Z=-5000.0,
@@ -104,7 +109,7 @@ disp, strain = okada92(
 
 ---
 
-## `geodef.tri` — Triangular dislocations (Nikkhoo & Walter 2015)
+## `geodef.kernels.tri` — Triangular dislocations (Nikkhoo & Walter 2015)
 
 Half-space and full-space solutions for triangular dislocation elements.
 
@@ -117,7 +122,7 @@ and dip-slip response before modeling a new imported mesh.
 Half-space surface displacements.
 
 ```python
-from geodef.tri import TDdispHS
+from geodef.kernels.tri import TDdispHS
 
 obs = np.column_stack([obs_e, obs_n, np.zeros(n)])  # (n, 3)
 verts = np.array([[x1,y1,z1], [x2,y2,z2], [x3,y3,z3]])  # (3, 3) ENU

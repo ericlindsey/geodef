@@ -9,12 +9,18 @@ from geodef import cache
 from geodef.cache import compute_hash
 from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
 from geodef.greens import matrix as greens
+from geodef.transforms import LocalFrame
 
 # ====================================================================
 # Group 1: compute_hash (pure function)
 # ====================================================================
+
+
+@pytest.fixture(autouse=True)
+def _cache_enabled() -> None:
+    """These tests exercise the cache, which is off by default."""
+    cache.enable()
 
 
 class TestComputeHash:
@@ -103,9 +109,12 @@ class TestConfig:
         cache.set_dir(str(tmp_path / "str_cache"))
         assert cache.get_dir() == tmp_path / "str_cache"
 
+    def test_cache_is_off_until_enabled(self) -> None:
+        """A fresh configuration writes nothing to disk."""
+        assert cache._CacheConfig().enabled is False
+
     def test_enable_disable(self) -> None:
         """disable() and enable() toggle is_enabled()."""
-        assert cache.is_enabled() is True
         cache.disable()
         assert cache.is_enabled() is False
         cache.enable()
@@ -403,8 +412,8 @@ class TestGreensIntegration:
                 ]
             ]
         )
-        fault_a = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 100.0))
-        fault_b = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 101.0))
+        fault_a = Fault.from_triangles(vertices, frame=LocalFrame(lon=100.0, lat=0.0))
+        fault_b = Fault.from_triangles(vertices, frame=LocalFrame(lon=101.0, lat=0.0))
 
         greens(fault_a, gnss_data)
         greens(fault_b, gnss_data)

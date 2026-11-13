@@ -67,18 +67,18 @@ def test_result_records_named_partitions_and_solver_provenance(fault):
     )
 
     assert result.dataset_names == ("gnss", "leveling")
-    assert result.dataset_slices == (slice(0, 9), slice(9, 12))
-    assert result.solver == "nnls"
-    assert result.success is True
-    assert result.regularization_selection is None
-    assert result.backend == backend.get_backend()
-    assert result.precision == backend.get_precision()
+    assert result.details.dataset_slices == (slice(0, 9), slice(9, 12))
+    assert result.details.solver == "nnls"
+    assert result.details.success is True
+    assert result.details.regularization_selection is None
+    assert result.details.backend == backend.get_backend()
+    assert result.details.precision == backend.get_precision()
     assert result.quantity == "displacement"
     assert result.units == "m"
-    assert len(result.system_hash) == 64
-    np.testing.assert_array_equal(result.lower_bounds, [0.0, 0.0])
-    assert result.upper_bounds is not None
-    assert np.all(np.isposinf(result.upper_bounds))
+    assert len(result.details.system_hash) == 64
+    np.testing.assert_array_equal(result.details.lower_bounds, [0.0, 0.0])
+    assert result.details.upper_bounds is not None
+    assert np.all(np.isposinf(result.details.upper_bounds))
 
 
 def test_automatic_regularization_selection_is_recorded(fault):
@@ -91,7 +91,7 @@ def test_automatic_regularization_selection_is_recorded(fault):
         regularization_strength="abic",
     )
 
-    assert result.regularization_selection == "abic"
+    assert result.details.regularization_selection == "abic"
     assert result.regularization_strength is not None
 
 
@@ -150,6 +150,21 @@ def test_joint_inversion_rejects_mixed_measurement_semantics(fault):
         invert.solve(fault, [gnss, velocity])
 
 
+def test_predictions_and_residuals_are_datasets(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+
+    predicted = result.prediction(gnss)
+    residual = result.residual(gnss)
+
+    assert isinstance(predicted, GNSS)
+    np.testing.assert_array_equal(predicted.lon, gnss.lon)
+    np.testing.assert_array_equal(predicted.sigma, gnss.sigma)
+    np.testing.assert_array_equal(predicted.obs, result.predicted[:9])
+    np.testing.assert_allclose(predicted.east + residual.east, gnss.east)
+    np.testing.assert_allclose(predicted.obs + residual.obs, gnss.obs)
+
+
 def test_assessment_functions_return_name_keyed_views(fault):
     gnss, vertical = _datasets(fault)
     result = invert.solve(fault, [gnss, vertical])
@@ -161,11 +176,9 @@ def test_assessment_functions_return_name_keyed_views(fault):
     assert tuple(predictions) == result.dataset_names
     assert tuple(residuals) == result.dataset_names
     assert tuple(diagnostics) == result.dataset_names
-    assert predictions["gnss"].shape == (gnss.n_obs,)
-    assert predictions["leveling"].shape == (vertical.n_obs,)
+    assert isinstance(predictions["leveling"], Vertical)
     np.testing.assert_allclose(
-        predictions["gnss"] + residuals["gnss"],
-        gnss.obs,
+        predictions["gnss"].obs + residuals["gnss"].obs, gnss.obs
     )
     assert diagnostics["leveling"].n_obs == vertical.n_obs
 
@@ -178,7 +191,7 @@ def test_summary_is_human_readable_and_named(fault):
     assert "gnss" in text
     assert "leveling" in text
     assert "reduced chi-squared" in text
-    assert result.solver in text
+    assert result.details.solver in text
 
 
 @pytest.mark.parametrize(
@@ -239,12 +252,20 @@ def test_prediction_and_residual_select_one_dataset_by_object_or_name(fault):
     result = invert.solve(fault, [gnss, vertical])
 
     np.testing.assert_array_equal(
-        result.prediction(vertical), result.prediction()["leveling"]
+        result.prediction(vertical).obs, result.prediction()["leveling"].obs
     )
-    np.testing.assert_array_equal(result.prediction("gnss"), result.predicted[:9])
-    np.testing.assert_allclose(
-        result.residual(gnss), gnss.obs - result.prediction(gnss)
-    )
+    np.testing.assert_array_equal(result.prediction("gnss").obs, result.predicted[:9])
+
+
+def test_result_plots_work_on_a_loaded_result(fault, tmp_path):
+    result = invert.solve(fault, list(_datasets(fault)))
+    path = tmp_path / "result.npz"
+    result.save(path)
+    loaded = invert.InversionResult.load(path)
+
+    for draw in (plot.prediction, plot.residual, plot.diagnostics, plot.summary):
+        draw(loaded)
+    plt.close("all")
 
 
 def test_prediction_rejects_a_dataset_that_was_not_inverted(fault):

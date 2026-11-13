@@ -7,8 +7,9 @@ import numpy.testing as npt
 import pytest
 
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
-from geodef.mesh import Mesh, _compute_strike_dip
+from geodef.geometry import triangle_strike_dip
+from geodef.mesh import Mesh
+from geodef.transforms import LocalFrame
 
 requires_meshpy = pytest.mark.skipif(
     importlib.util.find_spec("meshpy") is None,
@@ -76,12 +77,11 @@ class TestMeshConstruction:
         assert simple_mesh.n_triangles == 2
 
     def test_records_inferred_frame(self, simple_mesh):
-        assert simple_mesh.frame.projection == "wgs84-enu"
-        assert simple_mesh.frame.origin_lat == pytest.approx(np.mean(simple_mesh.lat))
-        assert simple_mesh.frame.origin_lon == pytest.approx(np.mean(simple_mesh.lon))
+        assert simple_mesh.frame.lat == pytest.approx(np.mean(simple_mesh.lat))
+        assert simple_mesh.frame.lon == pytest.approx(np.mean(simple_mesh.lon))
 
     def test_accepts_explicit_frame(self):
-        frame = LocalFrame(0.0, 100.0)
+        frame = LocalFrame(lon=100.0, lat=0.0)
         mesh = Mesh(
             lon=np.array([100.0, 100.01, 100.0]),
             lat=np.array([0.0, 0.0, 0.01]),
@@ -94,7 +94,7 @@ class TestMeshConstruction:
         npt.assert_allclose(mesh.vertices_enu(), mesh.vertices_enu(frame=frame))
 
     def test_to_frame_preserves_geographic_nodes(self, simple_mesh):
-        frame = LocalFrame(1.0, 101.0)
+        frame = LocalFrame(lon=101.0, lat=1.0)
 
         transformed = simple_mesh.to_frame(frame)
 
@@ -140,20 +140,18 @@ class TestMeshConstruction:
 
 class TestMeshVerticesENU:
     def test_shape(self, simple_mesh):
-        verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
         assert verts.shape == (2, 3, 3)
 
-    def test_rejects_ambiguous_frame_arguments(self, simple_mesh):
-        with pytest.raises(ValueError, match="either frame or ref_lat"):
-            simple_mesh.vertices_enu(
-                ref_lat=0.0,
-                ref_lon=100.0,
-                frame=LocalFrame(0.0, 100.0),
-            )
+    def test_defaults_to_the_mesh_frame(self, simple_mesh):
+        np.testing.assert_array_equal(
+            simple_mesh.vertices_enu(),
+            simple_mesh.vertices_enu(frame=simple_mesh.frame),
+        )
 
     def test_z_convention(self, simple_mesh):
         """Depth positive down → z negative in ENU (up-positive)."""
-        verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
         # Nodes at depth=0 should have z≈0, nodes at depth=10000 should have z≈-10000
         # Triangle 0 has nodes 0,1,3 → depths 0, 0, 10000
         assert verts[0, 0, 2] == pytest.approx(0.0, abs=1.0)
@@ -161,7 +159,7 @@ class TestMeshVerticesENU:
 
     def test_enu_relative_to_ref(self, simple_mesh):
         """Vertices at ref point should have ~zero ENU."""
-        verts = simple_mesh.vertices_enu(ref_lat=0.05, ref_lon=100.05)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.05, lat=0.05))
         # All vertices should be within ~10 km of origin
         for i in range(2):
             for j in range(3):
@@ -170,27 +168,27 @@ class TestMeshVerticesENU:
 
 
 # ======================================================================
-# _compute_strike_dip helper
+# triangle_strike_dip on mesh vertices
 # ======================================================================
 
 
 class TestComputeStrikeDip:
     def test_horizontal_plane_dip_zero(self, horizontal_mesh):
         """Horizontal triangles should have dip ≈ 0."""
-        verts = horizontal_mesh.vertices_enu(ref_lat=0.05, ref_lon=100.05)
-        strike, dip = _compute_strike_dip(verts)
+        verts = horizontal_mesh.vertices_enu(frame=LocalFrame(lon=100.05, lat=0.05))
+        strike, dip = triangle_strike_dip(verts)
         npt.assert_allclose(dip, 0.0, atol=1.0)
 
     def test_vertical_plane_dip_90(self, vertical_mesh):
         """Vertical N-S plane should have dip ≈ 90."""
-        verts = vertical_mesh.vertices_enu(ref_lat=0.05, ref_lon=100.0)
-        strike, dip = _compute_strike_dip(verts)
+        verts = vertical_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.05))
+        strike, dip = triangle_strike_dip(verts)
         npt.assert_allclose(dip, 90.0, atol=2.0)
 
     def test_vertical_ns_strike_zero_or_180(self, vertical_mesh):
         """Vertical N-S plane should have strike ≈ 0 or 180."""
-        verts = vertical_mesh.vertices_enu(ref_lat=0.05, ref_lon=100.0)
-        strike, dip = _compute_strike_dip(verts)
+        verts = vertical_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.05))
+        strike, dip = triangle_strike_dip(verts)
         # Strike should be ~0 or ~180 for a N-S plane
         for s in strike:
             assert s == pytest.approx(0.0, abs=5.0) or s == pytest.approx(
@@ -212,26 +210,26 @@ class TestComputeStrikeDip:
             ],
             dtype=float,
         )
-        strike, dip = _compute_strike_dip(v)
+        strike, dip = triangle_strike_dip(v)
         npt.assert_allclose(dip[0], 45.0, atol=1.0)
 
     def test_output_shapes(self, simple_mesh):
-        verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
-        strike, dip = _compute_strike_dip(verts)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
+        strike, dip = triangle_strike_dip(verts)
         assert strike.shape == (2,)
         assert dip.shape == (2,)
 
     def test_dip_range(self, simple_mesh):
         """Dip should be in [0, 90]."""
-        verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
-        strike, dip = _compute_strike_dip(verts)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
+        strike, dip = triangle_strike_dip(verts)
         assert np.all(dip >= 0)
         assert np.all(dip <= 90)
 
     def test_strike_range(self, simple_mesh):
         """Strike should be in [0, 360)."""
-        verts = simple_mesh.vertices_enu(ref_lat=0.0, ref_lon=100.0)
-        strike, dip = _compute_strike_dip(verts)
+        verts = simple_mesh.vertices_enu(frame=LocalFrame(lon=100.0, lat=0.0))
+        strike, dip = triangle_strike_dip(verts)
         assert np.all(strike >= 0)
         assert np.all(strike < 360)
 
@@ -345,12 +343,12 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         assert fault.n_patches == 2
         assert fault.engine == "tri"
 
     def test_accepts_explicit_tri_frame(self):
-        frame = LocalFrame(0.0, 100.0)
+        frame = LocalFrame(lon=100.0, lat=0.0)
         vertices = np.array(
             [
                 [
@@ -376,9 +374,9 @@ class TestFaultFromTriangles:
                 ]
             ]
         )
-        fault = Fault.from_triangles(vertices, frame=LocalFrame(0.0, 100.0))
+        fault = Fault.from_triangles(vertices, frame=LocalFrame(lon=100.0, lat=0.0))
 
-        transformed = fault.to_frame(LocalFrame(0.1, 100.2))
+        transformed = fault.to_frame(LocalFrame(lon=100.2, lat=0.1))
 
         assert transformed.frame != fault.frame
         assert transformed.vertices is not None
@@ -406,7 +404,7 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         assert fault.dip[0] == pytest.approx(90.0, abs=2.0)
 
     def test_centers_geographic(self):
@@ -419,7 +417,7 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         # Centers should be near ref point
         assert fault.lat[0] == pytest.approx(0.0, abs=0.1)
         assert fault.lon[0] == pytest.approx(100.0, abs=0.1)
@@ -433,7 +431,7 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         assert fault.areas[0] > 0
 
     def test_vertices_stored(self):
@@ -445,7 +443,7 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         assert fault.vertices is not None
         assert fault.vertices.shape == (1, 3, 3)
 
@@ -459,7 +457,7 @@ class TestFaultFromTriangles:
             ],
             dtype=float,
         )
-        fault = Fault.from_triangles(verts, ref_lat=0.0, ref_lon=100.0)
+        fault = Fault.from_triangles(verts, frame=LocalFrame(lon=100.0, lat=0.0))
         assert fault.depth[0] == pytest.approx(10000.0, abs=100.0)
 
     def test_node_connectivity_matches_explicit(self):
@@ -470,8 +468,10 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         tris = np.array([[0, 1, 2], [1, 3, 2]])
-        f_conn = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
-        f_expl = Fault.from_triangles(nodes[tris], ref_lat=0.0, ref_lon=100.0)
+        f_conn = Fault.from_triangles(
+            nodes, frame=LocalFrame(lon=100.0, lat=0.0), triangles=tris
+        )
+        f_expl = Fault.from_triangles(nodes[tris], frame=LocalFrame(lon=100.0, lat=0.0))
         assert f_conn.n_patches == 2
         np.testing.assert_allclose(f_conn.vertices, f_expl.vertices)
         np.testing.assert_allclose(f_conn.strike, f_expl.strike)
@@ -484,7 +484,9 @@ class TestFaultFromTriangles:
             dtype=float,
         )
         tris = np.array([[1, 3, 2], [0, 1, 2]])  # swapped order
-        fault = Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
+        fault = Fault.from_triangles(
+            nodes, frame=LocalFrame(lon=100.0, lat=0.0), triangles=tris
+        )
         np.testing.assert_allclose(fault.vertices[0], nodes[tris[0]])
 
     def test_connectivity_bad_node_shape_raises(self):
@@ -493,7 +495,9 @@ class TestFaultFromTriangles:
         verts = np.zeros((2, 3, 3))
         with pytest.raises(ValueError, match="node array"):
             Fault.from_triangles(
-                verts, ref_lat=0.0, ref_lon=100.0, triangles=np.array([[0, 1, 2]])
+                verts,
+                frame=LocalFrame(lon=100.0, lat=0.0),
+                triangles=np.array([[0, 1, 2]]),
             )
 
     def test_connectivity_index_out_of_range_raises(self):
@@ -502,7 +506,9 @@ class TestFaultFromTriangles:
         nodes = np.zeros((3, 3))
         with pytest.raises(ValueError, match="out of range"):
             Fault.from_triangles(
-                nodes, ref_lat=0.0, ref_lon=100.0, triangles=np.array([[0, 1, 5]])
+                nodes,
+                frame=LocalFrame(lon=100.0, lat=0.0),
+                triangles=np.array([[0, 1, 5]]),
             )
 
 
@@ -551,7 +557,7 @@ class TestFaultFromMesh:
         obs_lat = np.array([0.05])
         obs_lon = np.array([100.05])
         slip_s = np.ones(fault.n_patches)
-        ux, uy, uz = fault.displacement(lat=obs_lat, lon=obs_lon, strike_slip=slip_s)
+        ux, uy, uz = fault.displacement(lon=obs_lon, lat=obs_lat, strike_slip=slip_s)
         assert ux.shape == (1,)
 
 
@@ -561,7 +567,7 @@ class TestFaultLoadNed:
 
         fname = str(tmp_path / "test_mesh")
         simple_mesh.save(fname)
-        fault = Fault.load(fname, format="ned", ref_lat=0.05, ref_lon=100.05)
+        fault = Fault.load(fname, format="ned", frame=LocalFrame(lon=100.05, lat=0.05))
         assert fault.engine == "tri"
         assert fault.n_patches == 2
 

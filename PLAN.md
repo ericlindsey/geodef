@@ -32,10 +32,18 @@ conventions.
   keyword `lon`/`lat` and `strike_slip`/`dip_slip` everywhere,
   `DataSet.synthetic`, public `Fault` geometry with a single `corners`
   accessor, assessment as methods on a result that remembers its problem,
-  and `LinearSystem` as the one reusable inversion object. The engine
+  and `LinearSystem` as the one reusable inversion object. Then the
+  ten-item backlog: an opt-in cache, one origin spelling
+  (`frame=LocalFrame(lon=, lat=)`), coordinates in `transforms`, the
+  kernels in `geodef.kernels`, one map projection for rectangles,
+  triangles, and stations, one batched Green's assembly path, a slim
+  `InversionResult` with `details`, plain `.npz` result files,
+  dataset-valued predictions, and every chapter on `synthetic`. The engine
   registry, API-tier stability map, layering test, and deprecation policy
-  were removed. The pass also found and fixed reversed row depths in
-  `Fault.planar` (see `CHANGELOG.md`).
+  were removed. The pass found and fixed three physics errors (reversed
+  planar row depths, per-patch projections that kept large faults from
+  being planar, and normal-positive dip slip on generated triangle meshes);
+  see `CHANGELOG.md`.
 
 ---
 
@@ -68,26 +76,6 @@ Acceptance criteria for every change.
 
 ---
 
-## Simplification backlog
-
-What the November 2026 pass left, in the order a student is likely to
-meet it. Each item is independent.
-
-| # | Item | Why it matters | Effort |
-|---|---|---|---|
-| S1 | One spelling for the local origin | `ref_lat`/`ref_lon` and `frame=` are both accepted by `Fault.from_triangles`, `geometry_search`, `bayes`, and `mesh`; `LocalFrame(lat, lon)` is positional and latitude-first. Settle on `frame=LocalFrame(lon=, lat=)`. | Small-medium |
-| S2 | One Green's assembly path | `greens.displacement_greens` loops over patches in NumPy and has a separate batched JAX branch; the batched kernel already broadcasts in NumPy. Use it for both, and give the public functions keyword `lon`/`lat`. Needs the `exact` golden tests re-baselined. | Medium |
-| S3 | One projection for rectangles and triangles | Rectangles use a per-patch tangent plane, triangles one shared `LocalFrame`; `transforms.translate_flat` is a third. A shared frame would make `Fault.corners` exact and remove a class of small inconsistencies. **Numerical** change. | Medium |
-| S4 | Slimmer `InversionResult` | More than thirty fields; group provenance (backend, precision, hashes, bounds, constraints) into one nested record so the fields a student prints stand out. | Small |
-| S5 | Simpler result files | `invert/_io.py` is a 600-line versioned, checksummed schema with migrations. With no released files to protect, a plain `.npz` plus JSON metadata would do. | Small |
-| S6 | Cache off by default | The disk cache for `G` writes `.geodef_cache/` in the working directory without being asked. Make it opt-in (`geodef.cache.enable()`), and show it in Chapter 02. | Small |
-| S7 | Kernel subpackage | Move `okada85`, `okada92`, `tri`, and `okada` under `geodef.kernels` so the top-level module list reads as a table of contents. | Small (mechanical) |
-| S8 | Merge `geometry` and `transforms` | Two modules for coordinates; `LocalFrame` could own the conversions a student needs. | Small |
-| S9 | Tutorial data setup in chapters 11-14 | Still built from `fault.displacement` plus per-component noise; moving to `synthetic` changes their random streams and therefore their printed numbers. | Small |
-| S10 | Dataset-valued predictions | `result.prediction()` returns arrays keyed by name; returning datasets (`gnss.with_obs(...)`) would let `plot.vectors(observed, predicted)` drop its manual slicing. | Small-medium |
-
----
-
 ## The roadmap menus
 
 Remaining feature work is organized as three menus. Items are
@@ -114,23 +102,21 @@ prioritized table.
 
 ### A recommended near-term sequence
 
-1. **S1, S6, S4, S5** — the small simplifications, while the API is
-   still free to change.
-2. **F1 remainder** (checkerboard/spike/compare) and **S9/S10**, which
-   finish the tutorial cleanup.
-3. **S2 then S3** — the Green's assembly and projection unification,
-   each with its golden data re-baselined in one commit.
-4. **F2** (coupling) with its interseismic example.
-5. **A3 → F3 → F4 → F5** — the noise and whitening layer and the
+1. **F1 remainder** (checkerboard and spike patterns, `result.compare`),
+   which finishes the tutorial cleanup, then tag **v0.2**.
+2. **F2** (coupling) with its interseismic example.
+3. **A3 → F3 → F4 → F5** — the noise and whitening layer and the
    features on it.
-6. Then by demand: F6, F8, A6 → C1, and new engines.
+4. Then by demand: F6, F8, A6 → C1, and new engines.
+
+New simplification candidates go in this section as they are found.
 
 ---
 
 ## Release discipline
 
-- **v0.2:** after the simplification backlog's small items, so the
-  course, docs, and vocabulary ship together.
+- **v0.2:** after the F1 remainder, so the simplified API, course, and
+  docs ship together.
 - **Later 0.x releases:** menu items in the order chosen; each release
   batches its result-file changes.
 - **v1.0:** after the high-priority menu items and human testing with

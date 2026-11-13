@@ -8,7 +8,7 @@ ported to Python by Lindsey (2014). The 9 test cases cover various dip angles
 import numpy as np
 import pytest
 
-from geodef import okada85
+from geodef.kernels import okada85
 
 pytestmark = pytest.mark.physical
 

@@ -11,16 +11,31 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from geodef import transforms
-
 if TYPE_CHECKING:
     from geodef.fault import Fault
+    from geodef.transforms import LocalFrame
+
+
+def _center_frame(lon: np.ndarray, lat: np.ndarray) -> "LocalFrame":
+    """A local frame centered on a set of geographic points."""
+    from geodef.transforms import LocalFrame
+
+    return LocalFrame(lon=float(np.mean(lon)), lat=float(np.mean(lat)))
+
+
+def _plane_axes(strike: np.ndarray, dip: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Along-strike and down-dip unit vectors; see ``geodef.fault._plane_axes``."""
+    from geodef.fault import _plane_axes as axes
+
+    return axes(strike, dip)
 
 
 def load_center(filedata: np.ndarray) -> "Fault":
     """Load patches defined by center coordinates.
 
     Expected columns: [id, dipid, strikeid, lon, lat, depth, L, W, strike, dip].
+    Strike in the file is measured from true north at each patch; it is
+    converted to the fault's local frame on load and back on save.
     """
     from geodef.fault import Fault
 
@@ -37,15 +52,17 @@ def load_center(filedata: np.ndarray) -> "Fault":
     n = len(lat_c)
     grid_shape = (n_length, n_width) if n_length * n_width == n else None
 
+    frame = _center_frame(lon_c, lat_c)
     return Fault(
         lon=lon_c,
         lat=lat_c,
         depth=depth,
-        strike=strike,
+        strike=strike + frame.north_azimuth(lon=lon_c, lat=lat_c),
         dip=dip,
         length=length,
         width=width,
         grid_shape=grid_shape,
+        frame=frame,
     )
 
 
@@ -64,17 +81,18 @@ def load_topleft(filedata: np.ndarray) -> "Fault":
     strike = filedata[:, 8]
     dip = filedata[:, 9]
 
-    sin_str = np.sin(np.radians(strike))
-    cos_str = np.cos(np.radians(strike))
-    sin_dip = np.sin(np.radians(dip))
-    cos_dip = np.cos(np.radians(dip))
-
-    e_offset = (length / 2) * sin_str + (width / 2) * cos_dip * cos_str
-    n_offset = (length / 2) * cos_str - (width / 2) * cos_dip * sin_str
-    u_offset = (width / 2) * sin_dip
-
-    lat_c, lon_c, _ = transforms.translate_flat(lat, lon, 0.0, e_offset, n_offset, 0.0)
-    depth_c = depth + u_offset
+    frame = _center_frame(lon, lat)
+    strike = strike + frame.north_azimuth(lon=lon, lat=lat)
+    along_strike, down_dip = _plane_axes(strike, dip)
+    centers = (
+        frame.to_enu(lon=lon, lat=lat, alt=-depth)
+        + 0.5 * length[:, None] * along_strike
+        + 0.5 * width[:, None] * down_dip
+    )
+    geographic = frame.to_geographic(
+        east=centers[:, 0], north=centers[:, 1], up=centers[:, 2]
+    )
+    lon_c, lat_c, depth_c = geographic[:, 0], geographic[:, 1], -geographic[:, 2]
 
     n_length = int(filedata[:, 2].max()) + 1
     n_width = int(filedata[:, 1].max()) + 1
@@ -90,10 +108,11 @@ def load_topleft(filedata: np.ndarray) -> "Fault":
         length=length,
         width=width,
         grid_shape=grid_shape,
+        frame=frame,
     )
 
 
-def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
+def load_seg(fname: str, frame: "LocalFrame") -> "Fault":
     """Load patches from a unicycle ``.seg`` file.
 
     Each line in the file defines a fault segment that is subdivided
@@ -108,8 +127,7 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
 
     Args:
         fname: Path to the ``.seg`` file.
-        ref_lat: Reference latitude for geographic placement.
-        ref_lon: Reference longitude for geographic placement.
+        frame: Local frame the file's Cartesian coordinates are expressed in.
     """
     from geodef.fault import Fault
 
@@ -192,14 +210,8 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
     c_depth = p_depth + (p_width / 2) * sin_dip
 
     # Convert local Cartesian (East, North) to geographic
-    lat_c, lon_c, _ = transforms.translate_flat(
-        ref_lat,
-        ref_lon,
-        0.0,
-        c_east,
-        c_north,
-        0.0,
-    )
+    geographic = frame.to_geographic(east=c_east, north=c_north)
+    lon_c, lat_c = geographic[:, 0], geographic[:, 1]
     depth_c = c_depth
 
     # Detect if this is a uniform grid (all patches same size, qL=qW=1)
@@ -219,6 +231,7 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
         length=p_length,
         width=p_width,
         grid_shape=grid_shape,
+        frame=frame,
     )
 
 
@@ -243,7 +256,7 @@ def save_center(fault: "Fault", fname: str) -> None:
             fault.depth,
             fault.length,
             fault.width,
-            fault.strike,
+            fault.geographic_strike,
             fault.dip,
         )
     )
@@ -253,8 +266,7 @@ def save_center(fault: "Fault", fname: str) -> None:
 def save_seg(
     fault: "Fault",
     fname: str,
-    ref_lat: float,
-    ref_lon: float,
+    frame: "LocalFrame",
     vpl: float,
     rake: float,
 ) -> None:
@@ -264,17 +276,9 @@ def save_seg(
     uniform patch sizes (qL=qW=1), this round-trips exactly. For
     non-uniform faults, L0/W0 are taken from the smallest patch.
     """
+    fault = fault.to_frame(frame)
     assert fault.length is not None and fault.width is not None
-    # Convert geographic centers back to local Cartesian
-    alt = np.zeros(fault.n_patches)
-    east, north, _ = transforms.geod2enu(
-        fault.lat,
-        fault.lon,
-        alt,
-        ref_lat,
-        ref_lon,
-        0.0,
-    )
+    east, north = fault.centers_local[:, 0], fault.centers_local[:, 1]
 
     # Compute upper-left corner of each patch
     sin_str = np.sin(np.radians(fault.strike))

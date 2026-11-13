@@ -101,7 +101,7 @@ def _stations_to_local_km(
     enu = fault.frame.to_enu(
         lon=dataset.lon,
         lat=dataset.lat,
-        alt=np.full(dataset.n_stations, fault.frame.origin_alt),
+        alt=np.full(dataset.n_stations, fault.frame.alt),
     )
     return enu[:, 0] * 1e-3, enu[:, 1] * 1e-3
 

@@ -7,8 +7,9 @@ rather than okada85/okada92 directly.
 
 import numpy as np
 
-from geodef import backend, okada85
-from geodef.okada92 import okada92 as _okada92
+from geodef import backend
+from geodef.kernels import okada85
+from geodef.kernels.okada92 import okada92 as _okada92
 
 
 def displacement(

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from scipy import interpolate
 
 from geodef import transforms
-from geodef.geometry import LocalFrame
+from geodef.transforms import LocalFrame
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,9 @@ class Mesh:
         if self.frame is None:
             origin_lat = float(np.mean(self.lat)) if self.lat.size else 0.0
             origin_lon = float(np.mean(self.lon)) if self.lon.size else 0.0
-            object.__setattr__(self, "frame", LocalFrame(origin_lat, origin_lon))
+            object.__setattr__(
+                self, "frame", LocalFrame(lon=origin_lon, lat=origin_lat)
+            )
 
     @property
     def n_nodes(self) -> int:
@@ -153,42 +155,20 @@ class Mesh:
         edge2 = verts[:, 2, :] - verts[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
 
-    def vertices_enu(
-        self,
-        ref_lat: float | None = None,
-        ref_lon: float | None = None,
-        *,
-        frame: LocalFrame | None = None,
-    ) -> np.ndarray:
+    def vertices_enu(self, frame: LocalFrame | None = None) -> np.ndarray:
         """Triangle vertices in local ENU meters, shape (M, 3, 3).
 
-        Each triangle has 3 vertices, each with [east, north, up] coordinates
-        relative to the reference point. Depth is converted to up (z = -depth).
+        Each triangle has 3 vertices, each with [east, north, up] coordinates.
+        Depth is converted to up (z = -depth).
 
         Args:
-            ref_lat: Legacy reference latitude for an alternate ENU origin.
-            ref_lon: Legacy reference longitude for an alternate ENU origin.
-            frame: Explicit alternate frame. Mutually exclusive with
-                ``ref_lat`` and ``ref_lon``. Defaults to :attr:`frame`.
+            frame: Frame to express the vertices in. Defaults to :attr:`frame`.
 
         Returns:
-            Array of shape (M, 3, 3) suitable for ``Fault.__init__(vertices=...)``.
-
-        Raises:
-            ValueError: If only one legacy origin coordinate is supplied, or
-                legacy origin coordinates and ``frame`` are mixed.
+            Array of shape (M, 3, 3) suitable for ``Fault.from_triangles``.
         """
-        if frame is not None and (ref_lat is not None or ref_lon is not None):
-            raise ValueError("provide either frame or ref_lat/ref_lon, not both")
-        if (ref_lat is None) != (ref_lon is None):
-            raise ValueError("ref_lat and ref_lon must be provided together")
-        if frame is not None:
-            selected_frame = frame
-        elif ref_lat is not None and ref_lon is not None:
-            selected_frame = LocalFrame(ref_lat, ref_lon)
-        else:
-            assert self.frame is not None
-            selected_frame = self.frame
+        selected_frame = self.frame if frame is None else frame
+        assert selected_frame is not None
         nodes = selected_frame.to_enu(
             lon=self.lon,
             lat=self.lat,
@@ -334,61 +314,6 @@ class Mesh:
 # ======================================================================
 # Internal helpers
 # ======================================================================
-
-
-def _compute_strike_dip(
-    vertices: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Derive strike and dip angles from triangle vertices in local ENU.
-
-    Args:
-        vertices: Triangle vertices, shape (N, 3, 3), in local ENU meters
-            where columns are [east, north, up].
-
-    Returns:
-        strike: Strike angles in degrees [0, 360), shape (N,).
-            Measured clockwise from north, with the fault dipping to
-            the right when looking along strike.
-        dip: Dip angles in degrees [0, 90], shape (N,).
-    """
-    edge1 = vertices[:, 1, :] - vertices[:, 0, :]
-    edge2 = vertices[:, 2, :] - vertices[:, 0, :]
-    normal = np.cross(edge1, edge2)
-
-    # Ensure normal points upward (positive z component)
-    flip = normal[:, 2] < 0
-    normal[flip] *= -1
-
-    norm_mag = np.linalg.norm(normal, axis=1, keepdims=True)
-    norm_mag = np.maximum(norm_mag, 1e-30)
-    normal = normal / norm_mag
-
-    # Dip = angle between normal and vertical (z-axis)
-    dip = np.degrees(np.arccos(np.clip(np.abs(normal[:, 2]), 0, 1)))
-
-    # For dip ≈ 0 (horizontal), strike is undefined; default to 0
-    strike = np.zeros(len(vertices), dtype=float)
-
-    not_horizontal = dip > 0.1
-    if np.any(not_horizontal):
-        # Updip direction: steepest ascent projected to horizontal
-        # For a plane with upward normal (nx, ny, nz), the horizontal
-        # component of the updip direction is (-nx, -ny) (opposite of
-        # the horizontal projection of the normal for upward-pointing normals
-        # is actually the downdip direction, so updip = horizontal normal dir)
-        # Actually: the updip direction on the plane is the direction of
-        # steepest ascent. The gradient of z on the plane points updip.
-        # Horizontal updip = (nx, ny) / sqrt(nx^2 + ny^2) when normal points up.
-        nx = normal[not_horizontal, 0]
-        ny = normal[not_horizontal, 1]
-
-        # Updip horizontal azimuth (degrees from north, CW positive)
-        updip_az = np.degrees(np.arctan2(nx, ny)) % 360
-
-        # Strike = updip azimuth + 90 (right-hand rule: dip to the right)
-        strike[not_horizontal] = (updip_az + 90) % 360
-
-    return strike, dip
 
 
 def _nan_aware_griddata(

@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING, overload
 import numpy as np
 
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
 from geodef.slip import from_plate, from_rake, magnitude, unpack
 from geodef.slip import rake as slip_rake
+from geodef.transforms import LocalFrame
 
 if TYPE_CHECKING:
     import matplotlib
@@ -25,64 +25,89 @@ if TYPE_CHECKING:
 
 
 @dataclasses.dataclass(frozen=True)
-class InversionResult:
-    """Result of a fault slip inversion.
+class SolveDetails:
+    """How an inversion was solved: the bookkeeping behind a result.
+
+    Everything here is recorded so a result can be reproduced and audited;
+    none of it is needed to read the slip or the fit.
 
     Attributes:
-        slip: Slip per patch, shape (N, n_components). Columns ordered
-            as [strike-slip, dip-slip] for ``components='both'``, or
-            a single column for ``'strike'``, ``'dip'``, ``'rake'``, or
-            ``'azimuth'``.
-        slip_vector: Blocked solution vector, shape (n_components * N,).
-        residuals: Observation minus prediction, shape (M,).
-        predicted: Forward-modeled observations, shape (M,).
-        reduced_chi2: Reduced chi-squared misfit, r^T W r / (M - P).
-        rms: Root-mean-square of residuals.
-        moment: Scalar seismic moment in N-m.
-        Mw: Moment magnitude.
-        regularization: Regularization type used, or None if unregularized.
-        regularization_strength: Regularization weight used, or None if unregularized.
-        components: Which slip components were solved for. One of
-            ``'both'``, ``'strike'``, ``'dip'``, ``'rake'``, or
-            ``'azimuth'``.
-        rake: Fixed rake angle in degrees (in each patch's local
-            strike-dip frame) when ``components='rake'``, else ``None``.
-            Only physically meaningful for planar faults with uniform
-            strike; use ``slip_azimuth`` for curved meshes.
-        slip_azimuth: Fixed geographic slip azimuth in degrees CW from
-            North when ``components='azimuth'``, else ``None``. Each
-            patch's effective local rake is ``slip_azimuth - strike_i``,
-            so this correctly handles faults with varying strike.
-        plate_rake: Large-scale plate direction expressed as local rake per
-            patch when ``components='plate'``. The two solution blocks are
-            rake-parallel and rake-perpendicular.
-        dataset_names: Stable dataset identifiers in stacked-row order.
-        dataset_slices: Corresponding slices into ``predicted`` and
-            ``residuals``.
-        solver: Solver selected for the completed inversion.
-        success: Whether the solver completed successfully.
+        solver: Solver used: ``'wls'``, ``'nnls'``, ``'bounded_ls'``, or
+            ``'constrained'``.
+        success: Whether the solver reported success.
         message: Solver completion message.
-        regularization_selection: ``'abic'`` or ``'cv'`` when selected
-            automatically, otherwise ``None``.
+        regularization_selection: ``'abic'`` or ``'cv'`` when the
+            regularization strength was chosen automatically, else ``None``.
         backend: Array backend active during the solve.
         precision: Floating-point precision active during the solve.
-        warnings: Interpretation warnings retained with the result.
-        quantity: ``'displacement'`` or ``'velocity'``.
-        units: Units inherited from the input datasets.
-        system_hash: SHA-256 fingerprint of G, d, W, and L.
-        lower_bounds: Expanded lower parameter bounds, if any.
-        upper_bounds: Expanded upper parameter bounds, if any.
-        regularization_target: Reference model used by regularization, if any.
-        constraint_matrix: Linear inequality matrix, if any.
-        constraint_bounds: Linear inequality right-hand side, if any.
-        dataset_diagnostics: Solve-time diagnostics in dataset order.
-        system: The :class:`LinearSystem` that produced this result. It
-            gives the assessment methods (``covariance``, ``uncertainty``,
-            ``resolution``) access to the fault and data. ``None`` for a
-            result loaded from a file until :meth:`attach` is called.
+        system_hash: SHA-256 fingerprint of ``G``, ``d``, ``W``, and ``L``.
+        dataset_slices: Rows of ``predicted`` and ``residuals`` belonging to
+            each dataset, in ``dataset_names`` order.
+        dataset_diagnostics: Per-dataset fit statistics, same order.
+        local_rake: Per-patch rake of the ``'azimuth'`` basis, else ``None``.
+        lower_bounds: Lower parameter bounds after expansion, if any.
+        upper_bounds: Upper parameter bounds after expansion, if any.
+        regularization_target: Reference model of the regularization, if any.
+        constraint_matrix: Linear inequality matrix ``C``, if any.
+        constraint_bounds: Right-hand side of ``C m <= d``, if any.
     """
 
-    slip: np.ndarray
+    solver: str = "unknown"
+    success: bool = True
+    message: str = ""
+    regularization_selection: str | None = None
+    backend: str = "numpy"
+    precision: str = "float64"
+    system_hash: str = ""
+    dataset_slices: tuple[slice, ...] = ()
+    dataset_diagnostics: tuple[DatasetDiagnostics, ...] = ()
+    local_rake: np.ndarray | None = None
+    lower_bounds: np.ndarray | None = None
+    upper_bounds: np.ndarray | None = None
+    regularization_target: np.ndarray | None = None
+    constraint_matrix: np.ndarray | None = None
+    constraint_bounds: np.ndarray | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class InversionResult:
+    """The answer to an inversion: slip, fit, and the problem it solves.
+
+    Read slip through the named per-patch views (``strike_slip``,
+    ``dip_slip``, ``slip_magnitude``, ``slip_rake``) and the fit through
+    ``reduced_chi2``, ``prediction()``, and ``diagnostics()``. Assessment
+    (``covariance()``, ``uncertainty()``, ``resolution()``) uses the fault
+    and datasets the result remembers. How it was solved is in ``details``.
+
+    Attributes:
+        slip_vector: Solution in the solved basis, blocked by component:
+            shape (N,) for one-component bases, (2N,) for ``'both'`` and
+            ``'plate'``.
+        residuals: Observed minus predicted data, stacked over datasets.
+        predicted: Predicted data, stacked over datasets.
+        reduced_chi2: Weighted misfit per degree of freedom,
+            ``r^T W r / (M - P)``.
+        rms: Root-mean-square residual, in ``units``.
+        moment: Scalar seismic moment in N m (NaN for velocity data).
+        Mw: Moment magnitude (NaN for velocity data).
+        regularization: Regularization operator used, or ``None``.
+        regularization_strength: Lambda used, or ``None``.
+        components: Slip basis: ``'both'``, ``'strike'``, ``'dip'``,
+            ``'rake'``, ``'azimuth'``, or ``'plate'``.
+        rake: Fixed rake in degrees for ``components='rake'``.
+        slip_azimuth: Geographic slip azimuth for ``components='azimuth'``.
+        plate_rake: Per-patch plate direction for ``components='plate'``.
+        dataset_names: Dataset names in stacked-row order.
+        warnings: Interpretation warnings.
+        quantity: ``'displacement'`` or ``'velocity'``.
+        units: Units of the data, residuals, and RMS.
+        details: Solver bookkeeping; see :class:`SolveDetails`.
+        system: The :class:`LinearSystem` that produced this result. It
+            gives the assessment methods access to the fault and data.
+            ``None`` for a result loaded from a file until :meth:`attach`
+            is called.
+    """
+
     slip_vector: np.ndarray
     residuals: np.ndarray
     predicted: np.ndarray
@@ -96,25 +121,11 @@ class InversionResult:
     rake: float | None = None
     slip_azimuth: float | None = None
     plate_rake: np.ndarray | None = None
-    local_rake: np.ndarray | None = None
     dataset_names: tuple[str, ...] = ()
-    dataset_slices: tuple[slice, ...] = ()
-    solver: str = "unknown"
-    success: bool = True
-    message: str = ""
-    regularization_selection: str | None = None
-    backend: str = "numpy"
-    precision: str = "float64"
     warnings: tuple[str, ...] = ()
     quantity: str = "displacement"
     units: str = "m"
-    system_hash: str = ""
-    lower_bounds: np.ndarray | None = None
-    upper_bounds: np.ndarray | None = None
-    regularization_target: np.ndarray | None = None
-    constraint_matrix: np.ndarray | None = None
-    constraint_bounds: np.ndarray | None = None
-    dataset_diagnostics: tuple[DatasetDiagnostics, ...] = ()
+    details: SolveDetails = dataclasses.field(default_factory=SolveDetails)
     system: LinearSystem | None = dataclasses.field(
         default=None, repr=False, compare=False
     )
@@ -174,68 +185,90 @@ class InversionResult:
     # ------------------------------------------------------------------
 
     @overload
-    def prediction(self, dataset: None = None) -> dict[str, np.ndarray]: ...
+    def prediction(self, dataset: None = None) -> dict[str, DataSet]: ...
     @overload
-    def prediction(self, dataset: DataSet | str) -> np.ndarray: ...
+    def prediction(self, dataset: DataSet | str) -> DataSet: ...
     def prediction(
         self, dataset: DataSet | str | None = None
-    ) -> dict[str, np.ndarray] | np.ndarray:
-        """Model predictions, for every dataset or for one.
+    ) -> dict[str, DataSet] | DataSet:
+        """The model's prediction, as datasets like the ones inverted.
+
+        Each prediction has the stations, uncertainties, and names of its
+        dataset, with the predicted values as observations, so a GNSS
+        prediction has ``.east``, ``.north``, and ``.up``.
 
         Args:
             dataset: A dataset that was inverted (the object itself or its
                 name in ``dataset_names``). ``None`` returns every dataset.
 
         Returns:
-            The predicted observation vector for ``dataset``, or a
-            name-keyed mapping of all of them in solve order.
+            The prediction for ``dataset``, or a name-keyed mapping of all of
+            them in solve order.
         """
-        return self._by_dataset(self.predicted, dataset)
+        return self._as_datasets(self.predicted, dataset)
 
     @overload
-    def residual(self, dataset: None = None) -> dict[str, np.ndarray]: ...
+    def residual(self, dataset: None = None) -> dict[str, DataSet]: ...
     @overload
-    def residual(self, dataset: DataSet | str) -> np.ndarray: ...
+    def residual(self, dataset: DataSet | str) -> DataSet: ...
     def residual(
         self, dataset: DataSet | str | None = None
-    ) -> dict[str, np.ndarray] | np.ndarray:
-        """Observed-minus-predicted residuals, for every dataset or for one.
+    ) -> dict[str, DataSet] | DataSet:
+        """Observed minus predicted, as datasets like the ones inverted.
 
         Args:
             dataset: A dataset that was inverted (the object itself or its
                 name in ``dataset_names``). ``None`` returns every dataset.
 
         Returns:
-            The residual vector for ``dataset``, or a name-keyed mapping of
-            all of them in solve order.
+            The residual for ``dataset``, or a name-keyed mapping of all of
+            them in solve order.
         """
-        return self._by_dataset(self.residuals, dataset)
+        return self._as_datasets(self.residuals, dataset)
+
+    def _as_datasets(
+        self, stacked: np.ndarray, dataset: DataSet | str | None
+    ) -> dict[str, DataSet] | DataSet:
+        """Wrap each dataset's rows of a stacked vector as that dataset."""
+        datasets = dict(zip(self.dataset_names, self._system().datasets))
+        rows = self.rows_by_dataset(stacked)
+        if dataset is None:
+            return {name: datasets[name].with_obs(rows[name]) for name in datasets}
+        if isinstance(dataset, str):
+            if dataset not in datasets:
+                raise KeyError(
+                    f"no dataset named {dataset!r}; names are {self.dataset_names}"
+                )
+            return datasets[dataset].with_obs(rows[dataset])
+        for name, candidate in datasets.items():
+            if candidate is dataset:
+                return candidate.with_obs(rows[name])
+        raise ValueError(
+            "that dataset is not one of the datasets this result was fit to"
+        )
+
+    def rows_by_dataset(self, stacked: np.ndarray) -> dict[str, np.ndarray]:
+        """Split a stacked vector (such as ``predicted``) by dataset name.
+
+        Works without the datasets, so it is available on a loaded result.
+
+        Args:
+            stacked: Vector with one entry per row of the stacked data.
+
+        Returns:
+            Name-keyed slices in solve order.
+        """
+        names = self.dataset_names or ("data",)
+        slices = self.details.dataset_slices or (slice(None),)
+        return {name: stacked[rows] for name, rows in zip(names, slices)}
 
     def diagnostics(self) -> dict[str, DatasetDiagnostics]:
         """Fit diagnostics keyed by dataset name, in solve order."""
         names = self.dataset_names or tuple(
-            f"data_{index + 1}" for index in range(len(self.dataset_diagnostics))
+            f"data_{index + 1}"
+            for index in range(len(self.details.dataset_diagnostics))
         )
-        return dict(zip(names, self.dataset_diagnostics))
-
-    def _by_dataset(
-        self, stacked: np.ndarray, dataset: DataSet | str | None
-    ) -> dict[str, np.ndarray] | np.ndarray:
-        """Split a stacked row vector by dataset, or select one dataset's rows."""
-        names = self.dataset_names or ("data",)
-        slices = self.dataset_slices or (slice(None),)
-        if dataset is None:
-            return {name: stacked[rows] for name, rows in zip(names, slices)}
-        if isinstance(dataset, str):
-            if dataset not in names:
-                raise KeyError(f"no dataset named {dataset!r}; names are {names}")
-            return stacked[slices[names.index(dataset)]]
-        for candidate, rows in zip(self.datasets, slices):
-            if candidate is dataset:
-                return stacked[rows]
-        raise ValueError(
-            "that dataset is not one of the datasets this result was fit to"
-        )
+        return dict(zip(names, self.details.dataset_diagnostics))
 
     def summary(self) -> str:
         """Format the essential assumptions and fit statistics as text."""
@@ -247,17 +280,19 @@ class InversionResult:
                 else "custom"
             )
             regularization = f"{kind} (lambda={self.regularization_strength:.6g})"
-            if self.regularization_selection is not None:
-                regularization += f", selected by {self.regularization_selection}"
+            if self.details.regularization_selection is not None:
+                selection = self.details.regularization_selection
+                regularization += f", selected by {selection}"
         lines = [
-            f"solver: {self.solver} ({'success' if self.success else 'failed'})",
+            f"solver: {self.details.solver} "
+            f"({'success' if self.details.success else 'failed'})",
             f"datasets: {', '.join(self.dataset_names) or 'data'}",
             f"quantity: {self.quantity} [{self.units}]",
             f"components: {self.components}",
             f"regularization: {regularization}",
             f"reduced chi-squared: {self.reduced_chi2:.6g}",
             f"RMS: {self.rms:.6g} {self.units}",
-            f"backend: {self.backend}/{self.precision}",
+            f"backend: {self.details.backend}/{self.details.precision}",
         ]
         for name, values in self.diagnostics().items():
             lines.append(
@@ -360,6 +395,12 @@ class InversionResult:
     # ------------------------------------------------------------------
 
     @property
+    def slip(self) -> np.ndarray:
+        """Solution in the solved basis as one column per component, (N, P/N)."""
+        n_columns = 2 if self.components in {"both", "plate"} else 1
+        return self.slip_vector.reshape(n_columns, -1).T
+
+    @property
     def n_patches(self) -> int:
         """Number of fault patches represented by the result."""
         divisor = 2 if self.components in {"both", "plate"} else 1
@@ -405,7 +446,7 @@ class InversionResult:
         if self.components == "rake":
             angle = self.rake
         elif self.components == "azimuth":
-            angle = self.local_rake
+            angle = self.details.local_rake
         elif self.components == "plate":
             angle = self.plate_rake
         else:

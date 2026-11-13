@@ -9,8 +9,9 @@ not installed.
 import numpy as np
 import pytest
 
-from geodef import backend, greens, okada85, okada92
-from geodef import tri as tdcalc
+from geodef import backend, greens
+from geodef.kernels import okada85, okada92
+from geodef.kernels import tri as tdcalc
 from tests.test_okada85 import (
     _REFERENCE_PARAMS,
     _REFERENCE_RESULTS,
@@ -116,6 +117,22 @@ class TestTriJaxReference:
         np.testing.assert_almost_equal(strain, ref_strain)
 
 
+def _local(lat, lon, lat0, lon0, depth, strike, dip, length, width) -> dict:
+    """Random degree-valued positions as local Cartesian keyword arguments."""
+    meters = 111e3
+    return dict(
+        obs_east=np.asarray(lon) * meters,
+        obs_north=np.asarray(lat) * meters,
+        east=np.asarray(lon0) * meters,
+        north=np.asarray(lat0) * meters,
+        depth=depth,
+        strike=strike,
+        dip=dip,
+        length=length,
+        width=width,
+    )
+
+
 class TestFloat32Mode:
     """Opt-in float32 precision runs end-to-end with reduced accuracy."""
 
@@ -180,9 +197,9 @@ class TestFloat32Mode:
         )
 
         backend.set_precision("float64")
-        ref = greens.displacement_greens(*args)
+        ref = greens.displacement_greens(**_local(*args))
         backend.set_precision("float32")
-        result = greens.displacement_greens(*args)
+        result = greens.displacement_greens(**_local(*args))
 
         # far-field coefficients of small patches lose relative accuracy
         # in float32 (the Chinnery corner differences nearly cancel), so
@@ -301,9 +318,9 @@ class TestBackendEquivalence:
         args = (lat, lon, lat0, lon0, depth, strike, dip, L, W)
 
         backend.set_backend("numpy")
-        expected = greens.displacement_greens(*args)
+        expected = greens.displacement_greens(**_local(*args))
         backend.set_backend("jax")
-        result = greens.displacement_greens(*args)
+        result = greens.displacement_greens(**_local(*args))
 
         assert isinstance(result, np.ndarray)
         # JIT fusion reassociates the Chinnery differences, so agreement is
@@ -325,9 +342,9 @@ class TestBackendEquivalence:
         args = (lat, lon, lat0, lon0, depth, strike, dip, L, W)
 
         backend.set_backend("numpy")
-        expected = greens.strain_greens(*args)
+        expected = greens.strain_greens(**_local(*args))
         backend.set_backend("jax")
-        result = greens.strain_greens(*args)
+        result = greens.strain_greens(**_local(*args))
 
         assert isinstance(result, np.ndarray)
         np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-16)
@@ -346,9 +363,9 @@ class TestBackendEquivalence:
         args = (lat0, lon0, lat0, lon0, depth, strike, dip, L, W)
 
         backend.set_backend("numpy")
-        expected = greens.strain_greens(*args, obs_depth=depth)
+        expected = greens.strain_greens(**_local(*args), obs_depth=depth)
         backend.set_backend("jax")
-        result = greens.strain_greens(*args, obs_depth=depth)
+        result = greens.strain_greens(**_local(*args), obs_depth=depth)
 
         assert isinstance(result, np.ndarray)
         np.testing.assert_allclose(result, expected, rtol=1e-8, atol=1e-16)

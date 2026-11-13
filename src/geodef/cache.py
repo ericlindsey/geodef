@@ -2,14 +2,15 @@
 
 Caches Green's matrices and stress kernels to `.npz` files keyed by a
 SHA-256 hash of all computation inputs. Identical inputs always find the
-cache; changed inputs always recompute.
+cache; changed inputs always recompute. The cache is off by default, so
+nothing is written to disk until ``enable()`` is called.
 
 Usage::
 
     import geodef
-    geodef.cache.set_dir("path/to/cache")
+    geodef.cache.enable()
+    geodef.cache.set_dir("path/to/cache")   # default: .geodef_cache/
     geodef.cache.clear()
-    geodef.cache.disable()
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 # whenever a change to any engine (okada85/okada92/tri), Green's assembly, or
 # projection alters numerical output: every existing cache entry then misses,
 # so a stale pre-fix matrix can never be served. Record bumps in CHANGELOG.md.
-KERNEL_VERSION: int = 2
+KERNEL_VERSION: int = 3
 
 
 @dataclasses.dataclass
@@ -38,7 +39,7 @@ class _CacheConfig:
     """Internal mutable state for the cache module."""
 
     directory: Path = dataclasses.field(default_factory=lambda: Path(".geodef_cache"))
-    enabled: bool = True
+    enabled: bool = False
 
 
 _config = _CacheConfig()

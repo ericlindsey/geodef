@@ -4,6 +4,7 @@ Covers: construction, factory classmethods, properties, forward modeling,
 moment/magnitude, laplacian, file I/O, and vertex computation.
 """
 
+import importlib.util
 import tempfile
 from pathlib import Path
 
@@ -17,8 +18,8 @@ from geodef.fault import (
     magnitude_to_moment,
     moment_to_magnitude,
 )
-from geodef.geometry import LocalFrame
 from geodef.medium import ElasticMedium
+from geodef.transforms import LocalFrame
 
 # ======================================================================
 # Fixtures
@@ -105,9 +106,8 @@ class TestConstruction:
             simple_fault.lat[0] = 999.0
 
     def test_direct_fault_has_explicit_frame(self, single_patch):
-        assert single_patch.frame.projection == "wgs84-enu"
-        assert single_patch.frame.origin_lat == pytest.approx(0.0)
-        assert single_patch.frame.origin_lon == pytest.approx(100.0)
+        assert single_patch.frame.lat == pytest.approx(0.0)
+        assert single_patch.frame.lon == pytest.approx(100.0)
 
 
 # ======================================================================
@@ -129,12 +129,12 @@ class TestPlanarFrame:
             width=40_000.0,
         )
 
-        assert fault.frame.origin_lat == -2.0
-        assert fault.frame.origin_lon == 100.0
+        assert fault.frame.lat == -2.0
+        assert fault.frame.lon == 100.0
         npt.assert_allclose(np.mean(fault.centers_local, axis=0)[:2], 0.0, atol=1.0)
 
     def test_explicit_frame_survives_medium_copy(self):
-        frame = LocalFrame(0.0, 100.0)
+        frame = LocalFrame(lon=100.0, lat=0.0)
         fault = Fault.planar(
             lat=0.01,
             lon=100.02,
@@ -163,7 +163,7 @@ class TestPlanarFrame:
             n_length=2,
             n_width=2,
         )
-        target = LocalFrame(0.1, 100.2)
+        target = LocalFrame(lon=100.2, lat=0.1)
 
         transformed = fault.to_frame(target)
 
@@ -267,20 +267,20 @@ class TestForwardModeling:
     def test_greens_matrix_shape(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
-        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon)
+        G = simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat)
         assert G.shape == (6, 100)  # 3*2 x 2*50
 
     def test_strain_greens_shape(self, simple_fault):
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
-        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="strain")
+        G = simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat, kind="strain")
         assert G.shape == (4, 100)  # 4*1 x 2*50
 
     def test_displacement_returns_three_arrays(self, single_patch):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
         ue, un, uz = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+            lon=obs_lon, lat=obs_lat, strike_slip=1.0
         )
         assert ue.shape == (1,)
         assert un.shape == (1,)
@@ -290,7 +290,7 @@ class TestForwardModeling:
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
         ue, un, uz = simple_fault.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=0.0, dip_slip=0.0
+            lon=obs_lon, lat=obs_lat, strike_slip=0.0, dip_slip=0.0
         )
         np.testing.assert_allclose(ue, 0.0, atol=1e-15)
         np.testing.assert_allclose(un, 0.0, atol=1e-15)
@@ -301,10 +301,10 @@ class TestForwardModeling:
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
         ue1, un1, uz1 = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+            lon=obs_lon, lat=obs_lat, strike_slip=1.0
         )
         ue2, un2, uz2 = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=2.0
+            lon=obs_lon, lat=obs_lat, strike_slip=2.0
         )
         np.testing.assert_allclose(ue2, 2.0 * ue1, rtol=1e-10)
         np.testing.assert_allclose(un2, 2.0 * un1, rtol=1e-10)
@@ -316,7 +316,7 @@ class TestForwardModeling:
         obs_lon = np.array([100.5])
         slip = np.ones(50)
         ue, un, uz = simple_fault.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=slip
+            lon=obs_lon, lat=obs_lat, strike_slip=slip
         )
         assert np.any(np.abs(ue) > 0)
 
@@ -324,7 +324,7 @@ class TestForwardModeling:
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
         with pytest.raises(ValueError, match="Unknown kind"):
-            simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="bogus")
+            simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat, kind="bogus")
 
 
 # ======================================================================
@@ -533,7 +533,7 @@ class TestCorners:
 
     def test_first_two_corners_are_the_shallow_edge(self):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=30.0, dip=40.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=30.0, dip=40.0,
             length=20e3, width=10e3,
         )  # fmt: skip
         depth = fault.corners_geo[0, :, 2]
@@ -544,7 +544,7 @@ class TestCorners:
     def test_fault_dips_to_the_right_of_strike(self):
         """Strike north, so the deep edge lies to the east of the shallow edge."""
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=0.0, dip=30.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=0.0, dip=30.0,
             length=20e3, width=10e3,
         )  # fmt: skip
         east = fault.corners[0, :, 0]
@@ -557,7 +557,7 @@ class TestCorners:
 
     def test_neighboring_rows_share_an_edge(self):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=20.0, dip=35.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=20.0, dip=35.0,
             length=20e3, width=20e3, n_length=1, n_width=2,
         )  # fmt: skip
         np.testing.assert_allclose(
@@ -577,14 +577,14 @@ class TestPlanarGridGeometry:
     """A subdivided planar fault must be the same plane as its single patch."""
 
     KWARGS = dict(
-        lat=0.0, lon=100.0, depth=20e3, strike=25.0, dip=30.0,
+        lon=100.0, lat=0.0, depth=20e3, strike=25.0, dip=30.0,
         length=40e3, width=40e3,
     )  # fmt: skip
 
     def test_plane_reaching_above_the_surface_is_rejected(self):
         with pytest.raises(ValueError, match="above the surface"):
             Fault.planar(
-                lat=0.0, lon=100.0, depth=5e3, strike=0.0, dip=50.0,
+                lon=100.0, lat=0.0, depth=5e3, strike=0.0, dip=50.0,
                 length=40e3, width=25e3, n_width=4,
             )  # fmt: skip
 
@@ -612,7 +612,132 @@ class TestPlanarGridGeometry:
         for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
             expected = whole.displacement(lon=lon, lat=lat, **slip)
             actual = pieces.displacement(lon=lon, lat=lat, **slip)
-            np.testing.assert_allclose(actual, expected, atol=1e-5)
+            np.testing.assert_allclose(actual, expected, atol=1e-11)
+
+
+class TestSharedFrame:
+    """Rectangles and triangles are flattened by the same local frame."""
+
+    KWARGS = dict(
+        lon=100.0, lat=40.0, depth=60e3, strike=25.0, dip=30.0,
+        length=300e3, width=150e3,
+    )  # fmt: skip
+    LON = np.linspace(98.0, 102.0, 7)
+    LAT = np.linspace(38.5, 41.5, 7)
+
+    def test_subdivision_is_exact_for_a_large_high_latitude_fault(self):
+        whole = Fault.planar(**self.KWARGS)
+        pieces = Fault.planar(n_length=5, n_width=4, **self.KWARGS)
+        expected = whole.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        actual = pieces.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        np.testing.assert_allclose(actual, expected, atol=1e-11)
+
+    def test_a_rectangle_equals_the_two_triangles_that_tile_it(self):
+        rectangle = Fault.planar(**{**self.KWARGS, "length": 80e3, "width": 40e3})
+        corners = rectangle.corners[0]
+        # counterclockwise seen from above, the winding the triangle kernel
+        # needs for thrust-positive dip slip
+        triangles = Fault.from_triangles(
+            np.array([corners[[0, 2, 1]], corners[[0, 3, 2]]]), frame=rectangle.frame
+        )
+        for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
+            expected = rectangle.displacement(lon=self.LON, lat=self.LAT, **slip)
+            actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
+            np.testing.assert_allclose(actual, expected, atol=1e-9)
+
+    @pytest.mark.parametrize("winding", ["counterclockwise", "clockwise"])
+    def test_triangles_match_the_rectangle_whatever_their_winding(self, winding):
+        """Thrust is positive dip slip and strike follows the right-hand rule
+        for triangles, as for rectangles, whichever way the corners are
+        listed."""
+        rectangle = Fault.planar(**{**self.KWARGS, "length": 80e3, "width": 40e3})
+        corners = rectangle.corners[0]
+        order = [[0, 2, 1], [0, 3, 2]] if winding == "counterclockwise" else [
+            [0, 1, 2], [0, 2, 3]]  # fmt: skip
+        triangles = Fault.from_triangles(
+            np.array([corners[i] for i in order]), frame=rectangle.frame
+        )
+        np.testing.assert_allclose(triangles.strike, 25.0, atol=1e-9)
+        np.testing.assert_allclose(triangles.dip, 30.0, atol=1e-9)
+        for slip in ({"strike_slip": 1.0}, {"dip_slip": 1.0}):
+            expected = rectangle.displacement(lon=self.LON, lat=self.LAT, **slip)
+            actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
+            np.testing.assert_allclose(actual, expected, atol=1e-9)
+
+    @pytest.mark.skipif(
+        importlib.util.find_spec("meshpy") is None,
+        reason="requires meshpy (install with the 'mesh' extra)",
+    )
+    def test_generated_meshes_are_thrust_positive(self):
+        """A mesh dipping east under a north trace is a north-striking fault."""
+        from geodef import mesh
+
+        dipping_east = mesh.from_trace(
+            np.array([100.0, 100.0]), np.array([39.7, 40.3]), 20e3, 30.0,
+            dip_direction=90.0, n_downdip=3, target_length=10e3,
+        )  # fmt: skip
+        fault = Fault.from_mesh(dipping_east)
+        np.testing.assert_allclose(fault.strike, 0.0, atol=0.5)
+        # thrust on an east-dipping fault lifts the hanging wall, to the east
+        _, _, up_east = fault.displacement(lon=100.12, lat=40.0, dip_slip=1.0)
+        _, _, up_west = fault.displacement(lon=99.85, lat=40.0, dip_slip=1.0)
+        assert up_east > 0.0 > up_west
+
+    def test_planar_from_corner_is_the_same_plane(self):
+        center = Fault.planar(n_length=3, n_width=2, **self.KWARGS)
+        top_left = center.corners_geo[0, 0]
+        corner = Fault.planar_from_corner(
+            lon=top_left[0], lat=top_left[1], depth=top_left[2],
+            strike=25.0, dip=30.0, length=300e3, width=150e3,
+            n_length=3, n_width=2, frame=center.frame,
+        )  # fmt: skip
+        np.testing.assert_allclose(
+            corner.centers_local, center.centers_local, atol=1e-5
+        )
+
+    def test_to_frame_keeps_positions_and_converts_strike(self):
+        fault = Fault.planar(n_length=4, n_width=2, **self.KWARGS)
+        other = LocalFrame(lon=101.5, lat=41.0)
+        moved = fault.to_frame(other)
+        np.testing.assert_array_equal(moved.lon, fault.lon)
+        np.testing.assert_array_equal(moved.depth, fault.depth)
+        assert np.all(np.abs(moved.strike - fault.strike) > 0.5)
+        np.testing.assert_allclose(
+            moved.to_frame(fault.frame).strike, fault.strike, atol=1e-9
+        )
+
+    def test_center_file_round_trip_preserves_the_model(self, tmp_path):
+        fault = Fault.planar(n_length=4, n_width=3, **self.KWARGS)
+        path = tmp_path / "fault.txt"
+        fault.save(str(path), format="center")
+        loaded = Fault.load(str(path), format="center")
+        expected = fault.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        actual = loaded.displacement(lon=self.LON, lat=self.LAT, dip_slip=1.0)
+        np.testing.assert_allclose(actual, expected, atol=2e-4)
+
+    def test_geographic_strike_follows_the_meridians(self):
+        fault = Fault.planar(n_length=5, n_width=1, **{**self.KWARGS, "strike": 90.0})
+        # an east-striking fault: true north rotates against the frame's North
+        # axis by about dlon * sin(lat) at each patch
+        dlon = fault.lon - 100.0
+        np.testing.assert_allclose(
+            fault.geographic_strike, 90.0 + dlon * np.sin(np.radians(40.0)), atol=0.02
+        )
+        np.testing.assert_allclose(fault.strike, 90.0)
+
+    def test_file_strikes_are_true_north_azimuths(self, tmp_path):
+        """A file of due-north strikes follows the meridians, which converge."""
+        lon = np.array([98.0, 100.0, 102.0])
+        rows = np.column_stack(
+            [np.arange(3), np.zeros(3), np.arange(3), lon, np.full(3, 40.0),
+             np.full(3, 20e3), np.full(3, 10e3), np.full(3, 10e3), np.zeros(3),
+             np.full(3, 60.0)]
+        )  # fmt: skip
+        path = tmp_path / "meridians.txt"
+        np.savetxt(path, rows)
+        loaded = Fault.load(str(path), format="center")
+        expected = 2.0 * np.sin(np.radians(40.0))
+        np.testing.assert_allclose(loaded.strike, [expected, 0.0, -expected], atol=2e-3)
 
 
 # ======================================================================
@@ -834,10 +959,10 @@ class TestSegIO:
 
     @requires_stress_shadows
     def test_load_seg_with_ref_coords(self):
-        """Loading with ref_lat/ref_lon should offset the geographic coords."""
+        """Loading with a frame should offset the geographic coords."""
         fname = "related/stress-shadows/3d_models/test_data_3d/ramp_3d.seg"
-        f0 = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=0.0)
-        f1 = Fault.load(fname, format="seg", ref_lat=10.0, ref_lon=100.0)
+        f0 = Fault.load(fname, format="seg", frame=LocalFrame(lon=0.0, lat=0.0))
+        f1 = Fault.load(fname, format="seg", frame=LocalFrame(lon=100.0, lat=10.0))
         # Centers should differ by roughly the ref offset
         assert abs(np.mean(f1.lat) - np.mean(f0.lat)) > 5.0
         assert abs(np.mean(f1.lon) - np.mean(f0.lon)) > 50.0
@@ -858,8 +983,8 @@ class TestSegIO:
         with tempfile.NamedTemporaryFile(suffix=".seg", delete=False) as f:
             fname = f.name
 
-        fault.save(fname, format="seg", ref_lat=0.0, ref_lon=100.0)
-        loaded = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=100.0)
+        fault.save(fname, format="seg", frame=LocalFrame(lon=100.0, lat=0.0))
+        loaded = Fault.load(fname, format="seg", frame=LocalFrame(lon=100.0, lat=0.0))
 
         assert loaded.n_patches == fault.n_patches
         np.testing.assert_allclose(loaded.strike, fault.strike, atol=1e-4)

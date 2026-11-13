@@ -26,6 +26,7 @@ import geodef
 from geodef import GNSS, Fault
 from geodef.greens import matrix as greens
 from geodef.greens import stack_obs, stack_weights
+from geodef.transforms import LocalFrame
 
 LAM = 3.0e-2
 SCALE = 7.5  # arbitrary c != 1
@@ -179,8 +180,7 @@ class TestGeometrySearchConvention:
         backend.set_backend("jax")
         try:
             kwargs = dict(
-                ref_lat=0.0,
-                ref_lon=100.0,
+                frame=LocalFrame(lon=100.0, lat=0.0),
                 free=["dip"],
                 n_length=4,
                 n_width=3,
@@ -210,8 +210,7 @@ class TestBayesFixedLambdaConvention:
         backend.set_backend("jax")
         try:
             kwargs = dict(
-                ref_lat=0.0,
-                ref_lon=100.0,
+                frame=LocalFrame(lon=100.0, lat=0.0),
                 free=["dip", "depth"],
                 theta_prior={"dip": (5.0, 60.0), "depth": (2e3, 30e3)},
                 n_length=4,

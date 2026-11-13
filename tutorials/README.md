@@ -38,7 +38,7 @@ their listed prerequisites.
 
 Chapters 01–03 deliberately build data the long way, with `G @ m` and the
 blocked slip vector, because that linear algebra is their subject. From
-Chapter 04 on, the shared scenario is built with
+Chapter 04 on, every chapter builds its synthetic data with
 `geodef.GNSS.synthetic(fault, ..., rng=rng)` and slip is handled as named
 per-patch arrays (`dip_slip=`, `result.dip_slip`), so ordering is manipulated
 only when ordering is the lesson.

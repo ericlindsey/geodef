@@ -168,8 +168,8 @@ geodef.plot.insar(insar, fault,
 Observed vs. predicted scatter or residual histogram.
 
 ```python
-geodef.plot.fit(gnss.obs, result.prediction(gnss))
-geodef.plot.fit(gnss.obs, result.prediction(gnss),
+geodef.plot.fit(gnss.obs, result.prediction(gnss).obs)
+geodef.plot.fit(gnss.obs, result.prediction(gnss).obs,
     style='residual_histogram')
 ```
 

@@ -2026,22 +2026,26 @@ class TestComponentsAzimuth:
 
     def test_azimuth_equals_strike_matches_strike_only(self, fault_4x3, obs_points):
         """slip_azimuth == fault strike → same G as components='strike'."""
-        az = float(fault_4x3.strike[0])  # planar fault: uniform strike
+        # The fault is planar in its local frame; its strikes from true north
+        # differ by ~1e-4 degrees (tangent-plane curvature of the meridians).
+        az = float(fault_4x3.geographic_strike.mean())
         gnss = _make_gnss(fault_4x3, obs_points, np.ones(12), np.zeros(12))
         result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         result_ss = invert(fault_4x3, gnss, components="strike")
         np.testing.assert_allclose(
-            result_az.slip_vector, result_ss.slip_vector, atol=1e-10
+            result_az.slip_vector, result_ss.slip_vector, rtol=1e-4
         )
 
     def test_azimuth_equals_strike_plus_90_matches_dip(self, fault_4x3, obs_points):
         """slip_azimuth == fault strike + 90° → same G as components='dip'."""
-        az = float(fault_4x3.strike[0]) + 90.0
+        # The fault is planar in its local frame; its strikes from true north
+        # differ by ~1e-4 degrees (tangent-plane curvature of the meridians).
+        az = float(fault_4x3.geographic_strike.mean()) + 90.0
         gnss = _make_gnss(fault_4x3, obs_points, np.zeros(12), np.ones(12))
         result_az = invert(fault_4x3, gnss, components="azimuth", slip_azimuth=az)
         result_ds = invert(fault_4x3, gnss, components="dip")
         np.testing.assert_allclose(
-            result_az.slip_vector, result_ds.slip_vector, atol=1e-10
+            result_az.slip_vector, result_ds.slip_vector, rtol=1e-4
         )
 
     def test_azimuth_per_patch_varies_on_curved_mesh(self, obs_points):

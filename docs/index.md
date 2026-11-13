@@ -40,7 +40,7 @@ axes, signs, angles, and ordering.
 
 | Subject | Reference | Requires |
 |---|---|---|
-| Okada dispatch and direct kernels | [okada](okada.md) | base |
+| Dislocation kernels (Okada, triangular) | [kernels](kernels.md) | base |
 | Array backend and precision | [backend](backend.md) | JAX optional |
 | Differentiable geometry models | [gradients](gradients.md) | `geodef[jax]` |
 | Bayesian slip and geometry posteriors | [bayes](bayes.md) | `geodef[bayes]` |

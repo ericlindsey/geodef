@@ -9,6 +9,38 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Fixed
 
+- **numerical** **Triangular faults from the mesh generators had positive
+  dip slip as normal faulting, and a strike 180 degrees off.** The triangular
+  kernel takes its slip directions from the order of each triangle's
+  corners, and `mesh.from_trace` and the other generators list them
+  clockwise seen from above; for those triangles positive dip slip moved the
+  hanging wall down. Separately, `triangle_strike_dip` reported the strike
+  reversed (180 degrees for a north-striking, east-dipping plane), breaking
+  the dips-to-the-right rule. `Fault.from_triangles` now orients every
+  triangle with its normal up (`geometry.orient_triangles`), so dip slip is
+  thrust-positive and the strike is right-hand-rule whatever order the
+  corners arrive in, and a rectangle equals the two triangles that tile it
+  for both slip components. Synthetic tests that generated and inverted data
+  with the same mesh were unaffected, which is why this went unnoticed;
+  results that interpreted the sign of dip slip on a generated mesh, or used
+  `components="azimuth"` or `"plate"` on one, should be regenerated.
+- **numerical** Rectangles and triangles are flattened by one map
+  projection. Rectangular patches were each placed in their own tangent
+  plane while observation points and triangles used the fault's shared
+  frame, so a large fault was not one plane: subdividing a 300 km fault at
+  40° latitude into 5 x 4 patches changed its uniform-slip displacement by
+  0.3% (1.4 mm per meter of slip), and the JAX geometry model behind
+  `geometry_search` and `RectPosterior` disagreed with `Fault.planar` by 1%
+  for that fault. Every patch, vertex, and observation now goes through
+  `fault.frame`: subdivision is exact to 1e-13, the JAX model matches
+  `Fault.planar` to 1e-12, and a rectangle and the two triangles that tile
+  it agree to rounding. `LocalFrame` now keeps depth as
+  height rather than measuring it along the curved Earth, and `to_enu` /
+  `to_geographic` are exact inverses. For faults a few tens of kilometers
+  across the change is below 1e-7 relative. `fault.strike` is now the azimuth in
+  the fault's frame; `Fault.geographic_strike` gives it from true north, and
+  fault files and slip-azimuth and plate-motion bases use the true-north
+  value. `KERNEL_VERSION` is bumped.
 - **`Fault.planar` assigned row depths in reverse.** With `n_width > 1`
   the row on the up-dip side of the plane was given the deepest depth and
   the row on the down-dip side the shallowest, so a subdivided planar
@@ -22,6 +54,33 @@ change numerical output beyond documented tolerances are tagged **numerical**.
   triangular meshes were unaffected. Any saved result, figure, or
   geometry estimate from a multi-row `Fault.planar` should be
   regenerated. `KERNEL_VERSION` is bumped so cached matrices are rebuilt.
+
+### Changed — fewer surprises
+
+- Tutorial chapters 11-14 build their data with `GNSS.synthetic`; their noise
+  realizations, and so their printed numbers, change slightly.
+
+- `result.prediction(dataset)` and `result.residual(dataset)` return a dataset
+  of the same kind (a `GNSS` prediction has `.east`, `.north`, `.up`), and
+  without an argument a name-keyed mapping of datasets. `plot.vectors` and
+  `plot.insar` take `predicted=` as such a dataset; wrap an array with
+  `dataset.with_obs(values)`. `result.rows_by_dataset(stacked)` splits the
+  stacked arrays by name without needing the datasets.
+
+- `InversionResult` keeps the fields a student reads (slip views, fit,
+  basis, dataset names, units, warnings); the solver bookkeeping moves to
+  `result.details` (`SolveDetails`): `solver`, `success`, `message`,
+  `regularization_selection`, `backend`, `precision`, `system_hash`,
+  `dataset_slices`, `dataset_diagnostics`, `local_rake`, bounds,
+  `regularization_target`, and constraints. `result.slip` is now derived from
+  `slip_vector` rather than stored twice.
+- Result files are one `.npz` with the metadata as a JSON string. The
+  `.manifest.json` sidecar, schema versions, checksums, migrations of older
+  files, and `invert.RESULT_SCHEMA_VERSION` are removed.
+
+- The disk cache for Green's matrices and stress kernels is **off by
+  default**. GeoDef no longer creates `.geodef_cache/` in the working
+  directory unless `geodef.cache.enable()` is called.
 
 ### Changed — one way to do each thing
 
@@ -45,6 +104,11 @@ update calls as follows.
 | `invert.save(result, path)`, `invert.load(path)`, `invert.save_table(result, path, fault)` | `result.save(path)`, `InversionResult.load(path, fault=, datasets=)`, `result.save_table(path)` |
 | `invert.lcurve(fault, data, ...)`, `invert.abic_curve(fault, data, ...)` | `system = geodef.LinearSystem(fault, data, regularization=...)`; `system.lcurve(...)`, `system.abic_curve(...)` |
 | `LinearSystem.invert(...)` | `LinearSystem.solve(...)` |
+| `geodef.okada85`, `geodef.okada92`, `geodef.tri`, `geodef.okada` | `geodef.kernels.okada85`, `.okada92`, `.tri`, `.okada` |
+| `greens.displacement_greens(lat, lon, lat0, lon0, depth, strike, dip, L, W)` and the strain / `tri_` variants | keyword-only local Cartesian: `displacement_greens(obs_east=, obs_north=, east=, north=, depth=, strike=, dip=, length=, width=)`; `tri_displacement_greens(obs_east=, obs_north=, vertices=)` |
+| `LocalFrame(..., projection="wgs84-enu")` | `LocalFrame(lon=, lat=, alt=)`; there is one projection |
+| `LocalFrame(lat, lon)`, `frame.origin_lat` | `LocalFrame(lon=, lat=)` (keyword-only), `frame.lat`; defined in `geodef.transforms` |
+| `ref_lat=, ref_lon=` on `Fault.from_triangles`, `Fault.load`/`save`, `geometry_search`, `RectPosterior`, `Mesh.vertices_enu` | `frame=geodef.LocalFrame(lon=, lat=)` |
 
 Also removed: the private engine registry (`_engines`), the `format=`
 argument of dataset `save` (only `"dat"` existed), the dataframe-interchange

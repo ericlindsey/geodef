@@ -1,13 +1,11 @@
-"""Tests for safe, versioned inversion-result files."""
+"""Tests for inversion-result files: one .npz with arrays and JSON metadata."""
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from geodef import invert
-from geodef.invert import DatasetDiagnostics, InversionResult
+from geodef.invert import DatasetDiagnostics, InversionResult, SolveDetails
 
 
 def _result() -> InversionResult:
@@ -21,7 +19,6 @@ def _result() -> InversionResult:
         leverage=0.5,
     )
     return InversionResult(
-        slip=np.array([[1.0, 0.25]]),
         slip_vector=np.array([1.0, 0.25]),
         residuals=np.array([0.1, -0.2, 0.3]),
         predicted=np.array([1.0, 2.0, 3.0]),
@@ -33,117 +30,80 @@ def _result() -> InversionResult:
         regularization_strength=10.0,
         components="both",
         dataset_names=("gnss",),
-        dataset_slices=(slice(0, 3),),
-        solver="bounded_ls",
-        success=True,
-        message="bounded_ls completed",
-        regularization_selection="abic",
-        backend="numpy",
-        precision="float64",
         warnings=("example warning",),
-        quantity="displacement",
-        units="m",
-        system_hash="a" * 64,
-        lower_bounds=np.array([0.0, -1.0]),
-        upper_bounds=np.array([2.0, 1.0]),
-        dataset_diagnostics=(diagnostics,),
+        details=SolveDetails(
+            solver="bounded_ls",
+            message="bounded_ls completed",
+            regularization_selection="abic",
+            system_hash="a" * 64,
+            dataset_slices=(slice(0, 3),),
+            dataset_diagnostics=(diagnostics,),
+            lower_bounds=np.array([0.0, -1.0]),
+            upper_bounds=np.array([2.0, 1.0]),
+        ),
     )
 
 
-def test_save_writes_npz_and_human_readable_manifest(tmp_path):
+def test_save_writes_one_file_with_readable_metadata(tmp_path):
     path = tmp_path / "result.npz"
 
     _result().save(path)
 
-    manifest_path = tmp_path / "result.manifest.json"
-    assert path.exists()
-    assert manifest_path.exists()
-    manifest = json.loads(manifest_path.read_text())
-    assert manifest["schema"] == "geodef.inversion_result"
-    assert manifest["schema_version"] == invert.RESULT_SCHEMA_VERSION
-    assert manifest["result"]["dataset_names"] == ["gnss"]
-    assert manifest["arrays"]["slip"]["shape"] == [1, 2]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["result.npz"]
+    with np.load(path, allow_pickle=False) as archive:
+        metadata = json.loads(str(archive["metadata"]))
+    assert metadata["components"] == "both"
+    assert metadata["details"]["solver"] == "bounded_ls"
 
 
-def test_save_load_roundtrips_result_metadata_and_arrays(tmp_path):
-    result = _result()
+def test_round_trip_preserves_the_result(tmp_path):
     path = tmp_path / "result.npz"
+    result = _result()
 
     result.save(path)
     loaded = InversionResult.load(path)
 
-    np.testing.assert_array_equal(loaded.slip, result.slip)
-    np.testing.assert_array_equal(loaded.lower_bounds, result.lower_bounds)
-    assert loaded.dataset_names == result.dataset_names
-    assert loaded.dataset_slices == result.dataset_slices
-    assert loaded.dataset_diagnostics == result.dataset_diagnostics
-    assert loaded.regularization_selection == "abic"
-    assert loaded.warnings == ("example warning",)
-    assert loaded.system_hash == "a" * 64
-
-
-def test_embedded_manifest_keeps_npz_portable_without_sidecar(tmp_path):
-    path = tmp_path / "result.npz"
-    _result().save(path)
-    (tmp_path / "result.manifest.json").unlink()
-
-    loaded = InversionResult.load(path)
-
+    np.testing.assert_array_equal(loaded.slip_vector, result.slip_vector)
+    np.testing.assert_array_equal(loaded.strike_slip, result.strike_slip)
+    np.testing.assert_array_equal(loaded.predicted, result.predicted)
+    assert loaded.reduced_chi2 == result.reduced_chi2
+    assert loaded.regularization == "damping"
     assert loaded.dataset_names == ("gnss",)
+    assert loaded.warnings == ("example warning",)
+    assert loaded.details.solver == "bounded_ls"
+    assert loaded.details.regularization_selection == "abic"
+    assert loaded.details.dataset_slices == (slice(0, 3),)
+    assert loaded.details.dataset_diagnostics == result.details.dataset_diagnostics
+    np.testing.assert_array_equal(loaded.details.lower_bounds, [0.0, -1.0])
+    assert loaded.details.constraint_matrix is None
+    assert loaded.rows_by_dataset(loaded.predicted)["gnss"].tolist() == [1.0, 2.0, 3.0]
 
 
-def test_load_migrates_legacy_unversioned_archive(tmp_path):
-    path = tmp_path / "legacy.npz"
-    np.savez_compressed(
-        path,
-        slip=np.array([[1.0, 0.0]]),
-        slip_vector=np.array([1.0, 0.0]),
+def test_custom_regularization_and_nonfinite_values_round_trip(tmp_path):
+    path = tmp_path / "result.npz"
+    operator = np.array([[1.0, -1.0], [0.0, 1.0]])
+    result = InversionResult(
+        slip_vector=np.array([0.5]),
         residuals=np.array([0.0]),
         predicted=np.array([1.0]),
-        reduced_chi2=np.array([0.0]),
-        rms=np.array([0.0]),
-        moment=np.array([1e18]),
-        Mw=np.array([5.9]),
-        smoothing_str=np.array(["__none__"]),
-        smoothing_strength=np.array([np.nan]),
-        components=np.array(["both"]),
+        reduced_chi2=float("inf"),
+        rms=0.0,
+        moment=float("nan"),
+        Mw=float("nan"),
+        regularization=operator,
+        regularization_strength=2.0,
+        components="dip",
+        quantity="velocity",
+        units="mm/yr",
     )
 
+    result.save(path)
     loaded = InversionResult.load(path)
 
-    assert loaded.dataset_names == ("data",)
-    assert loaded.dataset_slices == (slice(0, 1),)
-    assert "legacy" in loaded.warnings[0]
-
-
-def test_load_migrates_v2_smoothing_keys(tmp_path):
-    """A version-2 file keyed by ``smoothing*`` loads into the new fields."""
-    path = tmp_path / "v2.npz"
-    _result().save(path)
-    (tmp_path / "v2.manifest.json").unlink()
-
-    with np.load(path, allow_pickle=False) as loaded:
-        arrays = {name: loaded[name].copy() for name in loaded.files}
-    manifest = json.loads(bytes(arrays.pop("__manifest__").tolist()).decode())
-    manifest["schema_version"] = 2
-    rename = {
-        "regularization": "smoothing",
-        "regularization_strength": "smoothing_strength",
-        "regularization_selection": "smoothing_selection",
-    }
-    manifest["result"] = {
-        rename.get(key, key): value for key, value in manifest["result"].items()
-    }
-    arrays["__manifest__"] = np.frombuffer(
-        json.dumps(manifest).encode(), dtype=np.uint8
-    )
-    np.savez_compressed(path, **arrays)
-
-    loaded_result = InversionResult.load(path)
-
-    assert loaded_result.regularization == "damping"
-    assert loaded_result.regularization_strength == 10.0
-    assert loaded_result.regularization_selection == "abic"
+    np.testing.assert_array_equal(loaded.regularization, operator)
+    assert np.isinf(loaded.reduced_chi2)
+    assert np.isnan(loaded.Mw)
+    assert loaded.units == "mm/yr"
 
 
 def test_loaded_result_needs_attach_before_assessment(tmp_path):
@@ -153,26 +113,3 @@ def test_loaded_result_needs_attach_before_assessment(tmp_path):
 
     with pytest.raises(ValueError, match="attach"):
         loaded.uncertainty()
-
-
-@pytest.mark.exact
-def test_presplit_fixture_loads():
-    """A result saved before the 3.2 module split must keep loading.
-
-    ``tests/reference_data/presplit_result.npz`` (and its manifest) were
-    written by the monolithic ``invert.py`` immediately before the module
-    was converted to a package; loading them proves the split changed no
-    stored-file semantics.
-    """
-    fixture = Path(__file__).parent / "reference_data" / "presplit_result.npz"
-
-    result = InversionResult.load(fixture)
-
-    assert result.regularization == "laplacian"
-    assert result.regularization_strength == 10.0
-    assert result.solver == "wls"
-    assert result.dataset_names == ("gnss",)
-    assert result.dataset_slices == (slice(0, 3),)
-    np.testing.assert_array_equal(result.slip_vector, [1.0, 0.25])
-    np.testing.assert_array_equal(result.residuals, [0.1, -0.2, 0.3])
-    assert result.dataset_diagnostics[0].reduced_chi2 == 0.5

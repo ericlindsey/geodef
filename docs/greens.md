@@ -39,7 +39,9 @@ ordering as the stacked observation vector.
 
 ### `matrix(fault, datasets, *, components='both', rake=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
-Build the projected Green's matrix for one or more datasets. Results are automatically cached.
+Build the projected Green's matrix for one or more datasets. Results are
+saved to disk and reused when the cache is on (`geodef.cache.enable()`; see
+[`cache.md`](cache.md)).
 
 ```python
 import geodef
@@ -170,31 +172,43 @@ recovery). For the resolution of a *regularized* inversion, use
 
 ## Low-level Green's matrix functions
 
-These operate on raw geographic arrays rather than `Fault`/`DataSet` objects,
-and are what `fault.greens_matrix` calls. Their leading arguments are
-**latitude first** (`lat, lon, lat0, lon0`), unlike the rest of GeoDef; pass
-them by keyword, or prefer `fault.greens_matrix(lon=, lat=)`.
+These are what `fault.greens_matrix` calls. They work entirely in **one local
+Cartesian frame** (meters, degrees for angles) and know nothing about
+longitude and latitude: `Fault` converts observation points and patches into
+its frame first. All arguments are keyword-only. Rectangular patches use one
+batched evaluation of the Okada kernel on both the NumPy and JAX backends.
 
-### `displacement_greens(lat, lon, lat0, lon0, depth, strike, dip, L, W, nu=0.25)`
+### `displacement_greens(*, obs_east, obs_north, east, north, depth, strike, dip, length, width, nu=0.25)`
 
-Rectangular patches (Okada85). Returns shape `(3*nobs, 2*npatch)`.
+Rectangular patches (Okada 1985). `east`, `north`, `depth` locate each patch
+center. Returns shape `(3*M, 2*N)`.
 
-### `strain_greens(lat, lon, lat0, lon0, depth, strike, dip, L, W, nu=0.25, obs_depth=None)`
+### `strain_greens(*, obs_east, obs_north, east, north, depth, strike, dip, length, width, nu=0.25, obs_depth=None)`
 
-Rectangular patches, strain output. Shape `(4*nobs, 2*npatch)`. Pass `obs_depth` for internal points (uses Okada92).
+Rectangular patches, displacement gradients `[NN, NE, EN, EE]`. Shape
+`(4*M, 2*N)`. Pass `obs_depth` (positive down) for internal points, which uses
+Okada (1992).
 
-### `tri_displacement_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25, *, frame=None)`
+### `tri_displacement_greens(*, obs_east, obs_north, vertices, nu=0.25)`
 
-Triangular patches (Nikkhoo & Walter). Returns shape `(3*nobs, 2*npatch)`.
+Triangular patches (Nikkhoo & Walter 2015). `vertices` are `(N, 3, 3)`
+`[east, north, up]` corners in the same frame. Returns shape `(3*M, 2*N)`.
 
-### `tri_strain_greens(lat, lon, lat0, lon0, depth, vertices, nu=0.25, obs_depth=None, *, frame=None)`
+### `tri_strain_greens(*, obs_east, obs_north, vertices, nu=0.25, obs_depth=None)`
 
-Triangular patches, strain output. Shape `(6*nobs, 2*npatch)`.
+Triangular patches, strain `[xx, yy, zz, xy, xz, yz]`. Shape `(6*M, 2*N)`.
 
-For direct low-level triangular calls, pass the `LocalFrame` that defines
-`vertices`. Omitting it retains legacy mean-centroid frame inference.
-`Fault.greens_matrix` always supplies `fault.frame`, so domain-level assembly
-cannot silently reinterpret triangular vertices.
+```python
+frame = fault.frame
+obs = frame.to_enu(lon=gnss.lon, lat=gnss.lat)
+G = geodef.greens.displacement_greens(
+    obs_east=obs[:, 0], obs_north=obs[:, 1],
+    east=fault.centers_local[:, 0], north=fault.centers_local[:, 1],
+    depth=fault.depth, strike=fault.strike, dip=fault.dip,
+    length=fault.length, width=fault.width,
+)
+# identical to fault.greens_matrix(lon=gnss.lon, lat=gnss.lat)
+```
 
 ---
 

@@ -25,11 +25,27 @@ if TYPE_CHECKING:
     from geodef.fault import Fault
 
 
+def _check_prediction(dataset: DataSet, predicted: DataSet | None) -> None:
+    """Require a prediction to be a dataset of the same kind and size."""
+    if predicted is None:
+        return
+    if not isinstance(predicted, type(dataset)):
+        raise TypeError(
+            f"predicted must be a {type(dataset).__name__} dataset, such as "
+            "result.prediction(dataset); wrap a plain array with "
+            "dataset.with_obs(values)"
+        )
+    if predicted.n_obs != dataset.n_obs:
+        raise ValueError(
+            f"predicted has {predicted.n_obs} observations, the data {dataset.n_obs}"
+        )
+
+
 def vectors(
     dataset: GNSS,
     fault: Fault,
     *,
-    predicted: np.ndarray | None = None,
+    predicted: GNSS | None = None,
     ax: matplotlib.axes.Axes | None = None,
     scale: float = 1.0,
     components: str = "horizontal",
@@ -52,8 +68,9 @@ def vectors(
     Args:
         dataset: GNSS dataset with observed vectors.
         fault: Fault geometry (used as local coordinate reference).
-        predicted: Predicted observation vector matching ``dataset.obs``
-            layout, or ``None`` to plot only observed.
+        predicted: Predicted displacements as a GNSS dataset at the same
+            stations, such as ``result.prediction(dataset)``, or ``None`` to
+            plot only the observations.
         ax: Axes to plot on. Creates a new figure if ``None``.
         scale: Scale factor for horizontal vector lengths. Vectors are
             plotted in data coordinates (km), so set this to convert
@@ -97,6 +114,7 @@ def vectors(
     """
     from matplotlib.patches import Ellipse
 
+    _check_prediction(dataset, predicted)
     ax = _ensure_axes(ax)
     x_km, y_km = _stations_to_local_km(dataset, fault)
     n = dataset.n_stations
@@ -117,12 +135,8 @@ def vectors(
         ax.quiver(x_km, y_km, ve, vn, color=obs_color, label="_nolegend_", **qkw)
 
         if predicted is not None:
-            if has_vert:
-                pe = predicted[0::3] * scale
-                pn = predicted[1::3] * scale
-            else:
-                pe = predicted[0::2] * scale
-                pn = predicted[1::2] * scale
+            pe = predicted.east * scale
+            pn = predicted.north * scale
             ax.quiver(x_km, y_km, pe, pn, color=pred_color, label="_nolegend_", **qkw)
 
         if ellipses:
@@ -222,7 +236,7 @@ def insar(
     dataset: InSAR,
     fault: Fault,
     *,
-    predicted: np.ndarray | None = None,
+    predicted: InSAR | None = None,
     ax: matplotlib.axes.Axes | None = None,
     layout: str = "obs",
     cmap: str = "RdBu_r",
@@ -238,7 +252,8 @@ def insar(
     Args:
         dataset: InSAR dataset.
         fault: Fault geometry (used as local coordinate reference).
-        predicted: Predicted LOS values, shape ``(n_stations,)``.
+        predicted: Predicted line-of-sight values as an InSAR dataset at the
+            same pixels, such as ``result.prediction(dataset)``.
         ax: Axes to plot on (single-panel layouts only). Creates a new
             figure if ``None``.
         layout: Panel layout. One of:
@@ -264,6 +279,8 @@ def insar(
     """
     import matplotlib.pyplot as plt
 
+    _check_prediction(dataset, predicted)
+    predicted_los = None if predicted is None else predicted.obs
     x_km, y_km = _stations_to_local_km(dataset, fault)
     skw: dict[str, Any] = {"s": 8, "cmap": cmap}
     if scatter_kwargs:
@@ -291,12 +308,12 @@ def insar(
         return sc
 
     if layout == "obs_pred_res":
-        if predicted is None:
-            raise ValueError("predicted is required for 'obs_pred_res' layout")
-        residual = dataset.obs - predicted
+        if predicted_los is None:
+            raise ValueError("predicted_los is required for 'obs_pred_res' layout")
+        residual = dataset.obs - predicted_los
         fig, axes = plt.subplots(1, 3, figsize=(14, 4))
         sc0 = _scatter_panel(axes[0], dataset.obs, "Observed")
-        _scatter_panel(axes[1], predicted, "Predicted", show_ylabel=False)
+        _scatter_panel(axes[1], predicted_los, "Predicted", show_ylabel=False)
         sc2 = _scatter_panel(axes[2], residual, "Residual", show_ylabel=False)
         if colorbar:
             fig.colorbar(sc0, ax=axes[:2], label=colorbar_label, shrink=0.8)
@@ -304,19 +321,19 @@ def insar(
         return axes
 
     # Single-panel layouts
-    if layout in ("pred", "residual") and predicted is None:
-        raise ValueError(f"predicted is required for {layout!r} layout")
+    if layout in ("pred", "residual") and predicted_los is None:
+        raise ValueError(f"predicted_los is required for {layout!r} layout")
 
     if layout == "obs":
         data = dataset.obs
         panel_title = title or "Observed"
     elif layout == "pred":
-        assert predicted is not None  # guaranteed by the check above
-        data = predicted
+        assert predicted_los is not None  # guaranteed by the check above
+        data = predicted_los
         panel_title = title or "Predicted"
     elif layout == "residual":
-        assert predicted is not None  # guaranteed by the check above
-        data = dataset.obs - predicted
+        assert predicted_los is not None  # guaranteed by the check above
+        data = dataset.obs - predicted_los
         panel_title = title or "Residual"
     else:
         raise ValueError(

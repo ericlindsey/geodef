@@ -46,7 +46,7 @@ confused. Pass an explicit frame when the fault must share local coordinates
 with another object:
 
 ```python
-frame = geodef.LocalFrame(-2.0, 100.0)
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0)
 fault = Fault.planar(..., frame=frame)
 ```
 
@@ -64,7 +64,7 @@ mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6))
 fault = Fault.from_mesh(mesh)
 ```
 
-### `Fault.from_triangles(vertices, *, triangles=None, frame=None, ref_lat=None, ref_lon=None, medium=None)`
+### `Fault.from_triangles(vertices, *, triangles=None, frame=None, frame=geodef.LocalFrame(lon=None, lat=None), medium=None)`
 
 Create a triangular fault from ENU arrays in either of two forms:
 
@@ -79,10 +79,10 @@ fault = Fault.from_triangles(
 )
 ```
 
-`frame` is the `LocalFrame` the vertices are expressed in;
-`ref_lat=..., ref_lon=...` is shorthand for `frame=LocalFrame(ref_lat, ref_lon)`.
+`frame` is the `LocalFrame` the vertices are expressed in, for example
+`geodef.LocalFrame(lon=100.0, lat=-2.0)`.
 
-### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0, medium=None)`
+### `Fault.load(fname, *, format=None, frame=None, medium=None)`
 
 Load from a text file. Supported formats:
 
@@ -90,12 +90,12 @@ Load from a text file. Supported formats:
 |----------|-------------|
 | `"center"` (default) | Whitespace-delimited: `id dipid strikeid lon lat depth L W strike dip` |
 | `"topleft"` | Same columns but position is the top-left corner |
-| `"seg"` | Unicycle segment format (local Cartesian; requires `ref_lat`/`ref_lon`) |
+| `"seg"` | Unicycle segment format (local Cartesian; pass `frame=` to place it geographically) |
 | `"ned"` | Unicycle `.ned` + `.tri` triangular mesh pair |
 
 ```python
 fault = Fault.load("fault_model.txt")
-fault = Fault.load("ramp.seg", format="seg", ref_lat=0.0, ref_lon=100.0)
+fault = Fault.load("ramp.seg", format="seg", frame=geodef.LocalFrame(lon=100.0, lat=0.0))
 fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tri
 ```
 
@@ -108,7 +108,8 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 | `n_patches` | scalar | Number of patches |
 | `lon`, `lat` | `(N,)` | Patch center coordinates in degrees |
 | `depth` | `(N,)` | Patch center depth in meters, positive down |
-| `strike`, `dip` | `(N,)` | Degrees clockwise from north; degrees from horizontal |
+| `strike`, `dip` | `(N,)` | Strike in degrees clockwise from the frame's North axis; dip in degrees from horizontal |
+| `geographic_strike` | `(N,)` | Strike from true north at each patch (differs from `strike` by meridian convergence) |
 | `length`, `width` | `(N,)` or `None` | Rectangular patch dimensions in meters (`None` for triangles) |
 | `vertices` | `(N, 3, 3)` or `None` | Triangle corners in local `[east, north, up]` meters (`None` for rectangles) |
 | `engine` | `str` | `"okada"` (rectangles) or `"tri"` (triangles) |
@@ -221,7 +222,7 @@ values = fault.flatten_patches(grid)  # inverse conversion
 
 ```python
 fault.save("output.txt", format="center")
-fault.save("output.seg", format="seg", ref_lat=0.0, ref_lon=100.0)
+fault.save("output.seg", format="seg", frame=geodef.LocalFrame(lon=100.0, lat=0.0))
 fault.save("triangular_fault", format="ned")  # writes .ned + .tri
 fault.to_gmt("patches.gmt", values=result.slip_magnitude)  # closed polygons, -Z colored
 ```
@@ -246,4 +247,4 @@ are immutable; `with_medium` and `to_frame` return new faults.
 
 - Geographic: longitude, latitude (degrees), depth in meters (positive down).
 - Local Cartesian: East, North, Up in meters.
-- The `.seg` format uses local Cartesian (North, East, Depth) with a user-supplied `ref_lat`/`ref_lon`.
+- The `.seg` format uses local Cartesian (North, East, Depth) in a user-supplied `frame`.

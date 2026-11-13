@@ -91,16 +91,17 @@ related/, geometry/  legacy and reference sources (read-only; not linted)
 | `invert` | `solve`, `LinearSystem`, `InversionResult`, `geometry_search` |
 | `plot`, `geomap` | Matplotlib plots; optional Cartopy maps |
 | `greens` | Green's matrix assembly, dataset projection, Laplacians |
-| `okada85`, `okada92`, `tri`, `okada` | Published dislocation kernels (line-by-line ports) |
+| `kernels` | Published dislocation solutions, line-by-line ports: `okada85`, `okada92`, `tri`, and the `okada` dispatcher |
 | `slip` | Blocked-vector packing and rake/azimuth/plate bases |
-| `geometry`, `transforms` | `LocalFrame`; geodetic conversions |
+| `transforms`, `geometry` | `LocalFrame` and geodetic conversions; planar-vector and triangle helpers |
 | `medium`, `validation`, `cache` | Elastic constants; input checks; disk cache for `G` |
 | `mesh`, `euler` | Triangular mesh generation; Euler poles |
 | `backend`, `gradients`, `bayes` | Optional JAX backend, autodiff models, NUTS sampling |
 
 How a solve flows: `geodef.solve` → `LinearSystem.__init__` (assemble `G`,
 `d`, `W`, `L`) → `greens.matrix` → `Fault.greens_matrix` →
-`greens.displacement_greens` → `okada85.displacement`.
+`greens.displacement_greens` (local Cartesian, batched over patches) →
+`kernels.okada85.displacement`.
 
 ---
 
@@ -113,7 +114,7 @@ How a solve flows: `geodef.solve` → `LinearSystem.__init__` (assemble `G`,
   `Fault.planar` survived for that reason. Assert invariants instead:
   subdividing a fault does not change uniform-slip displacement, adjacent
   patches share an edge, a result reproduces the slip that made the data.
-- **Keep the kernels verbatim.** `okada85.py`, `okada92.py`, and `tri.py`
+- **Keep the kernels verbatim.** The files in `src/geodef/kernels/`
   mirror their published sources and are excluded from formatting. Fix
   conventions at the call site, not inside them.
 - **NumPy is the default.** Vectorize over stations and patches. JAX,
@@ -162,19 +163,5 @@ paths, write a message that explains why, and push the working branch.
 
 ## Where complexity remains
 
-Known debts, in rough order of what a student would trip over. Each is a
-candidate for the next simplification pass (see `PLAN.md`):
-
-- `ref_lat`/`ref_lon` and `frame=` are both accepted by `from_triangles`,
-  `geometry_search`, `bayes`, and `mesh`; `LocalFrame(lat, lon)` is positional
-  and latitude-first, against the rule above.
-- `greens.py` has a per-patch NumPy loop and a separate batched JAX path for
-  the same assembly, and its public functions take ten positional arguments
-  in `(lat, lon)` order.
-- `InversionResult` has more than thirty fields, most of them provenance.
-- `invert/_io.py` carries a versioned, checksummed result-file schema with
-  migrations.
-- The disk cache for `G` is on by default and writes `.geodef_cache/` in the
-  working directory.
-- Rectangular patches use a per-patch tangent-plane projection; triangles use
-  one shared `LocalFrame`.
+`PLAN.md` holds the roadmap menus and the recommended sequence, and collects
+new simplification candidates: add anything a student would trip over there.

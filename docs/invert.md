@@ -105,37 +105,32 @@ through `result.strike_slip` and `result.dip_slip`.
 
 ## `InversionResult`
 
+What you read from a result:
+
 | Attribute | Shape | Description |
 |-----------|-------|-------------|
-| `slip` | `(N, 2)` or `(N, 1)` | Backwards-compatible per-patch array in the solved coordinates |
-| `slip_vector` | `(2N,)` or `(N,)` | Backwards-compatible blocked vector in the solved coordinates |
-| `strike_slip` | `(N,)` | Physical strike-slip component |
-| `dip_slip` | `(N,)` | Physical dip-slip component |
-| `slip_magnitude` | `(N,)` | Unsigned physical slip magnitude |
-| `slip_rake` | `(N,)` | Physical local rake in degrees |
-| `rake_parallel` | `(N,)` | Plate-parallel solution block (`components='plate'` only) |
-| `rake_perpendicular` | `(N,)` | Plate-perpendicular solution block (`components='plate'` only) |
-| `predicted` | `(M,)` | Forward-modeled observations |
-| `residuals` | `(M,)` | `obs - predicted` |
-| `reduced_chi2` | scalar | Reduced chi-squared, `r^T W r / (M - P)` |
-| `rms` | scalar | RMS misfit |
-| `moment` | scalar | Seismic moment in N·m |
-| `Mw` | scalar | Moment magnitude |
-| `regularization` | str, ndarray, or `None` | Regularization type used |
-| `regularization_strength` | float or `None` | λ used, or `None` when no regularization was applied |
-| `components` | str | Slip basis used in the inversion |
-| `rake` | float or `None` | Fixed rake angle for `components='rake'` |
-| `slip_azimuth` | float or `None` | Fixed geographic azimuth for `components='azimuth'` |
-| `plate_rake` | `(N,)` or `None` | Per-patch large-scale direction for `components='plate'` |
-| `dataset_names` | tuple of str | Stable identifiers in stacked-row order |
-| `dataset_slices` | tuple of slice | Rows belonging to each named dataset |
-| `dataset_diagnostics` | tuple | Solve-time fit diagnostics for each dataset |
-| `solver`, `success`, `message` | scalars | Solver choice and completion status |
-| `regularization_selection` | str or `None` | `abic`/`cv` when lambda was selected automatically |
-| `backend`, `precision` | str | Numerical backend configuration used for the solve |
-| `quantity`, `units` | str | Displacement/velocity semantics inherited from the data |
-| `warnings` | tuple of str | Interpretation warnings retained with the result |
-| `system_hash` | str | SHA-256 fingerprint for verifying a reconstructed system |
+| `strike_slip`, `dip_slip` | `(N,)` | Physical slip components per patch (left-lateral and thrust positive) |
+| `slip_magnitude`, `slip_rake` | `(N,)` | Unsigned slip and its rake in degrees |
+| `rake_parallel`, `rake_perpendicular` | `(N,)` | Plate-basis amplitudes (`components='plate'` only) |
+| `slip_vector` | `(P,)` | The solution in the solved basis, blocked by component (the `m` of `d = Gm`) |
+| `slip` | `(N, P/N)` | The same, one column per solved component |
+| `predicted`, `residuals` | `(M,)` | Predictions and `observed - predicted`, stacked over datasets |
+| `reduced_chi2`, `rms` | scalar | `r^T W r / (M - P)`, and the RMS residual in `units` |
+| `moment`, `Mw` | scalar | Seismic moment (N m) and moment magnitude |
+| `regularization`, `regularization_strength` | | Operator and λ used, or `None` |
+| `components`, `rake`, `slip_azimuth`, `plate_rake` | | The slip basis and its angles |
+| `dataset_names` | tuple of str | Dataset names in stacked-row order |
+| `quantity`, `units`, `warnings` | | Displacement or velocity, data units, interpretation warnings |
+| `fault`, `datasets` | | The problem the result solves (see `attach` for loaded results) |
+| `details` | `SolveDetails` | How it was solved (below) |
+
+`result.details` holds the bookkeeping needed to reproduce or audit a solve,
+none of which is needed to read the slip or the fit: `solver`, `success`,
+`message`, `regularization_selection` (`'abic'`/`'cv'` when λ was chosen
+automatically), `backend`, `precision`, `system_hash` (SHA-256 of `G`, `d`,
+`W`, `L`), `dataset_slices`, `dataset_diagnostics`, `local_rake`, the expanded
+`lower_bounds`/`upper_bounds`, `regularization_target`, and the
+`constraint_matrix`/`constraint_bounds`.
 
 Use the named physical arrays for interpretation and plotting. Use
 `slip_vector` when assembling linear algebra in the solved basis.
@@ -143,9 +138,10 @@ Use the named physical arrays for interpretation and plotting. Use
 For ordinary assessment, use the result's methods rather than slicing stacked rows:
 
 ```python
-predictions = result.prediction()  # {dataset_name: array}
-residuals = result.residual()      # {dataset_name: array}
-gnss_fit = result.prediction(gnss)  # one dataset, by object or by name
+predicted = result.prediction(gnss)  # a GNSS dataset: .east, .north, .up
+residual = result.residual(gnss)     # observed minus predicted, also a GNSS
+result.prediction("gnss")            # the same, by dataset name
+result.prediction()                  # {dataset_name: dataset} for every dataset
 diagnostics = result.diagnostics() # {dataset_name: diagnostics}
 print(result.summary())
 
@@ -155,8 +151,13 @@ geodef.plot.diagnostics(result)
 geodef.plot.summary(result)
 ```
 
-The mappings always follow solve order, including for one dataset. The stacked
-`predicted` and `residuals` arrays remain the explicit linear-algebra views.
+Predictions and residuals come back as datasets of the same kind as the data,
+with the same stations and uncertainties, so they plot and compare like the
+observations (`geodef.plot.vectors(gnss, fault, predicted=predicted)`). They
+need the datasets, so a result loaded from a file must be attached first. The
+stacked `predicted` and `residuals` arrays are the linear-algebra views;
+`result.rows_by_dataset(result.residuals)` splits them by dataset name and
+works on loaded results.
 
 ```python
 result.save("result.npz")
@@ -172,13 +173,20 @@ the problem, so pass `fault=` and `datasets=` to `load` (or call
 `loaded.attach(fault, datasets)`) before using those methods on a loaded
 result.
 
-`result.save(path)` writes `result.npz` and a readable `result.manifest.json`. The
-same versioned manifest is embedded in the NumPy archive, so the `.npz` remains
-portable by itself. The archive contains numeric arrays only and is always
-loaded with pickling disabled. On load, GeoDef verifies the schema version plus
-every array's declared shape, dtype, and SHA-256 checksum. Unversioned result
-archives written by the earlier development API are migrated in memory and
-marked with a warning; saving the loaded result writes the current schema.
+`result.save(path)` writes one `.npz` file: the arrays as plain numeric arrays
+(loaded with pickling disabled) and everything else as a JSON string under the
+`metadata` key, so a file can be inspected without GeoDef:
+
+```python
+import json
+import numpy as np
+
+with np.load("result.npz") as archive:
+    print(json.loads(str(archive["metadata"]))["reduced_chi2"])
+```
+
+The format is not versioned yet: files are for your own work within one
+GeoDef version, and a 1.0 release will fix it.
 
 ---
 
@@ -273,7 +281,7 @@ and `lambda` describe the chosen slip regularization.
 ```python
 geodef.backend.set_backend('jax')
 
-frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0)
 geometry0 = {
     'e0': 0.0, 'n0': 0.0,
     'depth': 25e3, 'strike': 315.0, 'dip': 30.0,
@@ -300,7 +308,7 @@ search.reduced_chi2
 Notes:
 
 - For expert/JAX workflows, the seven-element `theta0` array remains
-  supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
+  supported with either `frame=frame` or `frame=geodef.LocalFrame(lon=...`., lat=...)
 - `search.fault` is the ordinary domain view. `search.theta` is the exact
   `[e0, n0, depth, strike, dip, length, width]` array view.
 - The inner solve is unconstrained WLS with fixed `regularization_strength`;

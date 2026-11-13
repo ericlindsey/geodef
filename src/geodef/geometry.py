@@ -1,18 +1,16 @@
-"""Coordinate frames and geometry-array conversion functions."""
+"""Fault-geometry array helpers: planar parameter vectors and triangles.
+
+Coordinate frames and geodetic conversions live in :mod:`geodef.transforms`.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
 
-from geodef import transforms
 from geodef.validation import check_finite_scalar, check_positive, check_range
-
-DEFAULT_PROJECTION = "wgs84-enu"
-"""Current geographic-to-local projection identifier."""
 
 PLANAR_PARAMETER_NAMES = (
     "e0",
@@ -26,175 +24,13 @@ PLANAR_PARAMETER_NAMES = (
 """Order of the expert planar-geometry parameter vector."""
 
 __all__ = [
-    "DEFAULT_PROJECTION",
     "PLANAR_PARAMETER_NAMES",
-    "LocalFrame",
     "as_planar_vector",
     "planar_parameter_dict",
+    "orient_triangles",
     "triangle_strike_dip",
     "vertices_from_nodes",
 ]
-
-
-@dataclass(frozen=True)
-class LocalFrame:
-    """A local East-North-Up frame tied to a geographic origin.
-
-    The only projection currently supported is ``"wgs84-enu"``: geographic
-    WGS84 coordinates are converted through Earth-centered Earth-fixed (ECEF)
-    coordinates and rotated into the tangent ENU frame at the origin.
-
-    Args:
-        origin_lat: Origin latitude in degrees.
-        origin_lon: Origin longitude in degrees.
-        origin_alt: Origin ellipsoidal altitude in meters.
-        projection: Geographic-to-local projection identifier. Currently only
-            ``"wgs84-enu"`` is supported.
-
-    Raises:
-        ValueError: If an origin value is non-finite or out of range, or the
-            projection is unsupported.
-    """
-
-    origin_lat: float
-    origin_lon: float
-    origin_alt: float = 0.0
-    projection: str = DEFAULT_PROJECTION
-
-    def __post_init__(self) -> None:
-        for name in ("origin_lat", "origin_lon", "origin_alt"):
-            value = float(getattr(self, name))
-            check_finite_scalar(
-                name, value, unit="degrees" if name != "origin_alt" else "meters"
-            )
-            object.__setattr__(self, name, value)
-        check_range("origin_lat", self.origin_lat, -90.0, 90.0, unit="degrees")
-        check_range("origin_lon", self.origin_lon, -360.0, 360.0, unit="degrees")
-        if self.projection != DEFAULT_PROJECTION:
-            raise ValueError(
-                f"projection must be {DEFAULT_PROJECTION!r}; got {self.projection!r}"
-            )
-
-    def to_enu(
-        self,
-        *,
-        lon: npt.ArrayLike,
-        lat: npt.ArrayLike,
-        alt: npt.ArrayLike,
-    ) -> np.ndarray:
-        """Convert geographic coordinates to ENU meters in this frame.
-
-        Args:
-            lon: Longitude in degrees.
-            lat: Latitude in degrees.
-            alt: Ellipsoidal altitude in meters.
-
-        Returns:
-            Array with final axis ``[east_m, north_m, up_m]``.
-        """
-        lon_array, lat_array, alt_array = np.broadcast_arrays(
-            np.asarray(lon, dtype=float),
-            np.asarray(lat, dtype=float),
-            np.asarray(alt, dtype=float),
-        )
-        if not np.all(
-            np.isfinite(np.stack([lon_array, lat_array, alt_array], axis=-1))
-        ):
-            raise ValueError("lon, lat, and alt must contain only finite values")
-        shape = lon_array.shape
-        east, north, up = transforms.geod2enu(
-            lat_array.ravel(),
-            lon_array.ravel(),
-            alt_array.ravel(),
-            self.origin_lat,
-            self.origin_lon,
-            self.origin_alt,
-        )
-        return np.stack([east, north, up], axis=-1).reshape((*shape, 3))
-
-    def to_geographic(
-        self,
-        *,
-        east: npt.ArrayLike,
-        north: npt.ArrayLike,
-        up: npt.ArrayLike,
-    ) -> np.ndarray:
-        """Convert ENU meters in this frame to geographic coordinates.
-
-        Args:
-            east: East coordinate in meters.
-            north: North coordinate in meters.
-            up: Up coordinate in meters.
-
-        Returns:
-            Array with final axis ``[longitude_degrees, latitude_degrees,
-            altitude_m]``.
-        """
-        east_array, north_array, up_array = np.broadcast_arrays(
-            np.asarray(east, dtype=float),
-            np.asarray(north, dtype=float),
-            np.asarray(up, dtype=float),
-        )
-        if not np.all(
-            np.isfinite(np.stack([east_array, north_array, up_array], axis=-1))
-        ):
-            raise ValueError("east, north, and up must contain only finite values")
-        shape = east_array.shape
-        lat, lon, alt = transforms.enu2geod(
-            east_array.ravel(),
-            north_array.ravel(),
-            up_array.ravel(),
-            self.origin_lat,
-            self.origin_lon,
-            self.origin_alt,
-        )
-        return np.stack([lon, lat, alt], axis=-1).reshape((*shape, 3))
-
-    def transform_enu(
-        self, coordinates: npt.ArrayLike, *, target: LocalFrame
-    ) -> np.ndarray:
-        """Explicitly re-express ENU coordinates in another local frame.
-
-        Args:
-            coordinates: ENU coordinates with shape ``(..., 3)``.
-            target: Destination frame.
-
-        Returns:
-            Coordinates in ``target`` with the same shape.
-
-        Raises:
-            ValueError: If ``coordinates`` does not have a final axis of 3.
-        """
-        array = np.asarray(coordinates, dtype=float)
-        if array.ndim == 0 or array.shape[-1] != 3:
-            raise ValueError(f"coordinates must have shape (..., 3), got {array.shape}")
-        geographic = self.to_geographic(
-            east=array[..., 0], north=array[..., 1], up=array[..., 2]
-        )
-        return target.to_enu(
-            lon=geographic[..., 0],
-            lat=geographic[..., 1],
-            alt=geographic[..., 2],
-        )
-
-    def is_compatible(self, other: LocalFrame) -> bool:
-        """Return whether ``other`` is exactly the same coordinate frame."""
-        return self == other
-
-    def require_compatible(self, other: LocalFrame) -> None:
-        """Raise if ``other`` is not exactly the same coordinate frame.
-
-        Args:
-            other: Frame that will be combined with this one.
-
-        Raises:
-            ValueError: If the origins or projection differ.
-        """
-        if not self.is_compatible(other):
-            raise ValueError(
-                "incompatible local frames: explicitly transform coordinates "
-                f"from {other!r} to {self!r} before combining them"
-            )
 
 
 def as_planar_vector(
@@ -290,16 +126,46 @@ def vertices_from_nodes(
     return np.array(nodes[connectivity], copy=True)
 
 
+def orient_triangles(vertices_enu: npt.ArrayLike) -> np.ndarray:
+    """Reorder triangle corners so every normal points up.
+
+    The triangular dislocation kernel takes its strike and dip directions
+    from the order of the corners. With corners counterclockwise seen from
+    above (normal pointing up), its strike follows the right-hand rule and
+    positive dip slip is thrust, matching rectangular patches. Listed the
+    other way round, positive dip slip would be normal faulting. Vertical
+    triangles, whose normal is horizontal, are left as given.
+
+    Args:
+        vertices_enu: Per-triangle corners ``[east, north, up]``, shape
+            ``(N, 3, 3)``.
+
+    Returns:
+        A copy with the second and third corners swapped wherever the
+        normal pointed down.
+    """
+    vertices = np.array(vertices_enu, dtype=float)
+    normal = np.cross(vertices[:, 1] - vertices[:, 0], vertices[:, 2] - vertices[:, 0])
+    downward = normal[:, 2] < 0.0
+    vertices[downward] = vertices[downward][:, [0, 2, 1]]
+    return vertices
+
+
 def triangle_strike_dip(
     vertices_enu: npt.ArrayLike,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Derive right-hand-rule strike and dip from triangle vertices.
 
+    Strike is the direction the triangular kernel uses for strike slip once
+    the triangle is oriented with :func:`orient_triangles`: horizontal, with
+    the plane dipping to its right. A horizontal triangle has strike 0.
+
     Args:
         vertices_enu: Per-triangle vertices with shape ``(N, 3, 3)``.
 
     Returns:
-        ``(strike_degrees, dip_degrees)`` arrays, each shape ``(N,)``.
+        ``(strike_degrees, dip_degrees)`` arrays, each shape ``(N,)``; strike
+        in ``[0, 360)`` clockwise from the frame's North axis.
 
     Raises:
         ValueError: If vertices have the wrong shape or contain non-finite
@@ -312,38 +178,13 @@ def triangle_strike_dip(
         )
     if not np.all(np.isfinite(vertices)):
         raise ValueError("vertices_enu must contain only finite values")
-    edge1 = vertices[:, 1, :] - vertices[:, 0, :]
-    edge2 = vertices[:, 2, :] - vertices[:, 0, :]
-    normal = np.cross(edge1, edge2)
-    normal[normal[:, 2] < 0.0] *= -1.0
+    vertices = orient_triangles(vertices)
+    normal = np.cross(vertices[:, 1] - vertices[:, 0], vertices[:, 2] - vertices[:, 0])
     normal /= np.maximum(np.linalg.norm(normal, axis=1, keepdims=True), 1e-30)
-
     dip = np.degrees(np.arccos(np.clip(np.abs(normal[:, 2]), 0.0, 1.0)))
-    strike = np.zeros(vertices.shape[0], dtype=float)
-    dipping = dip > 0.1
-    updip_azimuth = (
-        np.degrees(np.arctan2(normal[dipping, 0], normal[dipping, 1])) % 360.0
-    )
-    strike[dipping] = (updip_azimuth + 90.0) % 360.0
+    # strike direction = vertical x normal = (-n_north, n_east, 0)
+    strike_east, strike_north = -normal[:, 1], normal[:, 0]
+    horizontal = np.hypot(strike_east, strike_north) < 1e-12
+    strike = np.degrees(np.arctan2(strike_east, strike_north)) % 360.0
+    strike[horizontal] = 0.0
     return strike, dip
-
-
-def _resolve_frame(
-    frame: LocalFrame | None,
-    ref_lat: float | None,
-    ref_lon: float | None,
-) -> LocalFrame:
-    """Resolve an explicit or legacy local frame."""
-    if (ref_lat is None) != (ref_lon is None):
-        raise ValueError("ref_lat and ref_lon must be provided together")
-    legacy = (
-        LocalFrame(ref_lat, ref_lon)
-        if ref_lat is not None and ref_lon is not None
-        else None
-    )
-    if frame is not None and legacy is not None:
-        frame.require_compatible(legacy)
-    selected = frame if frame is not None else legacy
-    if selected is None:
-        raise ValueError("provide frame or both ref_lat and ref_lon")
-    return selected

@@ -80,7 +80,7 @@ just the best-fitting slip model.
 ## Building a posterior
 
 ```python
-frame = geodef.LocalFrame(-2.0, 100.0, projection="wgs84-enu")
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0)
 geometry0 = {
     "e0": 0.0, "n0": 0.0, "depth": 25e3,
     "strike": 315.0, "dip": 30.0,
@@ -111,7 +111,7 @@ post.logpdf(x)     # traceable, differentiable log-posterior
 ```
 
 The seven-element `theta0` array is also supported with either
-`frame=frame` or `ref_lat=..., ref_lon=...`.
+`frame=frame` or `frame=geodef.LocalFrame(lon=...`., lat=...)
 
 `logpdf`, `log_likelihood`, and `log_prior` are pure JAX-traceable
 functions of the sampled vector `x` — hand them to any JAX sampler or
@@ -280,7 +280,7 @@ uncertain geometry — sample the two jointly — pass `positive` straight to
 
 ```python
 post = geodef.bayes.RectPosterior(
-    theta0, [gnss], ref_lat=-2.0, ref_lon=100.0,
+    theta0, [gnss], frame=geodef.LocalFrame(lon=100.0, lat=-2.0),
     free=["dip", "depth"],                 # geometry sampled...
     theta_prior={"dip": (5.0, 45.0), "depth": (10e3, 40e3)},
     n_length=8, n_width=4,

@@ -12,9 +12,9 @@ REFERENCE_DATA_DIR = Path(__file__).parent / "reference_data"
 
 @pytest.fixture(autouse=True)
 def _isolate_cache(tmp_path: Path) -> None:
-    """Redirect the geodef cache to a temp directory for every test."""
+    """Give every test a private cache directory and the default (off) state."""
     cache.set_dir(tmp_path / "geodef_cache")
-    cache.enable()
+    cache.disable()
 
 
 @pytest.fixture

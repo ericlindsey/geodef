@@ -98,8 +98,8 @@ def prediction(
     """
 
     ax = _ensure_axes(ax)
-    predicted = result.prediction()
-    residuals = result.residual()
+    predicted = result.rows_by_dataset(result.predicted)
+    residuals = result.rows_by_dataset(result.residuals)
     for name in predicted:
         observed = predicted[name] + residuals[name]
         ax.scatter(observed, predicted[name], s=12, alpha=0.7, label=name)
@@ -136,7 +136,7 @@ def residual(
     """
 
     ax = _ensure_axes(ax)
-    for name, values in result.residual().items():
+    for name, values in result.rows_by_dataset(result.residuals).items():
         ax.hist(values, bins="auto", alpha=0.55, label=name)
     ax.set_xlabel(f"Observation - prediction [{result.units}]")
     ax.set_ylabel("Count")

@@ -6,6 +6,59 @@ Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z),
 and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids
 can be passed as `ellps=`.
 
+## `LocalFrame`
+
+`geodef.LocalFrame` is how GeoDef flattens the Earth. Elastic half-space
+solutions assume a flat surface, so every fault and observation point is placed
+in one local East/North/Up frame before any Green's function is evaluated. A
+frame is a small immutable value (`frame.lon`, `frame.lat`, `frame.alt`) given
+by keyword, longitude first, and it travels with any local array that is
+stored, cached, or combined.
+
+The flattening is the same everywhere in GeoDef:
+
+- **horizontal** position is East and North in the plane tangent to the WGS84
+  ellipsoid at the origin;
+- **vertical** position is height, unchanged: a point 10 km deep has
+  `up = -10_000` wherever it is.
+
+`to_enu` and `to_geographic` are exact inverses. The flat model distorts
+distances by roughly `(d / R)**2 / 6` at distance `d` from the origin (about
+4e-4 at 300 km), the usual limit of half-space modeling.
+
+```python
+import geodef
+
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0, alt=0.0)
+
+enu = frame.to_enu(lon=lon, lat=lat, alt=alt)
+geographic = frame.to_geographic(
+    east=enu[..., 0],
+    north=enu[..., 1],
+    up=enu[..., 2],
+)
+```
+
+Meridians converge, so true north at a point away from the origin is not the
+frame's North axis. `frame.north_azimuth(lon=, lat=)` gives the azimuth of true
+north at a point, in the frame; `Fault.geographic_strike` uses it to report
+strikes from true north.
+
+`source.transform_enu(coordinates, target=target)` explicitly re-expresses an
+array in another frame. `source.require_compatible(other)` raises rather than
+silently combining coordinates defined by different origins.
+
+`Fault.planar(..., frame=frame)`, `Fault.from_triangles(..., frame=frame)`, and
+`Mesh(..., frame=frame)` attach the frame directly to the domain value that owns
+the coordinates.
+
+The free functions below are the WGS84 conversions `LocalFrame` is built on.
+They follow the geodesy convention of **latitude before longitude**, unlike
+the rest of GeoDef, so pass their arguments by keyword or in the documented
+order.
+
+---
+
 ## Which coordinate system should I use?
 
 - **Geodetic** latitude, longitude, and ellipsoidal altitude are convenient for
@@ -52,7 +105,7 @@ Convert geodetic coordinates to local East/North/Up relative to a reference poin
 ```python
 from geodef.transforms import geod2enu
 
-e, n, u = geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
+e, n, u = geod2enu(lat, lon, alt, lat0, lon0, 0.0)
 # e, n, u in meters
 ```
 
