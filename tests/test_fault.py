@@ -4,6 +4,7 @@ Covers: construction, factory classmethods, properties, forward modeling,
 moment/magnitude, laplacian, file I/O, and vertex computation.
 """
 
+import importlib.util
 import tempfile
 from pathlib import Path
 
@@ -663,6 +664,10 @@ class TestSharedFrame:
             actual = triangles.displacement(lon=self.LON, lat=self.LAT, **slip)
             np.testing.assert_allclose(actual, expected, atol=1e-9)
 
+    @pytest.mark.skipif(
+        importlib.util.find_spec("meshpy") is None,
+        reason="requires meshpy (install with the 'mesh' extra)",
+    )
     def test_generated_meshes_are_thrust_positive(self):
         """A mesh dipping east under a north trace is a north-striking fault."""
         from geodef import mesh
