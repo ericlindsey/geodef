@@ -575,9 +575,13 @@ class TestPlotVectors:
         assert isinstance(ax, plt.Axes)
 
     def test_with_predicted(self, gnss_3comp, rect_fault):
-        predicted = gnss_3comp.obs * 0.9  # approximate prediction
+        predicted = gnss_3comp.with_obs(gnss_3comp.obs * 0.9)
         ax = geodef.plot.vectors(gnss_3comp, rect_fault, predicted=predicted)
         assert isinstance(ax, plt.Axes)
+
+    def test_predicted_must_be_a_dataset(self, gnss_3comp, rect_fault):
+        with pytest.raises(TypeError, match="with_obs"):
+            geodef.plot.vectors(gnss_3comp, rect_fault, predicted=gnss_3comp.obs)
 
     def test_existing_axes(self, gnss_3comp, rect_fault):
         fig, ax_in = plt.subplots()
@@ -607,7 +611,7 @@ class TestPlotVectors:
         assert isinstance(ax, plt.Axes)
 
     def test_with_legend(self, gnss_3comp, rect_fault):
-        predicted = gnss_3comp.obs * 0.9
+        predicted = gnss_3comp.with_obs(gnss_3comp.obs * 0.9)
         ax = geodef.plot.vectors(
             gnss_3comp, rect_fault, predicted=predicted, legend=True
         )
@@ -651,7 +655,7 @@ class TestPlotVectors:
         np.testing.assert_allclose(ell0_center, (tip_x, tip_y), atol=1e-10)
 
     def test_scale_arrow_legend(self, gnss_3comp, rect_fault):
-        predicted = gnss_3comp.obs * 0.9
+        predicted = gnss_3comp.with_obs(gnss_3comp.obs * 0.9)
         ax = geodef.plot.vectors(
             gnss_3comp,
             rect_fault,
@@ -676,7 +680,7 @@ class TestPlotVectors:
 
     def test_legend_proxy_artists(self, gnss_3comp, rect_fault):
         """Without scale_arrow, legend should use proxy Line2D artists."""
-        predicted = gnss_3comp.obs * 0.9
+        predicted = gnss_3comp.with_obs(gnss_3comp.obs * 0.9)
         ax = geodef.plot.vectors(
             gnss_3comp, rect_fault, predicted=predicted, legend=True
         )
@@ -715,7 +719,7 @@ class TestPlotVectors:
         large dots cannot hide the displacement vectors."""
         from matplotlib.quiver import Quiver
 
-        predicted = gnss_3comp.obs * 0.9
+        predicted = gnss_3comp.with_obs(gnss_3comp.obs * 0.9)
         ax = geodef.plot.vectors(
             gnss_3comp, rect_fault, components="both", predicted=predicted
         )
@@ -787,7 +791,7 @@ class TestPlotInSAR:
         assert isinstance(ax, plt.Axes)
 
     def test_layout_obs_pred_res(self, insar_data, rect_fault):
-        predicted = insar_data.obs * 0.9
+        predicted = insar_data.with_obs(insar_data.obs * 0.9)
         result = geodef.plot.insar(
             insar_data, rect_fault, predicted=predicted, layout="obs_pred_res"
         )
@@ -796,14 +800,14 @@ class TestPlotInSAR:
         assert len(result) == 3
 
     def test_layout_residual(self, insar_data, rect_fault):
-        predicted = insar_data.obs * 0.9
+        predicted = insar_data.with_obs(insar_data.obs * 0.9)
         ax = geodef.plot.insar(
             insar_data, rect_fault, predicted=predicted, layout="residual"
         )
         assert isinstance(ax, plt.Axes)
 
     def test_layout_pred(self, insar_data, rect_fault):
-        predicted = insar_data.obs * 0.9
+        predicted = insar_data.with_obs(insar_data.obs * 0.9)
         ax = geodef.plot.insar(
             insar_data, rect_fault, predicted=predicted, layout="pred"
         )
@@ -846,7 +850,7 @@ class TestPlotInSAR:
 
     def test_obs_pred_res_ylabel_suppressed(self, insar_data, rect_fault):
         """Middle and right panels should not have y-axis labels."""
-        predicted = insar_data.obs * 0.9
+        predicted = insar_data.with_obs(insar_data.obs * 0.9)
         axes = geodef.plot.insar(
             insar_data, rect_fault, predicted=predicted, layout="obs_pred_res"
         )

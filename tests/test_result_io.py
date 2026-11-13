@@ -76,7 +76,7 @@ def test_round_trip_preserves_the_result(tmp_path):
     assert loaded.details.dataset_diagnostics == result.details.dataset_diagnostics
     np.testing.assert_array_equal(loaded.details.lower_bounds, [0.0, -1.0])
     assert loaded.details.constraint_matrix is None
-    assert loaded.prediction()["gnss"].tolist() == [1.0, 2.0, 3.0]
+    assert loaded.rows_by_dataset(loaded.predicted)["gnss"].tolist() == [1.0, 2.0, 3.0]
 
 
 def test_custom_regularization_and_nonfinite_values_round_trip(tmp_path):

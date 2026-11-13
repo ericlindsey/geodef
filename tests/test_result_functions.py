@@ -150,6 +150,21 @@ def test_joint_inversion_rejects_mixed_measurement_semantics(fault):
         invert.solve(fault, [gnss, velocity])
 
 
+def test_predictions_and_residuals_are_datasets(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+
+    predicted = result.prediction(gnss)
+    residual = result.residual(gnss)
+
+    assert isinstance(predicted, GNSS)
+    np.testing.assert_array_equal(predicted.lon, gnss.lon)
+    np.testing.assert_array_equal(predicted.sigma, gnss.sigma)
+    np.testing.assert_array_equal(predicted.obs, result.predicted[:9])
+    np.testing.assert_allclose(predicted.east + residual.east, gnss.east)
+    np.testing.assert_allclose(predicted.obs + residual.obs, gnss.obs)
+
+
 def test_assessment_functions_return_name_keyed_views(fault):
     gnss, vertical = _datasets(fault)
     result = invert.solve(fault, [gnss, vertical])
@@ -161,11 +176,9 @@ def test_assessment_functions_return_name_keyed_views(fault):
     assert tuple(predictions) == result.dataset_names
     assert tuple(residuals) == result.dataset_names
     assert tuple(diagnostics) == result.dataset_names
-    assert predictions["gnss"].shape == (gnss.n_obs,)
-    assert predictions["leveling"].shape == (vertical.n_obs,)
+    assert isinstance(predictions["leveling"], Vertical)
     np.testing.assert_allclose(
-        predictions["gnss"] + residuals["gnss"],
-        gnss.obs,
+        predictions["gnss"].obs + residuals["gnss"].obs, gnss.obs
     )
     assert diagnostics["leveling"].n_obs == vertical.n_obs
 
@@ -239,12 +252,20 @@ def test_prediction_and_residual_select_one_dataset_by_object_or_name(fault):
     result = invert.solve(fault, [gnss, vertical])
 
     np.testing.assert_array_equal(
-        result.prediction(vertical), result.prediction()["leveling"]
+        result.prediction(vertical).obs, result.prediction()["leveling"].obs
     )
-    np.testing.assert_array_equal(result.prediction("gnss"), result.predicted[:9])
-    np.testing.assert_allclose(
-        result.residual(gnss), gnss.obs - result.prediction(gnss)
-    )
+    np.testing.assert_array_equal(result.prediction("gnss").obs, result.predicted[:9])
+
+
+def test_result_plots_work_on_a_loaded_result(fault, tmp_path):
+    result = invert.solve(fault, list(_datasets(fault)))
+    path = tmp_path / "result.npz"
+    result.save(path)
+    loaded = invert.InversionResult.load(path)
+
+    for draw in (plot.prediction, plot.residual, plot.diagnostics, plot.summary):
+        draw(loaded)
+    plt.close("all")
 
 
 def test_prediction_rejects_a_dataset_that_was_not_inverted(fault):

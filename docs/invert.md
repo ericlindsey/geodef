@@ -138,9 +138,10 @@ Use the named physical arrays for interpretation and plotting. Use
 For ordinary assessment, use the result's methods rather than slicing stacked rows:
 
 ```python
-predictions = result.prediction()  # {dataset_name: array}
-residuals = result.residual()      # {dataset_name: array}
-gnss_fit = result.prediction(gnss)  # one dataset, by object or by name
+predicted = result.prediction(gnss)  # a GNSS dataset: .east, .north, .up
+residual = result.residual(gnss)     # observed minus predicted, also a GNSS
+result.prediction("gnss")            # the same, by dataset name
+result.prediction()                  # {dataset_name: dataset} for every dataset
 diagnostics = result.diagnostics() # {dataset_name: diagnostics}
 print(result.summary())
 
@@ -150,8 +151,13 @@ geodef.plot.diagnostics(result)
 geodef.plot.summary(result)
 ```
 
-The mappings always follow solve order, including for one dataset. The stacked
-`predicted` and `residuals` arrays remain the explicit linear-algebra views.
+Predictions and residuals come back as datasets of the same kind as the data,
+with the same stations and uncertainties, so they plot and compare like the
+observations (`geodef.plot.vectors(gnss, fault, predicted=predicted)`). They
+need the datasets, so a result loaded from a file must be attached first. The
+stacked `predicted` and `residuals` arrays are the linear-algebra views;
+`result.rows_by_dataset(result.residuals)` splits them by dataset name and
+works on loaded results.
 
 ```python
 result.save("result.npz")

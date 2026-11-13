@@ -11,8 +11,8 @@ regularization rules are specified in [conventions](conventions.md).
 | Data vector | $d$ | `dataset.obs` | Observed GNSS components, InSAR line of sight, or vertical motion. |
 | Model vector | $m$ | `result.slip_vector` | Slip parameters in the selected basis, blocked by component: strike-slip values, then dip-slip values. |
 | Green's matrix | $G$ | `system.G`; `geodef.greens.matrix(...)` | Linear map from unit slip on each patch to predicted observations. |
-| Prediction | $Gm$ | `result.predicted`; `result.prediction()` | Noise-free data implied by the estimated model. |
-| Residual | $r=d-Gm$ | `result.residuals`; `result.residual()` | Observed minus predicted data. |
+| Prediction | $Gm$ | `result.predicted`; `result.prediction(dataset)` returns a dataset | Noise-free data implied by the estimated model. |
+| Residual | $r=d-Gm$ | `result.residuals`; `result.residual(dataset)` returns a dataset | Observed minus predicted data. |
 | Noise | $\epsilon$ | `rng=` in `GNSS.synthetic(...)` | Measurement and model discrepancy added to the prediction. |
 | Data covariance | $C_d$ | `dataset.covariance` | Variances and correlations assumed for the data errors. |
 | Weight/precision matrix | $W=C_d^{-1}$ | `system.W` | Inverse covariance used in weighted misfit. |

@@ -57,6 +57,13 @@ change numerical output beyond documented tolerances are tagged **numerical**.
 
 ### Changed — fewer surprises
 
+- `result.prediction(dataset)` and `result.residual(dataset)` return a dataset
+  of the same kind (a `GNSS` prediction has `.east`, `.north`, `.up`), and
+  without an argument a name-keyed mapping of datasets. `plot.vectors` and
+  `plot.insar` take `predicted=` as such a dataset; wrap an array with
+  `dataset.with_obs(values)`. `result.rows_by_dataset(stacked)` splits the
+  stacked arrays by name without needing the datasets.
+
 - `InversionResult` keeps the fields a student reads (slip views, fit,
   basis, dataset names, units, warnings); the solver bookkeeping moves to
   `result.details` (`SolveDetails`): `solver`, `success`, `message`,

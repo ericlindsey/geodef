@@ -76,7 +76,6 @@ meet it. Each item is independent.
 | # | Item | Why it matters | Effort |
 |---|---|---|---|
 | S9 | Tutorial data setup in chapters 11-14 | Still built from `fault.displacement` plus per-component noise; moving to `synthetic` changes their random streams and therefore their printed numbers. | Small |
-| S10 | Dataset-valued predictions | `result.prediction()` returns arrays keyed by name; returning datasets (`gnss.with_obs(...)`) would let `plot.vectors(observed, predicted)` drop its manual slicing. | Small-medium |
 
 ---
 
