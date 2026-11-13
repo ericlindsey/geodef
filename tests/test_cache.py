@@ -17,6 +17,12 @@ from geodef.greens import matrix as greens
 # ====================================================================
 
 
+@pytest.fixture(autouse=True)
+def _cache_enabled() -> None:
+    """These tests exercise the cache, which is off by default."""
+    cache.enable()
+
+
 class TestComputeHash:
     """Tests for the deterministic hash function."""
 
@@ -103,9 +109,12 @@ class TestConfig:
         cache.set_dir(str(tmp_path / "str_cache"))
         assert cache.get_dir() == tmp_path / "str_cache"
 
+    def test_cache_is_off_until_enabled(self) -> None:
+        """A fresh configuration writes nothing to disk."""
+        assert cache._CacheConfig().enabled is False
+
     def test_enable_disable(self) -> None:
         """disable() and enable() toggle is_enabled()."""
-        assert cache.is_enabled() is True
         cache.disable()
         assert cache.is_enabled() is False
         cache.enable()

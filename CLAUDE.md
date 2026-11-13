@@ -174,7 +174,5 @@ candidate for the next simplification pass (see `PLAN.md`):
 - `InversionResult` has more than thirty fields, most of them provenance.
 - `invert/_io.py` carries a versioned, checksummed result-file schema with
   migrations.
-- The disk cache for `G` is on by default and writes `.geodef_cache/` in the
-  working directory.
 - Rectangular patches use a per-patch tangent-plane projection; triangles use
   one shared `LocalFrame`.

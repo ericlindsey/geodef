@@ -2,7 +2,7 @@
 
 > Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
 
-Hash-based caching of Green's matrices and stress kernels. Identical inputs always find the cache; changed inputs always recompute. Cache is enabled by default and stores `.npz` files keyed by SHA-256 hash.
+Hash-based caching of Green's matrices and stress kernels. Identical inputs always find the cache; changed inputs always recompute. The cache is **off by default**, so GeoDef never writes to disk unless asked; call `geodef.cache.enable()` to turn it on. It stores `.npz` files keyed by SHA-256 hash.
 
 Caching changes runtime, not numerical results. It is especially helpful while
 trying different regularization strengths on fixed geometry and data, because
@@ -19,8 +19,8 @@ import geodef
 geodef.cache.set_dir("my_cache/")   # default: .geodef_cache/
 geodef.cache.get_dir()               # → Path('.geodef_cache')
 
-geodef.cache.enable()                # on by default
-geodef.cache.disable()               # disable for this session
+geodef.cache.enable()                # off by default; turn it on for this session
+geodef.cache.disable()               # back to always recomputing
 geodef.cache.is_enabled()            # → True/False
 ```
 
@@ -39,7 +39,7 @@ geodef.cache.clear()    # delete all cached files
 
 ## How caching works
 
-`geodef.greens.matrix()` and `Fault.stress_kernel()` automatically cache their
+When the cache is enabled, `geodef.greens.matrix()` and `Fault.stress_kernel()` cache their
 results. The cache key is computed from all input arrays and parameters (fault
 geometry, observation coordinates, data class, active GNSS components, look
 vectors, etc.) using SHA-256. If the key matches an existing `.npz` file, the
@@ -66,9 +66,11 @@ bumps `KERNEL_VERSION` (or whenever you want to reclaim space).
 To bypass caching entirely for a session:
 
 ```python
+geodef.cache.enable()
+G = geodef.greens.matrix(fault, gnss)  # computed, then saved
+G = geodef.greens.matrix(fault, gnss)  # loaded from disk
 geodef.cache.disable()
 G = geodef.greens.matrix(fault, gnss)  # always recomputes
-geodef.cache.enable()
 ```
 
 ---

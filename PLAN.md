@@ -80,7 +80,6 @@ meet it. Each item is independent.
 | S3 | One projection for rectangles and triangles | Rectangles use a per-patch tangent plane, triangles one shared `LocalFrame`; `transforms.translate_flat` is a third. A shared frame would make `Fault.corners` exact and remove a class of small inconsistencies. **Numerical** change. | Medium |
 | S4 | Slimmer `InversionResult` | More than thirty fields; group provenance (backend, precision, hashes, bounds, constraints) into one nested record so the fields a student prints stand out. | Small |
 | S5 | Simpler result files | `invert/_io.py` is a 600-line versioned, checksummed schema with migrations. With no released files to protect, a plain `.npz` plus JSON metadata would do. | Small |
-| S6 | Cache off by default | The disk cache for `G` writes `.geodef_cache/` in the working directory without being asked. Make it opt-in (`geodef.cache.enable()`), and show it in Chapter 02. | Small |
 | S7 | Kernel subpackage | Move `okada85`, `okada92`, `tri`, and `okada` under `geodef.kernels` so the top-level module list reads as a table of contents. | Small (mechanical) |
 | S8 | Merge `geometry` and `transforms` | Two modules for coordinates; `LocalFrame` could own the conversions a student needs. | Small |
 | S9 | Tutorial data setup in chapters 11-14 | Still built from `fault.displacement` plus per-component noise; moving to `synthetic` changes their random streams and therefore their printed numbers. | Small |

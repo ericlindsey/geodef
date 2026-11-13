@@ -39,7 +39,9 @@ ordering as the stacked observation vector.
 
 ### `matrix(fault, datasets, *, components='both', rake=None, slip_azimuth=None, plate_rake=None) → np.ndarray`
 
-Build the projected Green's matrix for one or more datasets. Results are automatically cached.
+Build the projected Green's matrix for one or more datasets. Results are
+saved to disk and reused when the cache is on (`geodef.cache.enable()`; see
+[`cache.md`](cache.md)).
 
 ```python
 import geodef

@@ -23,6 +23,12 @@ change numerical output beyond documented tolerances are tagged **numerical**.
   geometry estimate from a multi-row `Fault.planar` should be
   regenerated. `KERNEL_VERSION` is bumped so cached matrices are rebuilt.
 
+### Changed — fewer surprises
+
+- The disk cache for Green's matrices and stress kernels is **off by
+  default**. GeoDef no longer creates `.geodef_cache/` in the working
+  directory unless `geodef.cache.enable()` is called.
+
 ### Changed — one way to do each thing
 
 A simplification pass removed parallel spellings. There are no aliases;
