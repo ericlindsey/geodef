@@ -91,12 +91,12 @@ class TestAddVectors:
         g = GNSS(
             lon=np.linspace(99.5, 100.5, n),
             lat=np.zeros(n),
-            ve=np.ones(n) * 0.01,
-            vn=np.ones(n) * 0.02,
-            vu=None,
-            se=np.ones(n),
-            sn=np.ones(n),
-            su=None,
+            east=np.ones(n) * 0.01,
+            north=np.ones(n) * 0.02,
+            up=None,
+            sigma_east=np.ones(n),
+            sigma_north=np.ones(n),
+            sigma_up=None,
         )
         q = geomap.add_vectors(ax, g, scale=1000)
         assert q is not None

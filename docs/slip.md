@@ -3,9 +3,21 @@
 > Conventions — axes, depth sign, angles, units, array ordering,
 > regularization: see [`conventions.md`](conventions.md).
 
-GeoDef represents slip with NumPy arrays and provides functions for the common
-conversions. For `N` patches, a two-component model vector is blocked:
-`[strike_slip_0, ..., strike_slip_N, dip_slip_0, ..., dip_slip_N]`.
+Everyday code gives slip as two per-patch arrays, `strike_slip` and `dip_slip`
+(meters; left-lateral and reverse are positive), and reads the same two names
+back from an inversion result:
+
+```python
+east, north, up = fault.displacement(
+    lon=obs_lon, lat=obs_lat, strike_slip=strike_slip, dip_slip=dip_slip,
+)
+result.strike_slip, result.dip_slip, result.slip_magnitude, result.slip_rake
+```
+
+This module is for the cases where the **model vector** itself is the subject:
+multiplying by a Green's matrix, building a custom regularization target, or
+converting between slip bases. For `N` patches, a two-component model vector is
+blocked: `[strike_slip_0, ..., strike_slip_N-1, dip_slip_0, ..., dip_slip_N-1]`.
 
 ## Pack and unpack
 
@@ -19,16 +31,11 @@ slip_magnitude = slip.magnitude(strike_slip, dip_slip)
 slip_rake = slip.rake(strike_slip, dip_slip)
 ```
 
-`fault.displacement` accepts the two physical components directly and returns
-three arrays:
+The packed vector is what a Green's matrix multiplies:
 
 ```python
-east, north, up = fault.displacement(
-    obs_lat,
-    obs_lon,
-    slip_strike=strike_slip,
-    slip_dip=dip_slip,
-)
+G = fault.greens_matrix(lon=obs_lon, lat=obs_lat)      # (3 * n_obs, 2 * N)
+east, north, up = (G @ slip.pack(strike_slip, dip_slip)).reshape(-1, 3).T
 ```
 
 ## Fixed rake and geographic azimuth
@@ -80,7 +87,7 @@ Invert directly in those coordinates with `components="plate"` and
 `[parallel | perpendicular]` and exposes both the solved and physical views:
 
 ```python
-result = geodef.invert.solve(
+result = geodef.solve(
     fault,
     datasets,
     components="plate",
@@ -97,11 +104,12 @@ result.slip_rake
 
 ## Patch ordering
 
-Structured faults use `(n_width, n_length)` grid shape, with along-strike index
-varying fastest. Use the fault helpers instead of manual reshape assumptions:
+Structured faults are stored row by row: row 0 is the shallowest row, each
+following row is one step down dip, and patches advance along strike within a
+row. Use the fault helpers instead of manual reshape assumptions:
 
 ```python
-grid = fault.reshape_patches(per_patch_values)
+grid = fault.reshape_patches(per_patch_values)   # shape (n_width, n_length)
 values = fault.flatten_patches(grid)
 index = fault.patch_index(strike_idx, dip_idx)
 ```

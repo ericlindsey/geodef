@@ -270,7 +270,7 @@ differs. Validation: the density is checked against an independent NumPy
 reimplementation and against `RectPosterior`'s collapsed formula via the
 exact "joint = collapsed × Gaussian conditional" identity, the sampler
 against the collapsed posterior and against `emcee`, and the constrained
-posterior mean against `LinearSystem.invert(bounds=(0, None))`.
+posterior mean against `LinearSystem.solve(bounds=(0, None))`.
 
 ### Positivity *with* free geometry: `RectPosterior(positive=…)`
 

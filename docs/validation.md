@@ -6,7 +6,9 @@ Two layers keep invalid physics from becoming mysterious downstream results.
 
 ## Fail-early constructor checks
 
-Public constructors (`GNSS`, `InSAR`, `Vertical`, `Fault.planar`, ...) raise
+Coordinates are keyword-only (`lon=`, `lat=`) on every `Fault` and dataset
+call, so a swapped pair is a `TypeError` rather than a silently wrong model.
+Beyond that, public constructors (`GNSS`, `InSAR`, `Vertical`, `Fault.planar`, ...) raise
 `ValueError` at creation time for inputs that can never be right, with
 messages naming the argument, its received shape or range, and the expected
 unit:
@@ -16,6 +18,13 @@ unit:
 - latitudes outside [-90, 90], dips outside [0, 90], negative depths,
   non-positive lengths/widths/uncertainties;
 - non-unit InSAR look vectors (pass `normalize_look=True` to renormalize);
+- a planar fault whose top row of patches would sit above the surface
+  (`depth` is the depth of the fault center);
+- a GNSS component without an uncertainty (give `sigma=` or the
+  component-specific `sigma_east`/`sigma_north`/`sigma_up`), or a vertical
+  uncertainty without vertical values;
+- a dataset `name` that is not a string (per-station labels go in
+  `station_names`);
 - asymmetric or non-positive-definite covariance matrices (pass
   `validate_covariance=False` only for advanced semidefinite models).
 

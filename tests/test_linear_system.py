@@ -16,17 +16,15 @@ import pytest
 
 from geodef.data import GNSS, InSAR
 from geodef.fault import Fault
-from geodef.invert import (
-    LinearSystem,
+from geodef.invert import LinearSystem
+from geodef.invert import solve as invert
+from tests.helpers import (
     abic_curve,
     diagnostics,
     lcurve,
     model_covariance,
     model_resolution,
     model_uncertainty,
-)
-from geodef.invert import (
-    solve as invert,
 )
 
 # ======================================================================
@@ -63,16 +61,18 @@ def gnss(fault_4x3, obs_points):
     n = len(lat)
     slip_ss = np.zeros(fault_4x3.n_patches)
     slip_ds = np.ones(fault_4x3.n_patches) * 2.0
-    ue, un, uz = fault_4x3.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault_4x3.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=ue,
-        vn=un,
-        vu=uz,
-        se=np.full(n, 0.001),
-        sn=np.full(n, 0.001),
-        su=np.full(n, 0.001),
+        east=ue,
+        north=un,
+        up=uz,
+        sigma_east=np.full(n, 0.001),
+        sigma_north=np.full(n, 0.001),
+        sigma_up=np.full(n, 0.001),
     )
 
 
@@ -82,7 +82,9 @@ def insar(fault_4x3, obs_points):
     n = len(lat)
     slip_ss = np.zeros(fault_4x3.n_patches)
     slip_ds = np.ones(fault_4x3.n_patches) * 2.0
-    ue, un, uz = fault_4x3.displacement(lat, lon, slip_ss, slip_ds)
+    ue, un, uz = fault_4x3.displacement(
+        lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+    )
     look_e = np.full(n, -0.38)
     look_n = np.full(n, 0.09)
     look_u = np.full(n, 0.92)
@@ -181,13 +183,13 @@ class TestCachedProperties:
 class TestInvertMethodParity:
     def test_unregularized_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
-        r_method = sys.invert()
+        r_method = sys.solve()
         r_func = invert(fault_4x3, gnss)
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_regularized_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
-        r_method = sys.invert(regularization_strength=10.0)
+        r_method = sys.solve(regularization_strength=10.0)
         r_func = invert(
             fault_4x3, gnss, regularization="laplacian", regularization_strength=10.0
         )
@@ -195,7 +197,7 @@ class TestInvertMethodParity:
 
     def test_multi_dataset_matches_wrapper(self, fault_4x3, gnss, insar):
         sys = LinearSystem(fault_4x3, [gnss, insar], regularization="damping")
-        r_method = sys.invert(regularization_strength=1.0)
+        r_method = sys.solve(regularization_strength=1.0)
         r_func = invert(
             fault_4x3,
             [gnss, insar],
@@ -206,13 +208,13 @@ class TestInvertMethodParity:
 
     def test_strike_only_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, components="strike")
-        r_method = sys.invert()
+        r_method = sys.solve()
         r_func = invert(fault_4x3, gnss, components="strike")
         np.testing.assert_allclose(r_method.slip_vector, r_func.slip_vector)
 
     def test_nnls_matches_wrapper(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, regularization="damping")
-        r_method = sys.invert(regularization_strength=1.0, bounds=(0, None))
+        r_method = sys.solve(regularization_strength=1.0, bounds=(0, None))
         r_func = invert(
             fault_4x3,
             gnss,
@@ -225,7 +227,7 @@ class TestInvertMethodParity:
     def test_invalid_regularization_strength_raises(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
         with pytest.raises(ValueError):
-            sys.invert(regularization_strength="abic")
+            sys.solve(regularization_strength="abic")
 
 
 # ======================================================================
@@ -324,7 +326,7 @@ class TestPostInversionParity:
     @pytest.fixture
     def result_and_sys(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
-        result = sys.invert(regularization_strength=5.0)
+        result = sys.solve(regularization_strength=5.0)
         return result, sys
 
     def test_dataset_diagnostics_matches_stored_result(
@@ -376,7 +378,7 @@ class TestPostInversionParity:
     def test_GtWG_reused_across_calls(self, fault_4x3, gnss):
         """GtWG cached_property is computed once and shared by all methods."""
         sys = LinearSystem(fault_4x3, gnss, regularization="laplacian")
-        result = sys.invert(regularization_strength=5.0)
+        result = sys.solve(regularization_strength=5.0)
         # Trigger several methods that all use GtWG
         _ = sys.model_resolution(result)
         _ = sys.model_covariance(result)
@@ -386,7 +388,7 @@ class TestPostInversionParity:
 
     def test_unregularized_covariance(self, fault_4x3, gnss):
         sys = LinearSystem(fault_4x3, gnss)
-        result = sys.invert()
+        result = sys.solve()
         Cm = sys.model_covariance(result)
         # Unregularized: Cm = (GtWG)^{-1}, so GtWG @ Cm ≈ I
         product = sys.GtWG @ Cm

@@ -9,20 +9,20 @@ regularization rules are specified in [conventions](conventions.md).
 | Term | Symbol | GeoDef name | Meaning |
 |---|---:|---|---|
 | Data vector | $d$ | `dataset.obs` | Observed GNSS components, InSAR line of sight, or vertical motion. |
-| Model vector | $m$ | `result.slip_vector` | Slip parameters in the selected basis; the expert view is blocked by component. |
-| Green's matrix | $G$ | `geodef.greens.matrix(...)` | Linear map from unit slip on each patch to predicted observations. |
-| Prediction | $Gm$ | `result.predicted`; `invert.prediction(...)` | Noise-free data implied by the estimated model. |
-| Residual | $r=d-Gm$ | `result.residuals`; `invert.residual(...)` | Observed minus predicted data. |
-| Noise | $\epsilon$ | synthetic noise; covariance metadata | Measurement and model discrepancy added to the prediction. |
+| Model vector | $m$ | `result.slip_vector` | Slip parameters in the selected basis, blocked by component: strike-slip values, then dip-slip values. |
+| Green's matrix | $G$ | `system.G`; `geodef.greens.matrix(...)` | Linear map from unit slip on each patch to predicted observations. |
+| Prediction | $Gm$ | `result.predicted`; `result.prediction()` | Noise-free data implied by the estimated model. |
+| Residual | $r=d-Gm$ | `result.residuals`; `result.residual()` | Observed minus predicted data. |
+| Noise | $\epsilon$ | `rng=` in `GNSS.synthetic(...)` | Measurement and model discrepancy added to the prediction. |
 | Data covariance | $C_d$ | `dataset.covariance` | Variances and correlations assumed for the data errors. |
-| Weight/precision matrix | $W=C_d^{-1}$ | `geodef.greens.stack_weights(...)` | Inverse covariance used in weighted misfit. |
+| Weight/precision matrix | $W=C_d^{-1}$ | `system.W` | Inverse covariance used in weighted misfit. |
 | Regularization operator | $L$ | `regularization=` | Linear operator that encodes smoothing, damping, stress, or a custom prior. |
 | Regularization strength | $\lambda$ | `regularization_strength=` | Weight multiplying $\lVert L(m-m_{ref})\rVert^2$; it is not squared again. |
 | Reference model | $m_{ref}$ | `regularization_target=` | Model toward which regularization pulls the solution. |
 | Objective | $\Phi(m)$ | solved by `geodef.solve(...)` | Weighted data misfit plus regularization penalty. |
-| Model covariance | $C_m$ | `geodef.invert.model_covariance(...)` | Linear-Gaussian covariance conditional on the assumed geometry, noise, and regularization. |
-| Model resolution | $R$ | `geodef.invert.model_resolution(...)` | Map from true model parameters to their expected recovered values. |
-| Chi-squared | $\chi^2$ | `diagnostic.chi2` | Unreduced weighted squared residual, $r^TWr$. |
+| Model covariance | $C_m$ | `result.covariance()`; `result.uncertainty()` | Linear-Gaussian covariance conditional on the assumed geometry, noise, and regularization. |
+| Model resolution | $R$ | `result.resolution()` | Map from true model parameters to their expected recovered values. |
+| Chi-squared | $\chi^2$ | `result.diagnostics()[name].chi2` | Unreduced weighted squared residual, $r^TWr$. |
 | Reduced chi-squared | $\chi^2_\nu$ | `result.reduced_chi2` | Chi-squared divided by degrees of freedom. |
 | Root-mean-square residual | RMS | `diagnostic.rms` | Unweighted residual scale in the data's declared units. |
 | Weighted RMS | WRMS | `diagnostic.wrms` | Residual scale accounting for observation weights. |
@@ -31,12 +31,13 @@ regularization rules are specified in [conventions](conventions.md).
 
 | Term | Symbol | GeoDef name | Meaning |
 |---|---:|---|---|
-| Fault patch | — | one element of `Fault` | Rectangular or triangular piece with spatially constant slip. |
+| Fault patch | — | one element of `Fault` | Rectangular or triangular piece with spatially constant slip. Row 0 of a planar grid is the shallowest. |
+| Patch corners | — | `fault.corners`; `fault.corners_geo` | Corner coordinates of every patch in local meters or as longitude, latitude, depth. |
 | Strike | $\phi$ | `fault.strike` | Clockwise angle from north; the fault dips to the strike's right. |
 | Dip | $\delta$ | `fault.dip` | Downward angle from horizontal. |
 | Rake | $\rho$ | `result.slip_rake`; `rake=` | Slip direction within the fault plane. |
-| Strike slip | $s_s$ | `result.strike_slip` | Slip parallel to patch strike under GeoDef's sign convention. |
-| Dip slip | $s_d$ | `result.dip_slip` | Slip down/up the fault plane under GeoDef's rake convention. |
+| Strike slip | $s_s$ | `strike_slip=`; `result.strike_slip` | Slip parallel to patch strike; positive is left-lateral. |
+| Dip slip | $s_d$ | `dip_slip=`; `result.dip_slip` | Slip up or down the fault plane; positive is reverse (thrust). |
 | Slip magnitude | $s$ | `result.slip_magnitude` | $\sqrt{s_s^2+s_d^2}$ for each patch. |
 | Slip azimuth | — | `slip_azimuth=` | Geographic horizontal direction, clockwise from north. |
 | Plate-motion basis | — | `components="plate"` | Rake-parallel and rake-perpendicular coordinates tied to plate motion. |
@@ -51,12 +52,14 @@ regularization rules are specified in [conventions](conventions.md).
 
 | Term | GeoDef name | Meaning |
 |---|---|---|
-| GNSS | `geodef.data.gnss(...)` | East, north, and optionally up displacement or velocity at stations. |
-| InSAR | `geodef.data.insar(...)` | Surface motion projected onto a radar line-of-sight unit vector. |
+| GNSS | `geodef.GNSS(...)` | East, north, and optionally up displacement or velocity at stations. |
+| InSAR | `geodef.InSAR(...)` | Surface motion projected onto a radar line-of-sight unit vector. |
 | Look vector | `look_e`, `look_n`, `look_u` | Unit vector that defines positive InSAR line of sight in ENU coordinates. |
 | Line of sight | LOS | Scalar projection $u_E l_E+u_N l_N+u_U l_U$. |
 | Local frame | `geodef.LocalFrame` | WGS84 origin that gives local East, North, Up coordinates physical meaning. |
-| Dataset name | `dataset.dataset_name` | Stable label used to split joint predictions and diagnostics. |
+| Vertical data | `geodef.Vertical(...)` | Single-component vertical motion such as leveling or coral uplift. |
+| Synthetic data | `geodef.GNSS.synthetic(fault, ...)` | A dataset forward-modeled from prescribed slip, with optional seeded noise. |
+| Dataset name | `dataset.name` | Label used to split joint predictions and diagnostics; `station_names` labels individual sites. |
 | Spatial covariance | `geodef.data.spatial_covariance(...)` | Dense covariance generated from a distance-decay model plus nugget. |
 
 ## Inference and assessment
@@ -67,12 +70,13 @@ regularization rules are specified in [conventions](conventions.md).
 | Tikhonov regularization | `regularization=...` | Stabilizes an ill-conditioned inverse problem with a quadratic penalty. |
 | Laplacian smoothing | `regularization="laplacian"` | Penalizes spatial curvature in slip. |
 | Damping | `regularization="damping"` | Penalizes model magnitude using an identity operator. |
-| L-curve | `geodef.invert.lcurve(...)` | Selects a trade-off near the corner of misfit versus model norm. |
-| ABIC | `geodef.invert.abic_curve(...)` | Evidence-based comparison of regularization strengths. |
+| Linear system | `geodef.LinearSystem(fault, data, ...)` | The assembled $G$, $d$, $W$, and $L$ for one fault and its data; reused for sweeps and repeated solves. |
+| L-curve | `system.lcurve()` | Selects a trade-off near the corner of misfit versus model norm. |
+| ABIC | `system.abic_curve()` | Evidence-based comparison of regularization strengths. |
 | Cross-validation | `regularization_strength="cv"` | Selects strength by held-out prediction error. |
 | Bound | `bounds=(lower, upper)` | Per-parameter admissible interval. |
 | Linear inequality | `constraints=(C, d)` | Constraint of the form $Cm\le d$. |
-| Checkerboard test | tutorial 08 | Synthetic recovery test for a spatially alternating slip pattern. |
+| Checkerboard test | tutorial 08; `GNSS.synthetic(fault, dip_slip=checker, ...)` | Synthetic recovery test for a spatially alternating slip pattern. |
 | Spike test | tutorial 08 | Synthetic recovery test for one localized nonzero patch. |
 | Geometry parameters | $\theta$ | named mapping or expert `theta` array | Nonlinear location, depth, strike, dip, length, and width parameters. |
 | Variable projection | `geodef.invert.geometry_search(...)` | Outer nonlinear geometry search with slip solved linearly at each trial. |

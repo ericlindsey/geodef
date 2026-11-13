@@ -8,12 +8,16 @@ mapping is given here.
 ## Coordinate frames
 
 - **Geographic:** longitude and latitude in degrees (WGS84), depth in meters
-  **positive down**. When a function or array carries both horizontal
-  coordinates, the documented order for named/new APIs is **`lon, lat`**
-  (x, y order, as in GMT and GIS). Calls with several positional coordinate
-  arrays are keyword-only precisely so the order cannot be confused.
-  (`Fault.centers_geo` and `Mesh.centers_geo` follow this `[lon, lat, depth]`
-  order; `Fault.centers_local` gives the same centroids in ENU meters.)
+  **positive down**. Coordinates are always written **`lon`, then `lat`**
+  (x, y order, as in GMT and GIS), and every `Fault` and dataset call takes
+  them as keywords, `lon=..., lat=...`, so the order cannot be confused:
+  `fault.displacement(lon=, lat=, ...)`, `fault.greens_matrix(lon=, lat=)`,
+  `GNSS(lon=, lat=, ...)`. Arrays that hold both follow the same order:
+  `Fault.centers_geo`, `Fault.corners_geo`, and `Mesh.centers_geo` are
+  `[lon, lat, depth]`. Two older signatures are latitude-first and are being
+  retired: `LocalFrame(origin_lat, origin_lon)` and the low-level
+  `geodef.greens.*_greens(lat, lon, ...)` assembly functions; pass their
+  arguments by keyword.
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
   to a `LocalFrame` that records origin latitude, longitude, altitude, and
   projection. The current projection identifier is `"wgs84-enu"` (WGS84
@@ -21,7 +25,7 @@ mapping is given here.
   not make saved or combined local arrays ambiguous. Anything named `*_enu`
   or `*_local` uses its object's `.frame`; `z`/`up` is negative below the
   surface, while `depth` is positive down. Use `LocalFrame.to_enu`,
-  `to_geographic`, and explicit `transform_enu`/`geometry.to_frame` methods.
+  `to_geographic`, `transform_enu`, and `Fault.to_frame` to move between frames.
 - Kernel-native frames (Okada's fault-aligned x/y, DC3D internals,
   triangular dislocation coordinates) never appear in public signatures;
   they are converted at the adapter layer inside `geodef.greens`.
@@ -30,8 +34,9 @@ mapping is given here.
 
 All angles are degrees.
 
-- **Strike:** clockwise from North, 0–360. The fault dips to the right of
-  the strike direction.
+- **Strike:** clockwise from North, 0–360. The fault dips to the **right**
+  of the strike direction: a fault striking north dips east, so its shallow
+  edge is on the west and its deep edge on the east.
 - **Dip:** from horizontal, 0–90.
 - **Rake:** direction of hanging-wall slip measured in the fault plane,
   counterclockwise from the strike direction: 0 = left-lateral
@@ -45,6 +50,17 @@ All angles are degrees.
   local strike/dip plane. Plate coordinates are rake-parallel and
   rake-perpendicular; unlike raw triangle-local components, they can remain a
   smooth basis across a variable-orientation mesh.
+
+## Slip components
+
+Slip is given per patch as `strike_slip` and `dip_slip`, in meters, on every
+input (`fault.displacement`, `DataSet.synthetic`) and every result
+(`result.strike_slip`, `result.dip_slip`). A scalar applies to all patches.
+
+- **`strike_slip` > 0** is left-lateral (rake 0).
+- **`dip_slip` > 0** is reverse/thrust (rake 90); normal faulting is negative.
+- `result.slip_magnitude` and `result.slip_rake` are derived from the two.
+- `fault.moment(slip)` and `fault.magnitude(slip)` take slip **magnitude**.
 
 ## Units
 
@@ -62,9 +78,9 @@ All angles are degrees.
   first `N` entries are strike-slip, the last `N` dip-slip
   (`m[:N]`, `m[N:]`). Plate coordinates are likewise blocked
   `[rake_parallel | rake_perpendicular]`. Single-component bases (`'strike'`,
-  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. Use `geodef.slip` conversion
-  functions or the named arrays on `InversionResult` to recover physical
-  strike/dip components.
+  `'dip'`, `'rake'`, `'azimuth'`) have length `N`. The blocked vector is the
+  linear-algebra view (`G @ m`, `result.slip_vector`); everyday code uses the
+  named per-patch arrays above, and `geodef.slip.pack` / `unpack` convert.
 - **Green's matrix rows** follow each dataset's observation vector:
   GNSS with 3 components interleaves `[E, N, U]` per station (`[E, N]` for
   2-component data); InSAR contributes one LOS row per pixel; `Vertical`
@@ -73,11 +89,17 @@ All angles are degrees.
 - **Multiple datasets** stack rows dataset-by-dataset in the order given;
   `geodef.greens.stack_obs` / `stack_weights` build the matching stacked
   observation vector and weight matrix.
-- **Patch order** for structured rectangular grids varies along strike
-  fastest: patch `k = i_strike + n_length * j_dip`; use
+- **Patch order** for structured rectangular grids is row by row. **Row 0
+  is the shallowest row** (the up-dip edge of the fault); each following row
+  is one step down dip. Within a row, patches advance along strike. So patch
+  `k = i_strike + n_length * j_dip`; use
   `Fault.patch_index(strike_idx, dip_idx)` instead of hand-computing this.
   `Fault.reshape_patches` converts patch-first arrays to
   `[dip_index, strike_index, ...]`; `Fault.flatten_patches` reverses it.
+- **Patch corners** (`Fault.corners`, `Fault.corners_geo`) are ordered
+  top-left, top-right, bottom-right, bottom-left for rectangles, looking
+  along strike with "top" the shallow edge; triangles keep their vertex
+  order.
 
 ## Regularization
 
@@ -144,7 +166,8 @@ kinematic superposition, not a friction or earthquake-timing law.
 
 | Quantity | Sign |
 |---|---|
-| `depth`, `obs_depth`, fault files | positive down (m) |
+| `depth`, `Fault.depth`, `corners_geo[..., 2]`, fault files | positive down (m) |
+| `centers_local[..., 2]`, `corners[..., 2]` | positive up (m) |
 | ENU `up` / `z` coordinates, `Mesh.vertices_enu` | positive up (m) |
 | `Fault.planar(depth=...)` | centroid depth, positive down |
 

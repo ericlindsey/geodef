@@ -23,8 +23,8 @@ operator, kernel, or repeated expert computation.
 
 | Level | Use it when | Primary entry points | Course |
 |---|---|---|---|
-| Domain workflow | Building a forward model or estimating slip | `Fault`, `data.*`, `solve`, named result views | 01, 03–08 |
-| Matrices/operators | Inspecting ordering, custom priors, repeated sweeps, or diagnostics | `greens.matrix`, `invert.LinearSystem`, `invert.model_*` | 02–04, 08 |
+| Domain workflow | Building a forward model or estimating slip | `Fault`, `GNSS`/`InSAR`/`Vertical`, `solve`, result views and methods | 01, 03–08 |
+| Matrices/operators | Inspecting ordering, custom priors, repeated sweeps, or diagnostics | `greens.matrix`, `geodef.LinearSystem`, `result.covariance()` | 02–04, 08 |
 | Physics kernels | Validating a formulation or needing displacement/strain features below `Fault` | `okada`, `okada85`, `okada92`, `tri` | 01, 11 |
 
 The [quickstart](quickstart.md) stays entirely at the domain level. Tutorials 01
@@ -111,9 +111,9 @@ interpreting posterior samples.
 
 | Question | Tool | Warning |
 |---|---|---|
-| Does the prediction match the observed data? | `plot.prediction`, `plot.residual`, `invert.diagnostics` | A good fit does not identify the correct model. |
-| Which parameters are spatially smeared? | `invert.model_resolution` and resolution kernels | Resolution diagonal alone omits off-diagonal leakage. |
-| What is the conditional linear uncertainty? | `invert.model_covariance` / `model_uncertainty` | Geometry, prior, and model-form uncertainty are excluded. |
+| Does the prediction match the observed data? | `plot.prediction`, `plot.residual`, `result.diagnostics()` | A good fit does not identify the correct model. |
+| Which parameters are spatially smeared? | `result.resolution` and resolution kernels | Resolution diagonal alone omits off-diagonal leakage. |
+| What is the conditional linear uncertainty? | `result.covariance` / `model_uncertainty` | Geometry, prior, and model-form uncertainty are excluded. |
 | Can this network recover a feature of this size? | checkerboard or spike recovery | The answer depends on the synthetic pattern and noise model. |
 | Did the Bayesian sampler explore the target? | R-hat, ESS, divergences, trace/pair plots | Passing thresholds is necessary, not sufficient. |
 | Is the whole model family adequate? | residual structure, sensitivity studies, posterior predictive checks | No single scalar diagnostic establishes adequacy. |

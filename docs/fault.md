@@ -2,7 +2,7 @@
 
 > Conventions — axes, depth sign, angles, units, array ordering, regularization: see [`conventions.md`](conventions.md).
 
-The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Always create via factory classmethods, not `__init__` directly.
+The `Fault` class holds an immutable collection of fault patches (rectangular or triangular) and provides methods for forward modeling and I/O. Create one with a factory classmethod; the keyword-only constructor `Fault(lon=, lat=, depth=, strike=, dip=, length=, width=)` (or `vertices=` for triangles) is for file readers and tests.
 
 ## What a discretized fault represents
 
@@ -13,29 +13,35 @@ stronger data coverage or regularization. Patch size is a modeling choice, not
 the resolution of the resulting inversion; use model-resolution and synthetic
 recovery tests to learn what the data actually resolve.
 
-Strike is clockwise from north, dip is downward from horizontal, and rake is
-measured within the fault plane. GeoDef follows the local frame East, North,
-Up and uses depth positive downward.
+Strike is clockwise from north, dip is downward from horizontal, and the fault
+dips to the **right** of the strike direction. GeoDef follows the local frame
+East, North, Up and uses depth positive downward.
 
 ---
 
 ## Factory classmethods
 
-### `Fault.planar(*, lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
+### `Fault.planar(*, lon, lat, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None, frame=None)`
 
 Create a discretized planar fault directly from named geographic parameters:
 
 ```python
-fault = Fault.planar(
-    lat=0.0, lon=100.0, depth=30_000.0,
+fault = geodef.Fault.planar(
+    lon=100.0, lat=0.0, depth=30_000.0,
     strike=90.0, dip=15.0,
     length=100_000.0, width=50_000.0,
     n_length=10, n_width=5,
 )
-# → Fault with 50 rectangular patches, engine='okada'
+# → Fault(n_patches=50, engine='okada', grid_shape=(10, 5))
 ```
 
-Geographic arguments are keyword-only so latitude/longitude order cannot be
+`lon`, `lat`, and `depth` locate the **center** of the plane, so `depth` must be
+at least `0.5 * width * sin(dip)` for the fault to stay below the surface.
+`n_length` and `n_width` divide it into a grid whose first row is the
+shallowest. Subdividing does not change the plane: uniform slip on a 10 x 5
+grid produces the same displacement as on the single 100 km x 50 km patch.
+
+All arguments are keyword-only so latitude/longitude order cannot be
 confused. Pass an explicit frame when the fault must share local coordinates
 with another object:
 
@@ -44,7 +50,7 @@ frame = geodef.LocalFrame(-2.0, 100.0)
 fault = Fault.planar(..., frame=frame)
 ```
 
-### `Fault.planar_from_corner(lat, lon, depth, strike, dip, length, width, n_length=1, n_width=1)`
+### `Fault.planar_from_corner(*, lon, lat, depth, strike, dip, length, width, n_length=1, n_width=1, medium=None)`
 
 Same as `planar()` but the reference point is the top-left (shallowest, along-strike start) corner instead of the centroid.
 
@@ -58,7 +64,7 @@ mesh = from_slab2("sum_slab2_dep.grd", bounds=(95, 106, -6, 6))
 fault = Fault.from_mesh(mesh)
 ```
 
-### `Fault.from_triangles(vertices, *, frame=None, ref_lat=None, ref_lon=None, triangles=None)`
+### `Fault.from_triangles(vertices, *, triangles=None, frame=None, ref_lat=None, ref_lon=None, medium=None)`
 
 Create a triangular fault from ENU arrays in either of two forms:
 
@@ -73,7 +79,10 @@ fault = Fault.from_triangles(
 )
 ```
 
-### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0)`
+`frame` is the `LocalFrame` the vertices are expressed in;
+`ref_lat=..., ref_lon=...` is shorthand for `frame=LocalFrame(ref_lat, ref_lon)`.
+
+### `Fault.load(fname, *, format=None, ref_lat=0.0, ref_lon=0.0, medium=None)`
 
 Load from a text file. Supported formats:
 
@@ -92,23 +101,30 @@ fault = Fault.load("cascadia", format="ned")  # reads cascadia.ned + cascadia.tr
 
 ---
 
-## Properties
+## Attributes and properties
 
-| Property | Shape | Description |
-|----------|-------|-------------|
+| Name | Shape | Description |
+|------|-------|-------------|
 | `n_patches` | scalar | Number of patches |
-| `engine` | `str` | `"okada"` or `"tri"` |
-| `frame` | `LocalFrame` | Frame defining every local-coordinate view and triangular vertex |
+| `lon`, `lat` | `(N,)` | Patch center coordinates in degrees |
+| `depth` | `(N,)` | Patch center depth in meters, positive down |
+| `strike`, `dip` | `(N,)` | Degrees clockwise from north; degrees from horizontal |
+| `length`, `width` | `(N,)` or `None` | Rectangular patch dimensions in meters (`None` for triangles) |
+| `vertices` | `(N, 3, 3)` or `None` | Triangle corners in local `[east, north, up]` meters (`None` for rectangles) |
+| `engine` | `str` | `"okada"` (rectangles) or `"tri"` (triangles) |
 | `grid_shape` | `(nL, nW)` or `None` | Structured grid dimensions |
-| `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` (documented geographic order, matches `Mesh.centers_geo`) |
-| `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` (lazy, cached) |
-| `strike` | `(N,)` | Patch strike angles in degrees clockwise from north |
-| `dip` | `(N,)` | Patch dip angles in degrees from horizontal |
+| `medium` | `ElasticMedium` | Shear modulus and Poisson's ratio |
+| `frame` | `LocalFrame` | Frame defining every local-coordinate view |
+| `centers_geo` | `(N, 3)` | Patch centers as `[lon, lat, depth_m]` |
+| `centers_local` | `(N, 3)` | Patch centers as `[east_m, north_m, up_m]` |
+| `corners` | `(N, 4 or 3, 3)` | Patch corners as `[east_m, north_m, up_m]`; rectangles run top-left, top-right, bottom-right, bottom-left with "top" the shallow edge |
+| `corners_geo` | `(N, 4 or 3, 3)` | Patch corners as `[lon, lat, depth_m]` |
 | `areas` | `(N,)` | Patch areas in m² |
-| `laplacian` | `(N, N)` | Finite-difference (structured) or KNN Laplacian (unstructured); lazy, cached |
-| `vertices_2d` | `(N, 4, 2)` | Rectangular patch corners as `[lon, lat]` |
-| `vertices_3d` | `(N, 4, 3)` | Rectangular patch corners as `[lon, lat, depth_km]` |
-| `patch_outlines` | `(N, 5, 2)` | Closed rectangular patch outlines as `[lon, lat]` |
+| `laplacian` | `(N, N)` | Finite-difference (structured) or nearest-neighbor (unstructured) smoothing operator |
+
+Patches of a planar grid are stored row by row: row 0 is the **shallowest**
+row and each following row is one step down dip, to the right of the strike
+direction. Within a row, patches advance along strike.
 
 All geometry arrays are read-only after construction.
 
@@ -120,33 +136,34 @@ position; incompatible frames are never silently substituted.
 
 ## Forward modeling
 
-### `fault.displacement(obs_lat, obs_lon, slip_strike, slip_dip=0.0)`
+### `fault.displacement(lon=, lat=, strike_slip=0.0, dip_slip=0.0)`
 
-Compute surface displacements from strike-slip and dip-slip scalars or arrays.
+Compute surface displacements from strike-slip and dip-slip scalars or
+per-patch arrays. Coordinates are keyword-only and may have any shape; the
+three returned arrays have that same shape.
 
 ```python
 strike_slip = np.zeros(fault.n_patches)
 dip_slip = np.ones(fault.n_patches)
 east, north, up = fault.displacement(
-    obs_lat,
-    obs_lon,
-    slip_strike=strike_slip,
-    slip_dip=dip_slip,
+    lon=obs_lon, lat=obs_lat,
+    strike_slip=strike_slip,
+    dip_slip=dip_slip,
 )
 ```
 
-### `fault.greens_matrix(obs_lat, obs_lon, kind="displacement", obs_depth=None)`
+### `fault.greens_matrix(lon=, lat=, kind="displacement", depth=None)`
 
 Build the raw Green's matrix.
 
 ```python
-G = fault.greens_matrix(obs_lat, obs_lon)
+G = fault.greens_matrix(lon=obs_lon, lat=obs_lat)
 # shape (3*n_obs, 2*N) for displacement
 # Columns [:N] = strike-slip, [N:] = dip-slip
 ```
 
 `kind='strain'` returns shape `(4*n_obs, 2*N)` for rectangular faults and
-`(6*n_obs, 2*N)` for triangular faults. Pass `obs_depth` in meters, positive
+`(6*n_obs, 2*N)` for triangular faults. Pass `depth` in meters, positive
 down, for internal strain points; otherwise observations are at the surface.
 
 ---
@@ -206,12 +223,27 @@ values = fault.flatten_patches(grid)  # inverse conversion
 fault.save("output.txt", format="center")
 fault.save("output.seg", format="seg", ref_lat=0.0, ref_lon=100.0)
 fault.save("triangular_fault", format="ned")  # writes .ned + .tri
+fault.to_gmt("patches.gmt", values=result.slip_magnitude)  # closed polygons, -Z colored
 ```
+
+---
+
+## Checking and copying
+
+```python
+print(fault.validate())            # errors and warnings as a ValidationReport
+stiffer = fault.with_medium(geodef.ElasticMedium(shear_modulus=40e9))
+shared = fault.to_frame(other.frame)   # same physical fault, another local frame
+```
+
+`validate()` reports patches or vertices above the free surface, degenerate
+triangles, extreme aspect ratios, and suspicious strike values. `Fault` objects
+are immutable; `with_medium` and `to_frame` return new faults.
 
 ---
 
 ## Coordinate conventions
 
-- Geographic: latitude, longitude, depth in meters (positive down).
+- Geographic: longitude, latitude (degrees), depth in meters (positive down).
 - Local Cartesian: East, North, Up in meters.
 - The `.seg` format uses local Cartesian (North, East, Depth) with a user-supplied `ref_lat`/`ref_lon`.

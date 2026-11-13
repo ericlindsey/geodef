@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # whenever a change to any engine (okada85/okada92/tri), Green's assembly, or
 # projection alters numerical output: every existing cache entry then misses,
 # so a stale pre-fix matrix can never be served. Record bumps in CHANGELOG.md.
-KERNEL_VERSION: int = 1
+KERNEL_VERSION: int = 2
 
 
 @dataclasses.dataclass

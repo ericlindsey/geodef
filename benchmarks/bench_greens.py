@@ -34,9 +34,7 @@ import geodef
 from geodef import backend, greens
 
 
-def make_problem(
-    npatch: int, nobs: int, seed: int = 0
-) -> tuple[np.ndarray, ...]:
+def make_problem(npatch: int, nobs: int, seed: int = 0) -> tuple[np.ndarray, ...]:
     """Build a synthetic dipping-fault grid and surface observation set.
 
     Args:
@@ -87,16 +85,20 @@ def main() -> None:
     """Run the benchmark sweep and print a comparison table."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--npatch", type=int, nargs="+", default=[50, 200, 800],
+        "--npatch",
+        type=int,
+        nargs="+",
+        default=[50, 200, 800],
         help="Patch counts to sweep",
     )
     parser.add_argument(
-        "--nobs", type=int, nargs="+", default=[200, 1000],
+        "--nobs",
+        type=int,
+        nargs="+",
+        default=[200, 1000],
         help="Observation counts to sweep",
     )
-    parser.add_argument(
-        "--repeats", type=int, default=3, help="Timed repeats per case"
-    )
+    parser.add_argument("--repeats", type=int, default=3, help="Timed repeats per case")
     cli = parser.parse_args()
 
     geodef.cache.disable()
@@ -135,8 +137,7 @@ def main() -> None:
                 )
             else:
                 print(
-                    f"{npatch:>7} {nobs:>6} {t_np:>10.4f} "
-                    f"{'-':>12} {'-':>13} {'-':>8}"
+                    f"{npatch:>7} {nobs:>6} {t_np:>10.4f} {'-':>12} {'-':>13} {'-':>8}"
                 )
 
 

@@ -32,7 +32,7 @@ Convert geodetic coordinates (degrees, meters) to ECEF (meters).
 
 ```python
 from geodef.transforms import geod2ecef
-X, Y, Z = geod2ecef(lat=37.0, lon=-122.0, alt=0.0)
+X, Y, Z = geod2ecef(lon=-122.0, lat=37.0, alt=0.0)
 ```
 
 ### `ecef2geod(X, Y, Z, ellps=WGS84, crs=None) → (lat, lon, alt)`

@@ -4,6 +4,15 @@
 
 Assembles projected Green's matrices from `Fault` and `DataSet` objects, and provides Laplacian regularization operators.
 
+Most work never calls this module directly. There are three levels, from most
+to least convenient:
+
+| You want | Use |
+|---|---|
+| The matrices of an inversion (`G`, `d`, `W`, `L`), ready to solve or inspect | `system = geodef.LinearSystem(fault, datasets, ...)`, then `system.G` |
+| `G` for a fault and datasets, in each dataset's observation layout | `geodef.greens.matrix(fault, datasets)` |
+| The raw three-component `G` at arbitrary points | `fault.greens_matrix(lon=, lat=)` |
+
 ## Physical and algebraic picture
 
 Elastic dislocation models are linear in slip. After discretizing a fault into
@@ -42,7 +51,7 @@ G = geodef.greens.matrix(fault, [gnss, insar])       # rows stacked vertically
 By default columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
 
 Pass `components=` to have `matrix()` return a single-component matrix (shape
-`(n_obs, N)`) directly, using the same slip basis as `geodef.invert.solve()`:
+`(n_obs, N)`) directly, using the same slip basis as `geodef.solve()`:
 
 ```python
 G_strike = geodef.greens.matrix(fault, gnss, components='strike')
@@ -66,7 +75,7 @@ triangle orientations.
 
 The reduction primitive behind `matrix(components=...)`. Apply it to any
 already-assembled `(M, 2*N)` matrix — a Green's matrix or a stress kernel — to
-project it into a one-component slip basis. `geodef.invert.solve()` uses it internally
+project it into a one-component slip basis. `geodef.solve()` uses it internally
 for `components='strike'|'dip'|'rake'|'azimuth'|'plate'` and to project
 stress-kernel regularization into the active basis.
 
@@ -86,20 +95,27 @@ Build block-diagonal inverse-covariance weight matrix.
 W = geodef.greens.stack_weights([gnss, insar])   # shape (total_n_obs, total_n_obs)
 ```
 
-`geodef.invert.solve()` calls these internally; use them directly when assembling `G @ m` by hand.
+`LinearSystem` calls these internally and exposes the results as `system.d`
+and `system.W`; use the functions directly when assembling `G @ m` by hand.
 
 `W` is the inverse covariance, not a vector of standard deviations. In
 derivations it is often clearer to whiten the system with a matrix `R` such
 that `R.T @ R = W`, then solve with `R @ G` and `R @ d`.
 
+### `project(data, G_raw) → np.ndarray`
+
+Project a raw three-component displacement matrix (from
+`fault.greens_matrix`) into a dataset's observation layout by applying
+`data.project(east, north, up)` to every column. `matrix()` does this for you.
+
+```python
+G_raw = fault.greens_matrix(lon=insar.lon, lat=insar.lat)   # (3 * n_pixels, 2 * N)
+G_los = geodef.greens.project(insar, G_raw)                 # (n_pixels, 2 * N)
+```
+
 ---
 
 ## Laplacian operators
-
-### `project(data, G_raw) → np.ndarray`
-
-Project a raw three-component displacement matrix into a dataset's observed
-components. This is useful when assembling a custom forward operator.
 
 ### `laplacian(fault) → np.ndarray`
 
@@ -150,11 +166,14 @@ transferred blindly between meshes.
 Model resolution matrix `R = pinv(G) @ G` for an unregularized system — how
 each true model parameter maps into the recovered one (`R = I` means perfect
 recovery). For the resolution of a *regularized* inversion, use
-`geodef.invert.model_resolution(...)`, which accounts for the smoothing operator.
+`result.resolution()`, which accounts for the smoothing operator.
 
 ## Low-level Green's matrix functions
 
-These operate on raw geographic arrays rather than `Fault`/`DataSet` objects. Useful for custom workflows.
+These operate on raw geographic arrays rather than `Fault`/`DataSet` objects,
+and are what `fault.greens_matrix` calls. Their leading arguments are
+**latitude first** (`lat, lon, lat0, lon0`), unlike the rest of GeoDef; pass
+them by keyword, or prefer `fault.greens_matrix(lon=, lat=)`.
 
 ### `displacement_greens(lat, lon, lat0, lon0, depth, strike, dip, L, W, nu=0.25)`
 

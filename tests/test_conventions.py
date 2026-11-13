@@ -73,12 +73,12 @@ def _gnss(lat: np.ndarray, lon: np.ndarray, d: np.ndarray) -> GNSS:
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=d[:, 0],
-        vn=d[:, 1],
-        vu=d[:, 2],
-        se=s,
-        sn=s,
-        su=s,
+        east=d[:, 0],
+        north=d[:, 1],
+        up=d[:, 2],
+        sigma_east=s,
+        sigma_north=s,
+        sigma_up=s,
     )
 
 
@@ -100,7 +100,7 @@ class TestLinearPaths:
         a = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        b = geodef.invert.LinearSystem(fault, gnss, L).invert(
+        b = geodef.invert.LinearSystem(fault, gnss, L).solve(
             regularization_strength=LAM
         )
         npt.assert_allclose(a.slip_vector, b.slip_vector, rtol=1e-12)
@@ -140,7 +140,7 @@ class TestLinearPaths:
         result = geodef.invert.solve(
             fault, gnss, regularization=L, regularization_strength=LAM
         )
-        C = geodef.invert.model_covariance(result, fault, gnss)
+        C = result.covariance()
         G = greens(fault, gnss)
         W = stack_weights(gnss)
         C_manual = np.linalg.inv(G.T @ W @ G + LAM * (L.T @ L))

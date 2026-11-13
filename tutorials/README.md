@@ -36,14 +36,32 @@ their listed prerequisites.
 | 13 | `13_model_misspecification.ipynb` | Sensitivity analysis, bias, residual forensics | 45–60 min | base; Chapters 08–09 |
 | 14 | `14_bayesian_inversion.ipynb` | Priors, positivity, NUTS, sensitivity, convergence, prediction | 90–120 min | `geodef[bayes]`; Chapter 08 |
 
-The first two double-demonstrations deliberately expose the blocked array
-layout. Routine later chapters use named result views and named per-dataset
-diagnostics so ordering is manipulated only when ordering is the lesson.
+Chapters 01–03 deliberately build data the long way, with `G @ m` and the
+blocked slip vector, because that linear algebra is their subject. From
+Chapter 04 on, the shared scenario is built with
+`geodef.GNSS.synthetic(fault, ..., rng=rng)` and slip is handled as named
+per-patch arrays (`dip_slip=`, `result.dip_slip`), so ordering is manipulated
+only when ordering is the lesson.
+
+The vocabulary the course uses, in the order it appears:
+
+| Call | First used |
+|---|---|
+| `geodef.Fault.planar(lon=, lat=, depth=, ...)`, `fault.displacement(lon=, lat=, dip_slip=)` | 01 |
+| `fault.greens_matrix(lon=, lat=)`, `geodef.greens.matrix(fault, data)` | 01–02 |
+| `geodef.GNSS(lon=, lat=, east=, north=, up=, sigma=)`, `geodef.solve(fault, data, ...)` | 03 |
+| `geodef.GNSS.synthetic(...)`, `geodef.LinearSystem(...).lcurve()` / `.abic_curve()` | 04 |
+| `geodef.InSAR(...)`, `result.diagnostics()` | 05 |
+| `result.uncertainty()`, `result.resolution()`, `result.covariance()` | 06, 08 |
+| `geodef.invert.geometry_search(...)` | 09–10 |
+| `geodef.Fault.from_triangles(...)`, `geodef.slip.from_rake(...)` | 11 |
+| `geodef.bayes.SlipPosterior`, `geodef.bayes.sample` | 14 |
 
 ## Reference material
 
 - `reference_plots.ipynb` — an exhaustive gallery of every `geodef.plot`
-  function, kept outside the numbered methods path (not executed in CI).
+  function, kept outside the numbered methods path. It is executed by the
+  test suite alongside the chapters.
 - Real mesh building (traces, polygons, slab2.0) lives as a worked example in
   `examples/mesh_generation.ipynb`.
 

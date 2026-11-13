@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from geodef import backend, data, invert, plot
+from geodef import GNSS, Vertical, backend, invert, plot
 from geodef.fault import Fault
 
 
@@ -31,8 +31,10 @@ def fault():
 def _datasets(fault):
     lon = np.array([99.9, 100.0, 100.1])
     lat = np.array([-0.1, 0.0, 0.1])
-    east, north, up = fault.displacement(lat, lon, [1.0], [0.25])
-    gnss = data.gnss(
+    east, north, up = fault.displacement(
+        lat=lat, lon=lon, strike_slip=[1.0], dip_slip=[0.25]
+    )
+    gnss = GNSS(
         lon=lon,
         lat=lat,
         east=east,
@@ -43,7 +45,7 @@ def _datasets(fault):
         sigma_up=0.002,
         name="gnss",
     )
-    vertical = data.vertical(
+    vertical = Vertical(
         lon=lon,
         lat=lat,
         displacement=up,
@@ -95,7 +97,7 @@ def test_automatic_regularization_selection_is_recorded(fault):
 
 def test_explicit_duplicate_dataset_names_raise(fault):
     gnss, _ = _datasets(fault)
-    duplicate = data.horizontal_gnss(
+    duplicate = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -111,7 +113,7 @@ def test_explicit_duplicate_dataset_names_raise(fault):
 
 def test_unnamed_datasets_receive_stable_readable_names(fault):
     gnss, _ = _datasets(fault)
-    first = data.horizontal_gnss(
+    first = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -119,7 +121,7 @@ def test_unnamed_datasets_receive_stable_readable_names(fault):
         sigma_east=gnss.sigma_east,
         sigma_north=gnss.sigma_north,
     )
-    second = data.horizontal_gnss(
+    second = GNSS(
         lon=gnss.lon,
         lat=gnss.lat,
         east=gnss.east,
@@ -135,7 +137,7 @@ def test_unnamed_datasets_receive_stable_readable_names(fault):
 
 def test_joint_inversion_rejects_mixed_measurement_semantics(fault):
     gnss, vertical = _datasets(fault)
-    velocity = data.vertical(
+    velocity = Vertical(
         lon=vertical.lon,
         lat=vertical.lat,
         displacement=vertical.obs,
@@ -152,9 +154,9 @@ def test_assessment_functions_return_name_keyed_views(fault):
     gnss, vertical = _datasets(fault)
     result = invert.solve(fault, [gnss, vertical])
 
-    predictions = invert.prediction(result)
-    residuals = invert.residual(result)
-    diagnostics = invert.diagnostics(result)
+    predictions = result.prediction()
+    residuals = result.residual()
+    diagnostics = result.diagnostics()
 
     assert tuple(predictions) == result.dataset_names
     assert tuple(residuals) == result.dataset_names
@@ -171,7 +173,7 @@ def test_assessment_functions_return_name_keyed_views(fault):
 def test_summary_is_human_readable_and_named(fault):
     result = invert.solve(fault, list(_datasets(fault)))
 
-    text = invert.summary(result)
+    text = result.summary()
 
     assert "gnss" in text
     assert "leveling" in text
@@ -195,3 +197,61 @@ def test_result_plot_functions_need_no_manual_slicing(fault, function, expected_
 
     assert axes.get_title() == expected_title
     plt.close(axes.figure)
+
+
+def test_result_remembers_its_problem_for_assessment(fault):
+    gnss, vertical = _datasets(fault)
+
+    result = invert.solve(fault, [gnss, vertical])
+
+    assert result.fault is fault
+    assert result.datasets == [gnss, vertical]
+    covariance = result.covariance()
+    assert covariance.shape == (2, 2)
+    np.testing.assert_allclose(result.uncertainty(), np.sqrt(np.diag(covariance)))
+    np.testing.assert_allclose(result.resolution(), np.eye(2), atol=1e-8)
+
+
+def test_attach_restores_assessment_on_a_loaded_result(fault, tmp_path):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+    path = tmp_path / "result.npz"
+    result.save(path)
+
+    loaded = invert.InversionResult.load(path, fault=fault, datasets=[gnss, vertical])
+
+    np.testing.assert_allclose(loaded.uncertainty(), result.uncertainty())
+
+
+def test_linear_system_solves_repeatedly_without_reassembly(fault):
+    gnss, vertical = _datasets(fault)
+    system = invert.LinearSystem(fault, [gnss, vertical], regularization="damping")
+
+    weak = system.solve(regularization_strength=1e-6)
+    strong = system.solve(regularization_strength=1e6)
+
+    assert weak.system is system and strong.system is system
+    assert np.linalg.norm(strong.slip_vector) < np.linalg.norm(weak.slip_vector)
+
+
+def test_prediction_and_residual_select_one_dataset_by_object_or_name(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, [gnss, vertical])
+
+    np.testing.assert_array_equal(
+        result.prediction(vertical), result.prediction()["leveling"]
+    )
+    np.testing.assert_array_equal(result.prediction("gnss"), result.predicted[:9])
+    np.testing.assert_allclose(
+        result.residual(gnss), gnss.obs - result.prediction(gnss)
+    )
+
+
+def test_prediction_rejects_a_dataset_that_was_not_inverted(fault):
+    gnss, vertical = _datasets(fault)
+    result = invert.solve(fault, gnss)
+
+    with pytest.raises(ValueError, match="not one of the datasets"):
+        result.prediction(vertical)
+    with pytest.raises(KeyError, match="leveling"):
+        result.prediction("leveling")

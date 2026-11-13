@@ -12,8 +12,6 @@ axes, signs, angles, and ordering.
   with separately executed worked solutions.
 - [Worked examples](../examples/README.md): real or project-style workflows
   with provenance, assumptions, validation, and interpretation.
-- [Usability baselines](usability.md): golden beginner workflows and tracked
-  transformation/runtime metrics.
 
 ## Domain workflow
 

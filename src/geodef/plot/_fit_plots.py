@@ -96,12 +96,10 @@ def prediction(
     Returns:
         The axes used for plotting.
     """
-    from geodef.invert import prediction as split_prediction
-    from geodef.invert import residual as split_residual
 
     ax = _ensure_axes(ax)
-    predicted = split_prediction(result)
-    residuals = split_residual(result)
+    predicted = result.prediction()
+    residuals = result.residual()
     for name in predicted:
         observed = predicted[name] + residuals[name]
         ax.scatter(observed, predicted[name], s=12, alpha=0.7, label=name)
@@ -136,10 +134,9 @@ def residual(
     Returns:
         The axes used for plotting.
     """
-    from geodef.invert import residual as split_residual
 
     ax = _ensure_axes(ax)
-    for name, values in split_residual(result).items():
+    for name, values in result.residual().items():
         ax.hist(values, bins="auto", alpha=0.55, label=name)
     ax.set_xlabel(f"Observation - prediction [{result.units}]")
     ax.set_ylabel("Count")
@@ -167,7 +164,6 @@ def diagnostics(
     Raises:
         ValueError: If ``metric`` is not supported.
     """
-    from geodef.invert import diagnostics as result_diagnostics
 
     labels = {
         "reduced_chi2": "Reduced chi-squared",
@@ -177,7 +173,7 @@ def diagnostics(
     }
     if metric not in labels:
         raise ValueError(f"metric must be one of {sorted(labels)}, got {metric!r}")
-    values = result_diagnostics(result)
+    values = result.diagnostics()
     ax = _ensure_axes(ax)
     ax.bar(list(values), [getattr(value, metric) for value in values.values()])
     ax.set_ylabel(labels[metric])
@@ -199,13 +195,12 @@ def summary(
     Returns:
         The axes used for plotting.
     """
-    from geodef.invert import summary as format_summary
 
     ax = _ensure_axes(ax)
     ax.text(
         0.02,
         0.98,
-        format_summary(result),
+        result.summary(),
         ha="left",
         va="top",
         family="monospace",

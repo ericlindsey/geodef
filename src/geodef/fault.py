@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 
-from geodef import _engines, _fault_io, transforms
+from geodef import _fault_io, transforms
 from geodef import greens as _greens
 from geodef._fault_io import _seg_to_patches as _seg_to_patches
 from geodef.geometry import (
@@ -36,120 +36,116 @@ if TYPE_CHECKING:
 class Fault:
     """Immutable collection of fault patches with forward-modeling methods.
 
-    Create via factory classmethods rather than calling ``__init__`` directly:
+    A fault is either a set of rectangular patches (Okada dislocations,
+    ``engine == "okada"``) or a set of triangles (``engine == "tri"``).
+    Create one with a factory classmethod rather than the constructor:
 
-    - ``Fault.planar(...)`` — discretized planar fault from center parameters
-    - ``Fault.planar_from_corner(...)`` — from top-left corner
-    - ``Fault.load(fname)`` — from a text file
+    - ``Fault.planar(...)``: a planar fault divided into a patch grid
+    - ``Fault.planar_from_corner(...)``: the same, anchored at a corner
+    - ``Fault.from_triangles(...)`` / ``Fault.from_mesh(...)``: triangles
+    - ``Fault.load(fname)``: from a text file
+
+    Geometry is stored in public read-only arrays: ``lon``, ``lat``,
+    ``depth``, ``strike``, ``dip`` (one value per patch), plus ``length``
+    and ``width`` for rectangles or ``vertices`` for triangles.
 
     Args:
-        lat: Patch center latitudes, shape (N,).
-        lon: Patch center longitudes, shape (N,).
+        lon: Patch center longitudes in degrees, shape (N,).
+        lat: Patch center latitudes in degrees, shape (N,).
         depth: Patch centroid depths in meters (positive down), shape (N,).
         strike: Strike angles in degrees, shape (N,).
         dip: Dip angles in degrees, shape (N,).
-        length: Along-strike lengths in meters, shape (N,). None for triangular.
-        width: Down-dip widths in meters, shape (N,). None for triangular.
-        vertices: Triangle vertices in local ENU, shape (N, 3, 3). None for rectangular.
+        length: Along-strike patch lengths in meters, shape (N,).
+            Rectangular faults only.
+        width: Down-dip patch widths in meters, shape (N,). Rectangular
+            faults only.
+        vertices: Triangle corners in local East-North-Up meters, shape
+            (N, 3, 3). Giving vertices makes the fault triangular.
         grid_shape: ``(n_length, n_width)`` for structured rectangular grids.
-        engine: Green's function engine, ``"okada"`` or ``"tri"``.
         medium: Elastic half-space parameters used by Green's functions,
             stress kernels, and moment. Defaults to
             ``geodef.medium.DEFAULT_MEDIUM`` (30 GPa Poisson solid).
-        frame: Local frame for local-coordinate views. Inferred from mean patch
-            coordinates for direct legacy construction.
+        frame: Local frame for local-coordinate views. Defaults to a frame
+            centered on the mean patch location.
     """
 
     def __init__(
         self,
-        lat: np.ndarray,
-        lon: np.ndarray,
-        depth: np.ndarray,
-        strike: np.ndarray,
-        dip: np.ndarray,
-        length: np.ndarray | None,
-        width: np.ndarray | None,
         *,
-        vertices: np.ndarray | None = None,
+        lon: npt.ArrayLike,
+        lat: npt.ArrayLike,
+        depth: npt.ArrayLike,
+        strike: npt.ArrayLike,
+        dip: npt.ArrayLike,
+        length: npt.ArrayLike | None = None,
+        width: npt.ArrayLike | None = None,
+        vertices: npt.ArrayLike | None = None,
         grid_shape: tuple[int, int] | None = None,
-        engine: str = "okada",
         medium: ElasticMedium | None = None,
         frame: LocalFrame | None = None,
     ) -> None:
-        lat = as_1d_floats("lat", np.atleast_1d(lat), unit="degrees")
-        n = lat.shape[0]
-        lon = as_1d_floats("lon", np.atleast_1d(lon), n=n, unit="degrees")
+        lon = as_1d_floats("lon", np.atleast_1d(lon), unit="degrees")
+        n = lon.shape[0]
+        lat = as_1d_floats("lat", np.atleast_1d(lat), n=n, unit="degrees")
         depth = as_1d_floats("depth", np.atleast_1d(depth), n=n, unit="meters")
         strike = as_1d_floats("strike", np.atleast_1d(strike), n=n, unit="degrees")
         dip = as_1d_floats("dip", np.atleast_1d(dip), n=n, unit="degrees")
-
         check_range("lat", lat, -90.0, 90.0, unit="degrees")
         check_range("lon", lon, -360.0, 360.0, unit="degrees")
         check_range("dip", dip, 0.0, 90.0, unit="degrees")
 
-        if engine not in ("okada", "tri"):
-            raise ValueError(f"engine must be 'okada' or 'tri', got {engine!r}")
-
-        # Rectangular centroid depths feed the Okada kernel directly and must
-        # be below the surface. Triangular centroid depths are derived
-        # metadata (the kernel uses the ENU vertices) and legitimately carry
-        # meter-scale ellipsoidal-curvature offsets near the surface, so
-        # above-surface *vertices* are reported by validate() instead.
-        if engine == "okada" and n and np.min(depth) < 0.0:
-            raise ValueError(
-                "depth is positive down (meters); centroid depths must be "
-                f">= 0, got minimum {np.min(depth):g}"
-            )
-
-        if engine == "okada":
+        if vertices is None:
             if length is None or width is None:
-                raise ValueError("Rectangular faults require length and width arrays")
+                raise ValueError(
+                    "a fault needs either length and width (rectangular "
+                    "patches) or vertices (triangular patches)"
+                )
+            # Rectangular centroid depths feed the Okada kernel directly and
+            # must be below the surface. Triangular centroid depths are
+            # derived from the vertices, so validate() reports those instead.
+            if n and np.min(depth) < 0.0:
+                raise ValueError(
+                    "depth is positive down (meters); centroid depths must be "
+                    f">= 0, got minimum {np.min(depth):g}"
+                )
             length = as_1d_floats("length", np.atleast_1d(length), n=n, unit="meters")
             width = as_1d_floats("width", np.atleast_1d(width), n=n, unit="meters")
             check_positive("length", length, unit="meters")
             check_positive("width", width, unit="meters")
         else:
-            if vertices is None:
-                raise ValueError("Triangular faults require a vertices array")
-            vertices = np.asarray(vertices, dtype=float)
+            if length is not None or width is not None:
+                raise ValueError("give either length and width, or vertices; not both")
+            vertices = np.array(vertices, dtype=float)
             if vertices.shape != (n, 3, 3):
                 raise ValueError("vertices must have shape (N, 3, 3)")
 
-        if grid_shape is not None:
-            nL, nW = grid_shape
-            if nL * nW != n:
-                raise ValueError(
-                    f"grid_shape {grid_shape} implies {nL * nW} patches, but got {n}"
-                )
+        if grid_shape is not None and grid_shape[0] * grid_shape[1] != n:
+            raise ValueError(
+                f"grid_shape {grid_shape} implies "
+                f"{grid_shape[0] * grid_shape[1]} patches, but got {n}"
+            )
 
-        self._lat = lat
-        self._lon = lon
-        self._depth = depth
+        self.lon = lon
+        self.lat = lat
+        self.depth = depth
         self.strike = strike
         self.dip = dip
-        self._length = length
-        self._width = width
-        self._vertices = vertices
-        self._grid_shape = grid_shape
-        self._engine = engine
-        self._medium = DEFAULT_MEDIUM if medium is None else medium
-        inferred_frame = LocalFrame(float(np.mean(lat)), float(np.mean(lon)))
-        self._frame = inferred_frame if frame is None else frame
+        self.length: np.ndarray | None = length
+        self.width: np.ndarray | None = width
+        self.vertices: np.ndarray | None = vertices
+        self.grid_shape = grid_shape
+        self.medium = DEFAULT_MEDIUM if medium is None else medium
+        self.frame = (
+            LocalFrame(float(np.mean(lat)), float(np.mean(lon)))
+            if frame is None
+            else frame
+        )
+        for array in (lon, lat, depth, strike, dip, length, width, vertices):
+            if array is not None:
+                array.flags.writeable = False
 
-        # Make arrays read-only
-        for arr in (self._lat, self._lon, self._depth, self.strike, self.dip):
-            arr.flags.writeable = False
-        if self._length is not None and self._width is not None:
-            self._length.flags.writeable = False
-            self._width.flags.writeable = False
-        if self._vertices is not None:
-            self._vertices.flags.writeable = False
-
-        # Lazy caches
         self._centers_local: np.ndarray | None = None
         self._laplacian: np.ndarray | None = None
-        self._ref_lat = self._frame.origin_lat
-        self._ref_lon = self._frame.origin_lon
 
     # ==================================================================
     # Factory classmethods
@@ -198,6 +194,14 @@ class Fault:
         as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
         patch_L = length / n_length
         patch_W = width / n_width
+        shallowest_center = depth - 0.5 * (width - patch_W) * np.sin(np.radians(dip))
+        if shallowest_center < 0.0:
+            raise ValueError(
+                f"the top row of patches is centered {-shallowest_center:.0f} m "
+                "above the surface: depth is the depth of the fault center, "
+                "which must exceed half the width times sin(dip). Increase "
+                "depth or reduce width."
+            )
 
         sin_str = np.sin(np.radians(strike))
         cos_str = np.cos(np.radians(strike))
@@ -207,7 +211,6 @@ class Fault:
         # Offset from center to top-left corner of the fault
         fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
         fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
-        fault_u0 = -0.5 * width * sin_dip
 
         # Vectorized grid of patch center offsets
         i_idx = np.arange(n_length)
@@ -226,7 +229,8 @@ class Fault:
             + (ii + 0.5) * patch_L * cos_str
             - (jj + 0.5) * patch_W * cos_dip * sin_str
         )
-        u_offsets = fault_u0 + (jj + 0.5) * patch_W * sin_dip
+        # Row 0 is the shallowest; each row down dip is deeper.
+        down_offsets = (jj + 0.5 - 0.5 * n_width) * patch_W * sin_dip
 
         geographic = selected_frame.to_geographic(
             east=center[0] + e_offsets,
@@ -235,7 +239,7 @@ class Fault:
         )
         lon_c = geographic[:, 0]
         lat_c = geographic[:, 1]
-        depth_c = depth - u_offsets
+        depth_c = depth + down_offsets
 
         n_patches = n_length * n_width
         strike_arr = np.full(n_patches, strike)
@@ -244,15 +248,14 @@ class Fault:
         width_arr = np.full(n_patches, patch_W)
 
         return cls(
-            lat_c,
-            lon_c,
-            depth_c,
-            strike_arr,
-            dip_arr,
-            length_arr,
-            width_arr,
+            lon=lon_c,
+            lat=lat_c,
+            depth=depth_c,
+            strike=strike_arr,
+            dip=dip_arr,
+            length=length_arr,
+            width=width_arr,
             grid_shape=(n_length, n_width),
-            engine="okada",
             medium=medium,
             frame=selected_frame,
         )
@@ -339,59 +342,51 @@ class Fault:
     @classmethod
     def from_triangles(
         cls,
-        vertices: np.ndarray,
+        vertices: npt.ArrayLike,
         *,
+        triangles: npt.ArrayLike | None = None,
+        frame: LocalFrame | None = None,
         ref_lat: float | None = None,
         ref_lon: float | None = None,
-        frame: LocalFrame | None = None,
-        triangles: np.ndarray | None = None,
         medium: ElasticMedium | None = None,
     ) -> "Fault":
-        """Create a triangular fault from ENU vertex coordinates.
+        """Create a triangular fault from local East-North-Up vertices.
 
-        Derives per-triangle strike, dip, and geographic centers automatically
-        from the vertex geometry.
+        Per-triangle strike, dip, and geographic centers are derived from
+        the vertex geometry. Two input forms are supported:
 
-        Two input forms are supported:
-
-        - **Explicit vertices** (``triangles=None``): ``vertices`` is a
-          ``(N, 3, 3)`` array giving all three ENU corners of each triangle.
-        - **Node array + connectivity** (``triangles`` given): ``vertices`` is
+        - **Explicit vertices** (``triangles=None``): ``vertices`` is an
+          ``(N, 3, 3)`` array giving the three corners of each triangle.
+        - **Nodes plus connectivity** (``triangles`` given): ``vertices`` is
           a shared ``(M, 3)`` node array and ``triangles`` is an ``(N, 3)``
-          index array. This preserves the exact patch order of an imported
-          mesh and its node sharing.
+          index array, preserving the patch order of an imported mesh.
 
         Args:
-            vertices: Per-triangle corners with shape (N, 3, 3), or a shared
-                node array with shape (M, 3). Numeric rows are [east, north,
-                up] in meters.
-            ref_lat: Reference latitude for the ENU origin.
-            ref_lon: Reference longitude for the ENU origin.
-            frame: Explicit local frame. Mutually exclusive with legacy
-                ``ref_lat``/``ref_lon``.
+            vertices: Triangle corners with shape (N, 3, 3), or a node array
+                with shape (M, 3). Rows are ``[east, north, up]`` in meters.
             triangles: Optional connectivity indices into ``vertices``, shape
-                (N, 3). When given, ``vertices`` is treated as a node array.
+                (N, 3).
+            frame: Local frame the vertices are expressed in. Defaults to a
+                frame at longitude 0, latitude 0.
+            ref_lat: Shorthand for ``frame=LocalFrame(ref_lat, ref_lon)``.
+            ref_lon: See ``ref_lat``.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
                 Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
         Returns:
-            A triangular Fault with ``engine="tri"``.
+            A triangular Fault (``engine == "tri"``).
 
         Raises:
             ValueError: If the array shapes are inconsistent, or a triangle
                 index is out of range.
         """
-        legacy_frame: LocalFrame | None = None
         if (ref_lat is None) != (ref_lon is None):
             raise ValueError("ref_lat and ref_lon must be provided together")
         if ref_lat is not None and ref_lon is not None:
-            legacy_frame = LocalFrame(ref_lat, ref_lon)
-        if frame is not None and legacy_frame is not None:
-            frame.require_compatible(legacy_frame)
-
-        selected_frame = frame if frame is not None else legacy_frame
-        if selected_frame is None:
-            selected_frame = LocalFrame(0.0, 0.0)
+            if frame is not None:
+                frame.require_compatible(LocalFrame(ref_lat, ref_lon))
+            frame = LocalFrame(ref_lat, ref_lon)
+        selected_frame = LocalFrame(0.0, 0.0) if frame is None else frame
         if triangles is None:
             vertices_array = np.asarray(vertices, dtype=float)
             if vertices_array.ndim != 3 or vertices_array.shape[1:] != (3, 3):
@@ -412,15 +407,12 @@ class Fault:
         strike, dip = triangle_strike_dip(vertices_array)
 
         return cls(
-            centers_geo[:, 1],
-            centers_geo[:, 0],
-            -centers_geo[:, 2],
-            strike,
-            dip,
-            None,
-            None,
+            lon=centers_geo[:, 0],
+            lat=centers_geo[:, 1],
+            depth=-centers_geo[:, 2],
+            strike=strike,
+            dip=dip,
             vertices=vertices_array,
-            engine="tri",
             medium=medium,
             frame=selected_frame,
         )
@@ -526,59 +518,111 @@ class Fault:
     @property
     def n_patches(self) -> int:
         """Number of fault patches."""
-        return self._lat.shape[0]
+        return self.lon.shape[0]
+
+    @property
+    def engine(self) -> str:
+        """Dislocation type: ``"okada"`` (rectangles) or ``"tri"`` (triangles)."""
+        return "okada" if self.vertices is None else "tri"
 
     @property
     def centers_geo(self) -> np.ndarray:
-        """Patch centroids as (N, 3) array of [lon, lat, depth].
+        """Patch centroids as an (N, 3) array of ``[lon, lat, depth]``.
 
-        Follows the documented geographic ordering (x, y order; matches
-        ``Mesh.centers_geo``). Depth is in meters, positive down.
+        Depth is in meters, positive down.
         """
-        return np.column_stack([self._lon, self._lat, self._depth])
+        return np.column_stack([self.lon, self.lat, self.depth])
 
     @property
     def centers_local(self) -> np.ndarray:
-        """Patch centroids in local Cartesian [east, north, up] in meters.
-
-        Coordinates are expressed in :attr:`frame`.
-        """
+        """Patch centroids as ``[east, north, up]`` meters in :attr:`frame`."""
         if self._centers_local is None:
-            if self._vertices is not None:
-                self._centers_local = np.mean(self._vertices, axis=1)
+            if self.vertices is not None:
+                self._centers_local = np.mean(self.vertices, axis=1)
             else:
-                enu = self._frame.to_enu(
-                    lon=self._lon,
-                    lat=self._lat,
-                    alt=np.full(self.n_patches, self._frame.origin_alt),
+                enu = self.frame.to_enu(
+                    lon=self.lon,
+                    lat=self.lat,
+                    alt=np.full(self.n_patches, self.frame.origin_alt),
                 )
                 self._centers_local = np.column_stack(
-                    [enu[:, 0], enu[:, 1], -self._depth]
+                    [enu[:, 0], enu[:, 1], -self.depth]
                 )
         return self._centers_local
 
     @property
-    def frame(self) -> LocalFrame:
-        """Local coordinate frame for :attr:`centers_local` and vertices."""
-        return self._frame
+    def corners(self) -> np.ndarray:
+        """Patch corners as ``[east, north, up]`` meters in :attr:`frame`.
+
+        Shape (N, 4, 3) for rectangles, ordered top-left, top-right,
+        bottom-right, bottom-left looking along strike with "top" the
+        shallow edge; shape (N, 3, 3) for triangles.
+        """
+        if self.vertices is not None:
+            return self.vertices
+        assert self.length is not None and self.width is not None
+        strike = np.radians(self.strike)[:, None]
+        dip = np.radians(self.dip)[:, None]
+        along_strike = 0.5 * self.length[:, None] * np.array([-1.0, 1.0, 1.0, -1.0])
+        up_dip = 0.5 * self.width[:, None] * np.array([1.0, 1.0, -1.0, -1.0])
+        offsets = np.stack(
+            [
+                along_strike * np.sin(strike) - up_dip * np.cos(dip) * np.cos(strike),
+                along_strike * np.cos(strike) + up_dip * np.cos(dip) * np.sin(strike),
+                up_dip * np.sin(dip),
+            ],
+            axis=-1,
+        )
+        return self.centers_local[:, None, :] + offsets
+
+    @property
+    def corners_geo(self) -> np.ndarray:
+        """Patch corners as ``[lon, lat, depth]``, shape (N, 3 or 4, 3).
+
+        Depth is in meters, positive down. Corner order follows
+        :attr:`corners`.
+        """
+        corners = self.corners
+        if self.vertices is not None:
+            geographic = self.frame.to_geographic(
+                east=corners[..., 0], north=corners[..., 1], up=corners[..., 2]
+            )
+            geographic[..., 2] *= -1.0
+            return geographic
+        geographic = self.frame.to_geographic(
+            east=corners[..., 0],
+            north=corners[..., 1],
+            up=np.full(corners.shape[:-1], self.frame.origin_alt),
+        )
+        geographic[..., 2] = -corners[..., 2]
+        return geographic
 
     @property
     def areas(self) -> np.ndarray:
         """Patch areas in square meters, shape (N,)."""
-        if self._engine == "okada":
-            assert self._length is not None and self._width is not None
-            return self._length * self._width
-        # Triangular: area from cross product of two edge vectors
-        v = self._vertices
-        assert v is not None
-        edge1 = v[:, 1, :] - v[:, 0, :]
-        edge2 = v[:, 2, :] - v[:, 0, :]
+        if self.vertices is None:
+            assert self.length is not None and self.width is not None
+            return self.length * self.width
+        edge1 = self.vertices[:, 1, :] - self.vertices[:, 0, :]
+        edge2 = self.vertices[:, 2, :] - self.vertices[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
 
     @property
-    def engine(self) -> str:
-        """Green's function engine: ``"okada"`` or ``"tri"``."""
-        return self._engine
+    def laplacian(self) -> np.ndarray:
+        """Discrete Laplacian smoothing operator, shape (N, N).
+
+        Structured rectangular grids use finite-difference stencils;
+        unstructured meshes use a distance-weighted six-nearest-neighbor
+        Laplacian. Computed on first use and cached.
+        """
+        if self._laplacian is None:
+            if self.grid_shape is not None:
+                self._laplacian = _greens.build_laplacian_2d(*self.grid_shape)
+            else:
+                self._laplacian = _greens.build_laplacian_knn(
+                    self.centers_local, k=6
+                ).toarray()
+        return self._laplacian
 
     def validate(self) -> ValidationReport:
         """Check the geometry for physically invalid or suspicious setups.
@@ -591,9 +635,9 @@ class Fault:
             A :class:`geodef.validation.ValidationReport`.
         """
         b = _ReportBuilder()
-        if self._engine == "okada":
-            assert self._length is not None and self._width is not None
-            top_edge = self._depth - 0.5 * self._width * np.sin(np.radians(self.dip))
+        if self.vertices is None:
+            assert self.length is not None and self.width is not None
+            top_edge = self.depth - 0.5 * self.width * np.sin(np.radians(self.dip))
             n_above = int(np.sum(top_edge < -1.0))
             if n_above:
                 b.error(
@@ -603,7 +647,7 @@ class Fault:
                     "half-space solution is invalid there. Deepen the fault "
                     "or reduce its width.",
                 )
-            ratio = self._length / self._width
+            ratio = self.length / self.width
             if np.max(ratio) > 50.0 or np.min(ratio) < 1.0 / 50.0:
                 b.warning(
                     "length/width",
@@ -612,8 +656,7 @@ class Fault:
                     "resolve slip poorly across their short dimension",
                 )
         else:
-            assert self._vertices is not None
-            up = self._vertices[:, :, 2]
+            up = self.vertices[:, :, 2]
             n_above = int(np.sum(np.any(up > 1.0, axis=1)))
             if n_above:
                 b.error(
@@ -637,16 +680,8 @@ class Fault:
             )
         return b.report()
 
-    @property
-    def medium(self) -> ElasticMedium:
-        """Elastic half-space parameters used by this fault's computations."""
-        return self._medium
-
     def with_medium(self, medium: ElasticMedium) -> "Fault":
         """Return a copy of this fault with different elastic parameters.
-
-        The geometry arrays are shared (they are immutable); only the medium
-        differs.
 
         Args:
             medium: Elastic half-space parameters for the new fault.
@@ -654,87 +689,44 @@ class Fault:
         Returns:
             A new ``Fault`` with the same geometry and the given medium.
         """
-        return Fault(
-            self._lat,
-            self._lon,
-            self._depth,
-            self.strike,
-            self.dip,
-            self._length,
-            self._width,
-            vertices=self._vertices,
-            grid_shape=self._grid_shape,
-            engine=self._engine,
-            medium=medium,
-            frame=self._frame,
-        )
+        return self._replace(medium=medium)
 
     def to_frame(self, frame: LocalFrame) -> "Fault":
-        """Return this fault explicitly re-expressed in another local frame.
+        """Return this fault re-expressed in another local frame.
 
-        Geographic rectangular patch coordinates remain unchanged. Triangular
-        vertices are transformed so their physical geographic positions remain
-        unchanged rather than being reinterpreted in the new frame.
+        The physical (geographic) geometry is unchanged; triangular
+        vertices are transformed into the new frame.
 
         Args:
             frame: Destination local frame.
 
         Returns:
-            A fault with the same physical geometry and elastic medium in
-            ``frame``.
+            A fault with the same physical geometry and medium in ``frame``.
         """
-        if self._frame.is_compatible(frame):
+        if self.frame.is_compatible(frame):
             return self
-        if self._vertices is not None:
-            vertices = self._frame.transform_enu(self._vertices, target=frame)
-            return Fault.from_triangles(vertices, frame=frame, medium=self._medium)
-        return Fault(
-            self._lat,
-            self._lon,
-            self._depth,
-            self.strike,
-            self.dip,
-            self._length,
-            self._width,
-            grid_shape=self._grid_shape,
-            engine=self._engine,
-            medium=self._medium,
-            frame=frame,
-        )
+        if self.vertices is not None:
+            vertices = self.frame.transform_enu(self.vertices, target=frame)
+            return Fault.from_triangles(vertices, frame=frame, medium=self.medium)
+        return self._replace(frame=frame)
 
-    @property
-    def vertices(self) -> np.ndarray | None:
-        """Triangle vertices in local ENU, shape (N, 3, 3).
-
-        ``None`` for rectangular faults; use :attr:`vertices_3d` /
-        :attr:`vertices_2d` for their corner geometry instead.
-        """
-        return self._vertices
-
-    @property
-    def grid_shape(self) -> tuple[int, int] | None:
-        """Grid dimensions ``(n_length, n_width)`` for structured grids, else None."""
-        return self._grid_shape
-
-    @property
-    def laplacian(self) -> np.ndarray:
-        """Discrete Laplacian smoothing operator, shape (N, N).
-
-        For structured rectangular grids, uses finite-difference stencils.
-        For unstructured meshes (no ``grid_shape``), uses a distance-weighted
-        K-nearest-neighbors Laplacian with ``k=6`` (returned as a dense array
-        for API consistency).
-
-        Computed lazily and cached.
-        """
-        if self._laplacian is None:
-            if self._grid_shape is not None:
-                nL, nW = self._grid_shape
-                self._laplacian = _greens.build_laplacian_2d(nL, nW)
-            else:
-                L_sparse = _greens.build_laplacian_knn(self.centers_local, k=6)
-                self._laplacian = L_sparse.toarray()
-        return self._laplacian
+    def _replace(self, **changes: object) -> "Fault":
+        """Return a copy with some constructor arguments replaced."""
+        arguments: dict[str, object] = {
+            "lon": self.lon,
+            "lat": self.lat,
+            "depth": self.depth,
+            "strike": self.strike,
+            "dip": self.dip,
+            "length": self.length,
+            "width": self.width,
+            "vertices": self.vertices,
+            "grid_shape": self.grid_shape,
+            "medium": self.medium,
+            "frame": self.frame,
+        }
+        arguments.update(changes)
+        return Fault(**arguments)  # type: ignore[arg-type]
 
     # ==================================================================
     # Forward modeling
@@ -742,80 +734,99 @@ class Fault:
 
     def greens_matrix(
         self,
-        obs_lat: np.ndarray,
-        obs_lon: np.ndarray,
+        *,
+        lon: npt.ArrayLike,
+        lat: npt.ArrayLike,
         kind: str = "displacement",
-        obs_depth: np.ndarray | None = None,
+        depth: npt.ArrayLike | None = None,
     ) -> np.ndarray:
-        """Compute Green's function matrix at observation points.
+        """Compute the Green's function matrix at observation points.
+
+        Column ``j`` holds the response at every observation point to one
+        meter of slip on one patch. Columns are blocked: the first ``N``
+        are strike-slip, the next ``N`` are dip-slip.
 
         Args:
-            obs_lat: Observation latitudes, shape (M,).
-            obs_lon: Observation longitudes, shape (M,).
+            lon: Observation longitudes in degrees, shape (M,).
+            lat: Observation latitudes in degrees, shape (M,).
             kind: ``"displacement"`` or ``"strain"``.
-            obs_depth: Observation depths (M,), positive down, in meters.
-                Only used for ``kind="strain"`` to compute internal
-                deformation via okada92/DC3D. If None, observations
-                are at the surface.
+            depth: Observation depths in meters (positive down), shape (M,).
+                Only used for ``kind="strain"``; defaults to the surface.
 
         Returns:
-            Green's matrix G. For displacement: shape (3*M, 2*N).
-            For strain (okada): shape (4*M, 2*N).
-            For strain (tri): shape (6*M, 2*N).
+            Green's matrix. Displacement: shape (3*M, 2*N), rows
+            interleaved ``[east, north, up]`` per point. Strain: shape
+            (4*M, 2*N) for rectangles or (6*M, 2*N) for triangles.
 
         Raises:
-            ValueError: If kind is unknown or engine doesn't support it.
+            ValueError: If ``kind`` is unknown.
         """
-        nu = self._medium.poisson_ratio
-        spec = _engines.get(self._engine)
+        if kind not in {"displacement", "strain"}:
+            raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
+        lon = np.atleast_1d(np.asarray(lon, dtype=float))
+        lat = np.atleast_1d(np.asarray(lat, dtype=float))
+        if depth is not None:
+            depth = np.atleast_1d(np.asarray(depth, dtype=float))
+        nu = self.medium.poisson_ratio
+        centers = (self.lat, self.lon, self.depth)
+        if self.vertices is not None:
+            if kind == "displacement":
+                return _greens.tri_displacement_greens(
+                    lat, lon, *centers, self.vertices, nu=nu, frame=self.frame
+                )
+            return _greens.tri_strain_greens(
+                lat,
+                lon,
+                *centers,
+                self.vertices,
+                nu=nu,
+                obs_depth=depth,
+                frame=self.frame,
+            )
+        assert self.length is not None and self.width is not None
+        patches = (*centers, self.strike, self.dip, self.length, self.width)
         if kind == "displacement":
-            fn = _engines.require(spec, "displacement_greens")
-            return fn(self, obs_lat, obs_lon, nu=nu)
-        if kind == "strain":
-            fn = _engines.require(spec, "strain_greens")
-            return fn(self, obs_lat, obs_lon, nu=nu, obs_depth=obs_depth)
-        raise ValueError(f"Unknown kind: {kind!r}. Use 'displacement' or 'strain'.")
+            return _greens.displacement_greens(lat, lon, *patches, nu=nu)
+        return _greens.strain_greens(lat, lon, *patches, nu=nu, obs_depth=depth)
 
     def displacement(
         self,
-        obs_lat: np.ndarray,
-        obs_lon: np.ndarray,
-        slip_strike: float | np.ndarray,
-        slip_dip: float | np.ndarray = 0.0,
+        *,
+        lon: npt.ArrayLike,
+        lat: npt.ArrayLike,
+        strike_slip: float | npt.ArrayLike = 0.0,
+        dip_slip: float | npt.ArrayLike = 0.0,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute surface displacements from a slip distribution.
 
         Args:
-            obs_lat: Observation latitudes, shape (M,).
-            obs_lon: Observation longitudes, shape (M,).
-            slip_strike: Strike-slip component per patch. Values may be scalar
-                (broadcast to all patches) or shape (N,).
-            slip_dip: Dip-slip component per patch. Scalar or array of shape (N,).
+            lon: Observation longitudes in degrees, any shape.
+            lat: Observation latitudes in degrees, broadcastable with ``lon``.
+            strike_slip: Strike-slip per patch in meters (left-lateral
+                positive), a scalar applied to every patch or shape (N,).
+            dip_slip: Dip-slip per patch in meters (thrust positive), a
+                scalar or shape (N,).
 
         Returns:
-            ``(east, north, up)`` displacement arrays, each shape (M,).
+            ``(east, north, up)`` displacements in meters, each with the
+            broadcast shape of ``lon`` and ``lat``.
+
+        Examples:
+            >>> east, north, up = fault.displacement(lon=lon, lat=lat, dip_slip=1.0)
         """
-        obs_lat = np.atleast_1d(np.asarray(obs_lat, dtype=float))
-        obs_lon = np.atleast_1d(np.asarray(obs_lon, dtype=float))
-
-        slip_s = np.broadcast_to(
-            np.asarray(slip_strike, dtype=float), (self.n_patches,)
+        lon_array, lat_array = np.broadcast_arrays(
+            np.asarray(lon, dtype=float), np.asarray(lat, dtype=float)
         )
-        slip_d = np.broadcast_to(np.asarray(slip_dip, dtype=float), (self.n_patches,))
-
-        G = self.greens_matrix(obs_lat, obs_lon, kind="displacement")
-
-        # Build slip vector: blocked [ss0, ..., ssN, ds0, ..., dsN]
-        m = np.empty(2 * self.n_patches)
-        m[: self.n_patches] = slip_s
-        m[self.n_patches :] = slip_d
-
-        d = G @ m
-
-        ue = d[0::3]
-        un = d[1::3]
-        uz = d[2::3]
-        return ue, un, uz
+        slip = np.concatenate(
+            [
+                np.broadcast_to(np.asarray(strike_slip, dtype=float), self.n_patches),
+                np.broadcast_to(np.asarray(dip_slip, dtype=float), self.n_patches),
+            ]
+        )
+        G = self.greens_matrix(lon=lon_array.ravel(), lat=lat_array.ravel())
+        east, north, up = (G @ slip).reshape(-1, 3).T
+        shape = lon_array.shape
+        return east.reshape(shape), north.reshape(shape), up.reshape(shape)
 
     # ==================================================================
     # Stress kernel
@@ -837,20 +848,38 @@ class Fault:
         from geodef import cache as _cache
 
         if mu is None:
-            mu = self._medium.shear_modulus
-        key = _build_stress_key(self, mu)
+            mu = self.medium.shear_modulus
         return _cache.cached_compute(
-            key,
+            {"kind": "stress_kernel", "mu": mu, **self._cache_key()},
             lambda: (
                 mu
                 * self.greens_matrix(
-                    self._lat,
-                    self._lon,
-                    kind="strain",
-                    obs_depth=self._depth,
+                    lon=self.lon, lat=self.lat, kind="strain", depth=self.depth
                 )
             ),
         )
+
+    def _cache_key(self) -> dict[str, object]:
+        """Everything about this fault that affects a Green's matrix."""
+        key: dict[str, object] = {
+            "fault_lat": self.lat,
+            "fault_lon": self.lon,
+            "fault_depth": self.depth,
+            "fault_strike": self.strike,
+            "fault_dip": self.dip,
+            "engine": self.engine,
+            "nu": self.medium.poisson_ratio,
+        }
+        if self.vertices is None:
+            key["fault_length"] = self.length
+            key["fault_width"] = self.width
+        else:
+            key["fault_vertices"] = self.vertices
+            key["frame_origin_lat"] = self.frame.origin_lat
+            key["frame_origin_lon"] = self.frame.origin_lon
+            key["frame_origin_alt"] = self.frame.origin_alt
+            key["frame_projection"] = self.frame.projection
+        return key
 
     # ==================================================================
     # Moment and magnitude
@@ -868,7 +897,7 @@ class Fault:
             Seismic moment in N-m.
         """
         if mu is None:
-            mu = self._medium.shear_modulus
+            mu = self.medium.shear_modulus
         slip_array = np.asarray(slip, dtype=float)
         return float(mu * np.sum(slip_array * self.areas))
 
@@ -905,9 +934,9 @@ class Fault:
         Raises:
             ValueError: If the fault has no structured grid.
         """
-        if self._grid_shape is None:
+        if self.grid_shape is None:
             raise ValueError("patch_index requires a structured grid (grid_shape)")
-        nL, _ = self._grid_shape
+        nL, _ = self.grid_shape
         return dip_idx * nL + strike_idx
 
     def reshape_patches(self, values: npt.ArrayLike) -> np.ndarray:
@@ -927,7 +956,7 @@ class Fault:
             ValueError: If the fault is unstructured or the leading dimension
                 does not match the patch count.
         """
-        if self._grid_shape is None:
+        if self.grid_shape is None:
             raise ValueError("reshape_patches requires a structured grid")
         array = np.asarray(values)
         if array.ndim == 0 or array.shape[0] != self.n_patches:
@@ -935,7 +964,7 @@ class Fault:
                 f"values must have leading dimension {self.n_patches}, got "
                 f"shape {array.shape}"
             )
-        n_length, n_width = self._grid_shape
+        n_length, n_width = self.grid_shape
         return array.reshape((n_width, n_length, *array.shape[1:]))
 
     def flatten_patches(self, values: npt.ArrayLike) -> np.ndarray:
@@ -951,10 +980,10 @@ class Fault:
             ValueError: If the fault is unstructured or leading grid axes do
                 not match the fault.
         """
-        if self._grid_shape is None:
+        if self.grid_shape is None:
             raise ValueError("flatten_patches requires a structured grid")
         array = np.asarray(values)
-        n_length, n_width = self._grid_shape
+        n_length, n_width = self.grid_shape
         expected = (n_width, n_length)
         if array.ndim < 2 or array.shape[:2] != expected:
             raise ValueError(
@@ -997,17 +1026,17 @@ class Fault:
                 fault engine.
         """
         if format is None:
-            format = "ned" if self._engine == "tri" else "center"
+            format = "ned" if self.engine == "tri" else "center"
 
         if format == "ned":
-            if self._engine != "tri":
+            if self.engine != "tri":
                 raise ValueError(
                     "ned format requires a triangular fault (engine='tri'); "
                     "use format='center' or 'seg' for rectangular faults"
                 )
             _fault_io.save_tri_ned(self, fname)
         elif format in ("center", "seg"):
-            if self._engine != "okada":
+            if self.engine != "okada":
                 raise ValueError(
                     f"format={format!r} requires a rectangular fault "
                     f"(engine='okada'); use format='ned' for triangular faults"
@@ -1044,122 +1073,12 @@ class Fault:
         _fault_io.write_gmt(self, fname, values)
 
     # ==================================================================
-    # Vertex computation
-    # ==================================================================
-
-    @property
-    def vertices_2d(self) -> np.ndarray:
-        """Patch corner coordinates as (N, 4, 2) array of [lon, lat].
-
-        Vertices are ordered: top-left, top-right, bottom-right, bottom-left
-        (where "top" is the shallowest edge).
-        """
-        v3d = self.vertices_3d
-        return v3d[:, :, :2]
-
-    @property
-    def patch_outlines(self) -> np.ndarray:
-        """Closed patch outlines for plotting, shape (N, 5, 2) as [lon, lat].
-
-        Each outline is a closed polygon (first vertex repeated at end),
-        suitable for use with ``matplotlib.collections.PolyCollection``.
-        """
-        v2d = self.vertices_2d  # (N, 4, 2)
-        return np.concatenate([v2d, v2d[:, :1, :]], axis=1)
-
-    @property
-    def vertices_3d(self) -> np.ndarray:
-        """Patch corner coordinates as (N, 4, 3) array of [lon, lat, depth_km].
-
-        Vertices are ordered: top-left, top-right, bottom-right, bottom-left.
-        """
-        if self._engine != "okada":
-            raise NotImplementedError(
-                "vertices_3d is only implemented for rectangular faults"
-            )
-        assert self._length is not None and self._width is not None
-
-        n = self.n_patches
-        sin_dip = np.sin(np.radians(self.dip))
-        cos_dip = np.cos(np.radians(self.dip))
-        sin_str = np.sin(np.radians(self.strike))
-        cos_str = np.cos(np.radians(self.strike))
-
-        half_L = self._length / 2
-        half_W = self._width / 2
-
-        # 4 corner offsets in ENU: [top-left, top-right, bottom-right, bottom-left]
-        # "top" = updip (shallower), strike direction is positive along-strike
-        e_offsets = np.column_stack(
-            [
-                -half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str - half_W * cos_dip * cos_str,
-                -half_L * sin_str - half_W * cos_dip * cos_str,
-            ]
-        )  # (N, 4)
-
-        n_offsets = np.column_stack(
-            [
-                -half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str + half_W * cos_dip * sin_str,
-                -half_L * cos_str + half_W * cos_dip * sin_str,
-            ]
-        )  # (N, 4)
-
-        depth_offsets = np.column_stack(
-            [
-                +half_W * sin_dip,
-                +half_W * sin_dip,
-                -half_W * sin_dip,
-                -half_W * sin_dip,
-            ]
-        )  # (N, 4)
-
-        # Convert ENU offsets to lat/lon using local scale factors
-        lat_rad = np.radians(self._lat)
-        m_per_deg_lat = (
-            111132.92 - 559.82 * np.cos(2 * lat_rad) + 1.175 * np.cos(4 * lat_rad)
-        )
-        m_per_deg_lon = 111412.84 * np.cos(lat_rad) - 93.5 * np.cos(3 * lat_rad)
-
-        verts = np.empty((n, 4, 3))
-        for corner in range(4):
-            verts[:, corner, 0] = self._lon + e_offsets[:, corner] / m_per_deg_lon
-            verts[:, corner, 1] = self._lat + n_offsets[:, corner] / m_per_deg_lat
-            verts[:, corner, 2] = (self._depth + depth_offsets[:, corner]) * 1e-3
-
-        return verts
-
-    # ==================================================================
     # Repr
     # ==================================================================
 
     def __repr__(self) -> str:
-        grid_str = f", grid={self._grid_shape}" if self._grid_shape else ""
-        return f"Fault(n_patches={self.n_patches}, engine={self._engine!r}{grid_str})"
-
-
-def _build_stress_key(fault: Fault, mu: float) -> dict:
-    """Build the cache key dict for a stress kernel computation."""
-    key: dict = {
-        "kind": "stress_kernel",
-        "mu": mu,
-        "nu": fault._medium.poisson_ratio,
-        "fault_lat": fault._lat,
-        "fault_lon": fault._lon,
-        "fault_depth": fault._depth,
-        "fault_strike": fault.strike,
-        "fault_dip": fault.dip,
-        "engine": fault.engine,
-    }
-    if fault._length is not None:
-        key["fault_length"] = fault._length
-        key["fault_width"] = fault._width
-    if fault._vertices is not None:
-        key["fault_vertices"] = fault._vertices
-    return key
+        grid = f", grid_shape={self.grid_shape}" if self.grid_shape else ""
+        return f"Fault(n_patches={self.n_patches}, engine={self.engine!r}{grid})"
 
 
 # ======================================================================

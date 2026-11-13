@@ -212,7 +212,6 @@ class TestRectGreens:
         pL, pW = length / n_length, width / n_width
         fault_e0 = -0.5 * length * sin_str - 0.5 * width * cos_dip * cos_str
         fault_n0 = -0.5 * length * cos_str + 0.5 * width * cos_dip * sin_str
-        fault_u0 = -0.5 * width * sin_dip
 
         for jj in range(n_width):
             for ii in range(n_length):
@@ -228,7 +227,7 @@ class TestRectGreens:
                     + (ii + 0.5) * pL * cos_str
                     - (jj + 0.5) * pW * cos_dip * sin_str
                 )
-                d_c = depth - (fault_u0 + (jj + 0.5) * pW * sin_dip)
+                d_c = depth + (jj + 0.5 - 0.5 * n_width) * pW * sin_dip
                 col = jj * n_length + ii
                 for rake, block in [(0.0, 0), (90.0, 1)]:
                     ue, un, uz = okada85.displacement(
@@ -283,13 +282,13 @@ class TestRectGreens:
         G_ref = greens.displacement_greens(
             lat_obs,
             lon_obs,
-            fault._lat,
-            fault._lon,
-            fault._depth,
+            fault.lat,
+            fault.lon,
+            fault.depth,
             fault.strike * np.ones(fault.n_patches),
             fault.dip * np.ones(fault.n_patches),
-            fault._length,
-            fault._width,
+            fault.length,
+            fault.width,
         )
         G = gradients.rect_greens(
             theta, e_obs, n_obs, n_length=n_length, n_width=n_width

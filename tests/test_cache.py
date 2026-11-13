@@ -326,12 +326,12 @@ def gnss_data() -> GNSS:
     return GNSS(
         lon=lon,
         lat=lat,
-        ve=np.zeros(n),
-        vn=np.zeros(n),
-        vu=np.zeros(n),
-        se=np.ones(n),
-        sn=np.ones(n),
-        su=np.ones(n),
+        east=np.zeros(n),
+        north=np.zeros(n),
+        up=np.zeros(n),
+        sigma_east=np.ones(n),
+        sigma_north=np.ones(n),
+        sigma_up=np.ones(n),
     )
 
 
@@ -419,22 +419,22 @@ class TestGreensIntegration:
         data_a = GNSS(
             lon=lon,
             lat=lat_a,
-            ve=np.zeros(2),
-            vn=np.zeros(2),
-            vu=np.zeros(2),
-            se=np.ones(2),
-            sn=np.ones(2),
-            su=np.ones(2),
+            east=np.zeros(2),
+            north=np.zeros(2),
+            up=np.zeros(2),
+            sigma_east=np.ones(2),
+            sigma_north=np.ones(2),
+            sigma_up=np.ones(2),
         )
         data_b = GNSS(
             lon=lon,
             lat=lat_b,
-            ve=np.zeros(2),
-            vn=np.zeros(2),
-            vu=np.zeros(2),
-            se=np.ones(2),
-            sn=np.ones(2),
-            su=np.ones(2),
+            east=np.zeros(2),
+            north=np.zeros(2),
+            up=np.zeros(2),
+            sigma_east=np.ones(2),
+            sigma_north=np.ones(2),
+            sigma_up=np.ones(2),
         )
         greens(fault_small, data_a)
         greens(fault_small, data_b)
@@ -465,10 +465,10 @@ class TestStressKernel:
     def test_greens_matrix_obs_depth_param(self, fault_small: Fault) -> None:
         """greens_matrix accepts obs_depth and returns a result."""
         G = fault_small.greens_matrix(
-            fault_small._lat,
-            fault_small._lon,
+            lat=fault_small.lat,
+            lon=fault_small.lon,
             kind="strain",
-            obs_depth=fault_small._depth,
+            depth=fault_small.depth,
         )
         assert G.shape[0] > 0
         assert G.shape[1] == 2 * fault_small.n_patches

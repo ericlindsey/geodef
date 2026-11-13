@@ -1,18 +1,13 @@
-"""Hyperparameter selection: ABIC and L-curve sweeps.
+"""Standalone ABIC reference implementation (Fukuda & Johnson, 2008, 2010).
 
-Private submodule of :mod:`geodef.invert`. The free functions here are
-thin wrappers that prepare a ``LinearSystem`` and run its cached sweeps;
-``compute_abic`` is the standalone single-lambda reference
-implementation (Fukuda & Johnson, 2008, 2010).
+Private submodule of :mod:`geodef.invert`. The L-curve and ABIC sweeps
+live on :class:`LinearSystem`, which caches the matrix products they
+share; ``compute_abic`` evaluates one lambda from raw matrices.
 """
 
 import numpy as np
 
-from geodef.data import DataSet
-from geodef.fault import Fault
-from geodef.invert._results import ABICCurveResult, LCurveResult
-from geodef.invert._solvers import BoundsSpec, _rank_positive_eigs
-from geodef.invert._system import LinearSystem
+from geodef.invert._solvers import _rank_positive_eigs
 
 
 def compute_abic(
@@ -58,82 +53,3 @@ def compute_abic(
     abic3 = np.sum(np.log(eig_post))
 
     return float(abic1 - abic2 + abic3)
-
-
-def lcurve(
-    fault: Fault,
-    datasets: DataSet | list[DataSet],
-    regularization: str | np.ndarray = "laplacian",
-    regularization_range: tuple[float, float] = (1e-2, 1e6),
-    n: int = 50,
-    bounds: BoundsSpec = None,
-    method: str | None = None,
-    components: str = "both",
-    rake: float | None = None,
-    slip_azimuth: float | None = None,
-    plate_rake: float | np.ndarray | None = None,
-) -> LCurveResult:
-    """Sweep regularization strength and compute the L-curve.
-
-    Args:
-        fault: Fault geometry.
-        datasets: One or more geodetic datasets.
-        regularization: Regularization type.
-        regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
-        n: Number of lambda values to evaluate.
-        bounds: Per-component slip bounds.
-        method: Solver method.
-        components: Which slip components to solve for.
-        rake: Fixed rake angle in degrees, required when
-            ``components='rake'``.
-        slip_azimuth: Geographic slip azimuth in degrees, required when
-            ``components='azimuth'``.
-        plate_rake: Local plate-rake direction, required when
-            ``components='plate'``.
-
-    Returns:
-        LCurveResult with sweep arrays and optimal lambda.
-    """
-    sys = LinearSystem(
-        fault, datasets, regularization, components, rake, slip_azimuth, plate_rake
-    )
-    return sys.lcurve(regularization_range, n, bounds, method)
-
-
-def abic_curve(
-    fault: Fault,
-    datasets: DataSet | list[DataSet],
-    regularization: str | np.ndarray = "laplacian",
-    regularization_range: tuple[float, float] = (1e-2, 1e6),
-    n: int = 50,
-    components: str = "both",
-    rake: float | None = None,
-    slip_azimuth: float | None = None,
-    plate_rake: float | np.ndarray | None = None,
-) -> ABICCurveResult:
-    """Sweep regularization strength and compute the ABIC at each value.
-
-    Also records misfit and model norm for context. The optimal lambda
-    is the one that minimizes ABIC.
-
-    Args:
-        fault: Fault geometry.
-        datasets: One or more geodetic datasets.
-        regularization: Regularization type.
-        regularization_range: ``(min_lambda, max_lambda)`` range to sweep.
-        n: Number of lambda values to evaluate.
-        components: Which slip components to solve for.
-        rake: Fixed rake angle in degrees, required when
-            ``components='rake'``.
-        slip_azimuth: Geographic slip azimuth in degrees, required when
-            ``components='azimuth'``.
-        plate_rake: Local plate-rake direction, required when
-            ``components='plate'``.
-
-    Returns:
-        ABICCurveResult with sweep arrays and optimal lambda.
-    """
-    sys = LinearSystem(
-        fault, datasets, regularization, components, rake, slip_azimuth, plate_rake
-    )
-    return sys.abic_curve(regularization_range, n)

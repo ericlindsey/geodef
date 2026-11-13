@@ -28,12 +28,19 @@ TUTORIAL_NOTEBOOKS = (
     ROOT / "tutorials" / "12_interseismic_coupling.ipynb",
     ROOT / "tutorials" / "13_model_misspecification.ipynb",
     ROOT / "tutorials" / "14_bayesian_inversion.ipynb",
+    ROOT / "tutorials" / "reference_plots.ipynb",
 )
+
+# Worked solutions run on request (``pytest -m slow``); they repeat the
+# chapters' computations, so the routine suite skips them.
+SOLUTION_NOTEBOOKS = tuple(sorted((ROOT / "tutorials" / "solutions").glob("*.ipynb")))
 
 # Optional imports needed by individual chapters.
 _OPTIONAL_IMPORTS = {
     "10_gradient_geometry.ipynb": ("jax",),
     "14_bayesian_inversion.ipynb": ("jax", "blackjax"),
+    "10_gradient_geometry_solutions.ipynb": ("jax",),
+    "14_bayesian_inversion_solutions.ipynb": ("jax", "blackjax"),
 }
 
 
@@ -42,12 +49,8 @@ def _notebook_id(path: Path) -> str:
     return path.name
 
 
-@pytest.mark.parametrize("notebook_path", TUTORIAL_NOTEBOOKS, ids=_notebook_id)
-def test_tutorial_notebook_executes(
-    notebook_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Execute a tutorial notebook from its own directory."""
+def _execute(notebook_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute a notebook from its own directory against the source tree."""
     for module_name in _OPTIONAL_IMPORTS.get(notebook_path.name, ()):
         pytest.importorskip(module_name)
 
@@ -68,3 +71,22 @@ def test_tutorial_notebook_executes(
         resources={"metadata": {"path": str(notebook_path.parent)}},
     )
     client.execute()
+
+
+@pytest.mark.parametrize("notebook_path", TUTORIAL_NOTEBOOKS, ids=_notebook_id)
+def test_tutorial_notebook_executes(
+    notebook_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every chapter and the plot gallery run top to bottom."""
+    _execute(notebook_path, monkeypatch)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("notebook_path", SOLUTION_NOTEBOOKS, ids=_notebook_id)
+def test_solution_notebook_executes(
+    notebook_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every worked-solution notebook runs top to bottom."""
+    _execute(notebook_path, monkeypatch)

@@ -107,137 +107,16 @@ def _stations_to_local_km(
 
 
 def _get_patch_vertices_local(fault: Fault) -> list[np.ndarray]:
-    """Compute 2-D patch vertices in local Cartesian (East km, North km).
-
-    Args:
-        fault: Fault geometry.
-
-    Returns:
-        List of arrays, each (n_corners, 2). Rectangular patches have
-        4 corners; triangular patches have 3.
-    """
-    if fault.engine == "okada":
-        assert fault._length is not None and fault._width is not None
-        cos_dip = np.cos(np.radians(fault.dip))
-        sin_str = np.sin(np.radians(fault.strike))
-        cos_str = np.cos(np.radians(fault.strike))
-
-        half_L = fault._length / 2
-        half_W = fault._width / 2
-
-        # Corner offsets in ENU (meters) relative to patch center
-        # Order: top-left, top-right, bottom-right, bottom-left
-        # "top" = updip (shallower)
-        e_off = np.column_stack(
-            [
-                -half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str - half_W * cos_dip * cos_str,
-                -half_L * sin_str - half_W * cos_dip * cos_str,
-            ]
-        )
-        n_off = np.column_stack(
-            [
-                -half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str + half_W * cos_dip * sin_str,
-                -half_L * cos_str + half_W * cos_dip * sin_str,
-            ]
-        )
-
-        centers = fault.centers_local
-        ce, cn = centers[:, 0], centers[:, 1]
-
-        verts = []
-        for i in range(fault.n_patches):
-            corners = np.column_stack(
-                [
-                    (ce[i] + e_off[i]) * 1e-3,
-                    (cn[i] + n_off[i]) * 1e-3,
-                ]
-            )
-            verts.append(corners)
-        return verts
-
-    # Triangular: _vertices is (N, 3, 3) in local ENU meters [e, n, u]
-    tri_verts = fault._vertices
-    assert tri_verts is not None
-    verts = []
-    for i in range(fault.n_patches):
-        corners = tri_verts[i, :, :2] * 1e-3  # (3, 2) east/north in km
-        verts.append(corners)
-    return verts
+    """Return map-view patch corners, each (n_corners, 2) East/North km."""
+    return list(fault.corners[:, :, :2] * 1e-3)
 
 
 def _get_patch_vertices_3d(fault: Fault) -> list[np.ndarray]:
-    """Compute 3-D patch vertices in local Cartesian (East km, North km, Depth km).
+    """Return patch corners, each (n_corners, 3) East/North/depth km.
 
     Depth is positive downward for display.
-
-    Returns:
-        List of arrays, each (n_corners, 3).
     """
-    if fault.engine == "okada":
-        assert fault._length is not None and fault._width is not None
-        sin_dip = np.sin(np.radians(fault.dip))
-        cos_dip = np.cos(np.radians(fault.dip))
-        sin_str = np.sin(np.radians(fault.strike))
-        cos_str = np.cos(np.radians(fault.strike))
-
-        half_L = fault._length / 2
-        half_W = fault._width / 2
-
-        e_off = np.column_stack(
-            [
-                -half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str + half_W * cos_dip * cos_str,
-                +half_L * sin_str - half_W * cos_dip * cos_str,
-                -half_L * sin_str - half_W * cos_dip * cos_str,
-            ]
-        )
-        n_off = np.column_stack(
-            [
-                -half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str - half_W * cos_dip * sin_str,
-                +half_L * cos_str + half_W * cos_dip * sin_str,
-                -half_L * cos_str + half_W * cos_dip * sin_str,
-            ]
-        )
-        # Depth offsets (positive = deeper)
-        d_off = np.column_stack(
-            [
-                -half_W * sin_dip,
-                -half_W * sin_dip,
-                +half_W * sin_dip,
-                +half_W * sin_dip,
-            ]
-        )
-
-        centers = fault.centers_local
-        ce, cn = centers[:, 0], centers[:, 1]
-
-        verts = []
-        for i in range(fault.n_patches):
-            corners = np.column_stack(
-                [
-                    (ce[i] + e_off[i]) * 1e-3,
-                    (cn[i] + n_off[i]) * 1e-3,
-                    (fault._depth[i] + d_off[i]) * 1e-3,
-                ]
-            )
-            verts.append(corners)
-        return verts
-
-    # Triangular
-    tri_verts = fault._vertices  # (N, 3, 3) [e, n, u]
-    assert tri_verts is not None
-    verts = []
-    for i in range(fault.n_patches):
-        v = tri_verts[i] * 1e-3  # (3, 3) in km
-        # Convert up to depth: depth_km = -up_km
-        corners = np.column_stack([v[:, 0], v[:, 1], -v[:, 2]])
-        verts.append(corners)
-    return verts
+    return list(fault.corners * np.array([1e-3, 1e-3, -1e-3]))
 
 
 def _get_patch_vertices_fault(fault: Fault) -> list[np.ndarray]:
@@ -440,14 +319,14 @@ def _get_surface_trace(fault: Fault) -> np.ndarray | None:
             # Patches are ordered (dip outer, strike inner).
             # Find which dip row has the shallowest depth.
             row_depths = np.array(
-                [np.mean(fault._depth[j * nL : (j + 1) * nL]) for j in range(nW)]
+                [np.mean(fault.depth[j * nL : (j + 1) * nL]) for j in range(nW)]
             )
-            shallow_row = np.argmin(row_depths)
+            shallow_row = int(np.argmin(row_depths))
             shallow_indices = list(range(shallow_row * nL, (shallow_row + 1) * nL))
         else:
             # Unstructured: pick patches in the shallowest depth quartile
-            depth_threshold = np.percentile(fault._depth, 25)
-            shallow_indices = np.where(fault._depth <= depth_threshold)[0].tolist()
+            depth_threshold = np.percentile(fault.depth, 25)
+            shallow_indices = np.where(fault.depth <= depth_threshold)[0].tolist()
 
         # Collect updip edge endpoints (corners 0 and 1)
         edge_points = []

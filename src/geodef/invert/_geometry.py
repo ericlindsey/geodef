@@ -198,7 +198,7 @@ def geometry_search(
         components: Slip components for the inner solve: ``'both'``,
             ``'strike'``, or ``'dip'``.
         regularization: Regularization type for the inner solve (as in
-            ``invert()``), or None for no regularization.
+            ``solve()``), or None for no regularization.
         regularization_strength: Regularization weight lambda for the inner
             solve (held fixed during the search).
         nu: Poisson's ratio.

@@ -636,31 +636,16 @@ def _build_greens_key(fault: Fault, data: DataSet) -> dict:
     from geodef.data import GNSS, InSAR
 
     key: dict = {
-        "fault_lat": fault._lat,
-        "fault_lon": fault._lon,
-        "fault_depth": fault._depth,
-        "fault_strike": fault.strike,
-        "fault_dip": fault.dip,
-        "engine": fault.engine,
-        "nu": fault.medium.poisson_ratio,
+        **fault._cache_key(),
         "obs_lat": data.lat,
         "obs_lon": data.lon,
         "data_class": type(data).__name__,
         "greens_type": data.greens_type,
     }
-    if fault._length is not None:
-        key["fault_length"] = fault._length
-        key["fault_width"] = fault._width
-    if fault._vertices is not None:
-        key["fault_vertices"] = fault._vertices
-        key["frame_origin_lat"] = fault.frame.origin_lat
-        key["frame_origin_lon"] = fault.frame.origin_lon
-        key["frame_origin_alt"] = fault.frame.origin_alt
-        key["frame_projection"] = fault.frame.projection
     if isinstance(data, InSAR):
-        key["look_e"] = data._look_e
-        key["look_n"] = data._look_n
-        key["look_u"] = data._look_u
+        key["look_e"] = data.look_e
+        key["look_n"] = data.look_n
+        key["look_u"] = data.look_u
     if isinstance(data, GNSS):
         key["components"] = data.components
     return key
@@ -758,7 +743,7 @@ def matrix(
             (fixed rake), ``'azimuth'`` (fixed geographic slip azimuth), or
             ``'plate'`` (plate-rake-parallel/perpendicular coordinates).
             The reduction uses the same semantics as
-            :func:`geodef.invert.solve`.
+            :func:`geodef.solve`.
         rake: Fixed rake angle in degrees, required for ``components='rake'``.
         slip_azimuth: Geographic slip azimuth in degrees CW from North,
             required for ``components='azimuth'``.
@@ -782,7 +767,8 @@ def matrix(
         G_proj = _cache.cached_compute(
             key,
             lambda: project(
-                data, fault.greens_matrix(data.lat, data.lon, kind=data.greens_type)
+                data,
+                fault.greens_matrix(lon=data.lon, lat=data.lat, kind=data.greens_type),
             ),
         )
         blocks.append(G_proj)

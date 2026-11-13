@@ -73,19 +73,21 @@ def gnss_data():
 
     glon, glat = np.meshgrid(np.linspace(99.0, 101.0, 5), np.linspace(-3.0, -1.0, 5))
     glon, glat = glon.ravel(), glat.ravel()
-    ue, un, uz = fault.displacement(glat, glon, np.zeros(n_patches), slip_ds)
+    ue, un, uz = fault.displacement(
+        lat=glat, lon=glon, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
+    )
     rng = np.random.default_rng(7)
     sigma = 0.002
     n = len(glat)
     data = GNSS(
         lon=glon,
         lat=glat,
-        ve=ue + rng.normal(0, sigma, n),
-        vn=un + rng.normal(0, sigma, n),
-        vu=uz + rng.normal(0, sigma, n),
-        se=np.full(n, sigma),
-        sn=np.full(n, sigma),
-        su=np.full(n, sigma),
+        east=ue + rng.normal(0, sigma, n),
+        north=un + rng.normal(0, sigma, n),
+        up=uz + rng.normal(0, sigma, n),
+        sigma_east=np.full(n, sigma),
+        sigma_north=np.full(n, sigma),
+        sigma_up=np.full(n, sigma),
     )
     backend.set_backend("jax")
     return data
@@ -414,19 +416,21 @@ def gnss_single_patch():
         np.linspace(_REF_LAT - 0.7, _REF_LAT + 0.7, 5),
     )
     glon, glat = glon.ravel(), glat.ravel()
-    ue, un, uz = fault.displacement(glat, glon, np.array([0.0]), np.array([2.0]))
+    ue, un, uz = fault.displacement(
+        lat=glat, lon=glon, strike_slip=np.array([0.0]), dip_slip=np.array([2.0])
+    )
     rng = np.random.default_rng(11)
     sigma = 0.003
     n = len(glat)
     data = GNSS(
         lon=glon,
         lat=glat,
-        ve=ue + rng.normal(0, sigma, n),
-        vn=un + rng.normal(0, sigma, n),
-        vu=uz + rng.normal(0, sigma, n),
-        se=np.full(n, sigma),
-        sn=np.full(n, sigma),
-        su=np.full(n, sigma),
+        east=ue + rng.normal(0, sigma, n),
+        north=un + rng.normal(0, sigma, n),
+        up=uz + rng.normal(0, sigma, n),
+        sigma_east=np.full(n, sigma),
+        sigma_north=np.full(n, sigma),
+        sigma_up=np.full(n, sigma),
     )
     backend.set_backend("jax")
     return data

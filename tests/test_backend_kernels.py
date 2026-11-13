@@ -197,7 +197,7 @@ class TestAbicSweepJax:
     def test_abic_curve_matches_numpy(self) -> None:
         from geodef.data import GNSS
         from geodef.fault import Fault
-        from geodef.invert import abic_curve
+        from tests.helpers import abic_curve
 
         fault = Fault.planar(
             lat=0.0,
@@ -220,17 +220,19 @@ class TestAbicSweepJax:
         slip_ds = rng.uniform(0.0, 0.5, fault.n_patches)
 
         backend.set_backend("numpy")
-        ue, un, uz = fault.displacement(lat, lon, slip_ss, slip_ds)
+        ue, un, uz = fault.displacement(
+            lat=lat, lon=lon, strike_slip=slip_ss, dip_slip=slip_ds
+        )
         n = len(lat)
         gnss = GNSS(
             lon=lon,
             lat=lat,
-            ve=ue,
-            vn=un,
-            vu=uz,
-            se=np.full(n, 0.001),
-            sn=np.full(n, 0.001),
-            su=np.full(n, 0.001),
+            east=ue,
+            north=un,
+            up=uz,
+            sigma_east=np.full(n, 0.001),
+            sigma_north=np.full(n, 0.001),
+            sigma_up=np.full(n, 0.001),
         )
 
         result_np = abic_curve(fault, gnss, regularization_range=(1e0, 1e6), n=12)

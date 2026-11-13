@@ -1,4 +1,4 @@
-"""Tests for geodef.DataSet classes (Phase 3.2).
+"""Tests for geodef.DataSet classes.
 
 Covers: construction, validation, properties, project() methods,
 covariance, component filtering (GNSS), and file I/O.
@@ -25,19 +25,37 @@ def gnss_3station():
     se = np.array([0.1, 0.2, 0.3])
     sn = np.array([0.1, 0.2, 0.3])
     su = np.array([0.5, 0.5, 0.5])
-    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=vu, se=se, sn=sn, su=su)
+    return GNSS(
+        lon=lon,
+        lat=lat,
+        east=ve,
+        north=vn,
+        up=vu,
+        sigma_east=se,
+        sigma_north=sn,
+        sigma_up=su,
+    )
 
 
 @pytest.fixture
 def gnss_horizontal():
-    """Two-station GNSS dataset with horizontal only (vu=None)."""
+    """Two-station GNSS dataset with horizontal only (up=None)."""
     lat = np.array([0.0, 1.0])
     lon = np.array([100.0, 101.0])
     ve = np.array([1.0, 2.0])
     vn = np.array([0.5, 1.5])
     se = np.array([0.1, 0.2])
     sn = np.array([0.1, 0.2])
-    return GNSS(lon=lon, lat=lat, ve=ve, vn=vn, vu=None, se=se, sn=sn, su=None)
+    return GNSS(
+        lon=lon,
+        lat=lat,
+        east=ve,
+        north=vn,
+        up=None,
+        sigma_east=se,
+        sigma_north=sn,
+        sigma_up=None,
+    )
 
 
 @pytest.fixture
@@ -146,12 +164,12 @@ class TestGNSSConstruction:
             GNSS(
                 lon=np.array([100.0, 101.0]),
                 lat=np.array([0.0]),  # wrong length
-                ve=np.array([1.0, 2.0]),
-                vn=np.array([0.5, 1.5]),
-                vu=np.array([-0.1, -0.2]),
-                se=np.array([0.1, 0.2]),
-                sn=np.array([0.1, 0.2]),
-                su=np.array([0.5, 0.5]),
+                east=np.array([1.0, 2.0]),
+                north=np.array([0.5, 1.5]),
+                up=np.array([-0.1, -0.2]),
+                sigma_east=np.array([0.1, 0.2]),
+                sigma_north=np.array([0.1, 0.2]),
+                sigma_up=np.array([0.5, 0.5]),
             )
 
     def test_ve_vn_mismatch_raises(self):
@@ -159,12 +177,12 @@ class TestGNSSConstruction:
             GNSS(
                 lon=np.array([100.0]),
                 lat=np.array([0.0]),
-                ve=np.array([1.0, 2.0]),  # wrong length
-                vn=np.array([0.5]),
-                vu=np.array([-0.1]),
-                se=np.array([0.1]),
-                sn=np.array([0.1]),
-                su=np.array([0.5]),
+                east=np.array([1.0, 2.0]),  # wrong length
+                north=np.array([0.5]),
+                up=np.array([-0.1]),
+                sigma_east=np.array([0.1]),
+                sigma_north=np.array([0.1]),
+                sigma_up=np.array([0.5]),
             )
 
     def test_negative_sigma_raises(self):
@@ -172,26 +190,26 @@ class TestGNSSConstruction:
             GNSS(
                 lon=np.array([100.0]),
                 lat=np.array([0.0]),
-                ve=np.array([1.0]),
-                vn=np.array([0.5]),
-                vu=np.array([-0.1]),
-                se=np.array([-0.1]),  # negative sigma
-                sn=np.array([0.1]),
-                su=np.array([0.5]),
+                east=np.array([1.0]),
+                north=np.array([0.5]),
+                up=np.array([-0.1]),
+                sigma_east=np.array([-0.1]),  # negative sigma
+                sigma_north=np.array([0.1]),
+                sigma_up=np.array([0.5]),
             )
 
-    def test_vu_none_su_none_required(self):
-        """If vu is None, su must also be None."""
-        with pytest.raises(ValueError, match="both.*None"):
+    def test_sigma_up_without_up_raises(self):
+        """A vertical uncertainty needs vertical values."""
+        with pytest.raises(ValueError, match="sigma_up"):
             GNSS(
                 lon=np.array([100.0]),
                 lat=np.array([0.0]),
-                ve=np.array([1.0]),
-                vn=np.array([0.5]),
-                vu=None,  # vu=None
-                se=np.array([0.1]),
-                sn=np.array([0.1]),
-                su=np.array([0.5]),  # su provided
+                east=np.array([1.0]),
+                north=np.array([0.5]),
+                up=None,
+                sigma_east=np.array([0.1]),
+                sigma_north=np.array([0.1]),
+                sigma_up=np.array([0.5]),
             )
 
     def test_scalar_inputs_broadcast(self):
@@ -199,12 +217,12 @@ class TestGNSSConstruction:
         g = GNSS(
             lon=np.array([100.0]),
             lat=np.array([0.0]),
-            ve=np.array([1.0]),
-            vn=np.array([0.5]),
-            vu=np.array([-0.1]),
-            se=np.array([0.1]),
-            sn=np.array([0.2]),
-            su=np.array([0.5]),
+            east=np.array([1.0]),
+            north=np.array([0.5]),
+            up=np.array([-0.1]),
+            sigma_east=np.array([0.1]),
+            sigma_north=np.array([0.2]),
+            sigma_up=np.array([0.5]),
         )
         assert g.n_stations == 1
         assert g.n_obs == 3
@@ -435,83 +453,83 @@ class TestSiteNames:
     def _names(self):
         return np.array(["ABCD", "WXYZ", "TEST"])
 
-    def _gnss(self, name=None):
+    def _gnss(self, names=None):
         n = 3
         lon = np.array([1.0, 2.0, 3.0])
         lat = np.zeros(n)
         return GNSS(
             lon=lon,
             lat=lat,
-            ve=np.ones(n),
-            vn=np.ones(n),
-            vu=np.ones(n),
-            se=np.ones(n),
-            sn=np.ones(n),
-            su=np.ones(n),
-            name=name,
+            east=np.ones(n),
+            north=np.ones(n),
+            up=np.ones(n),
+            sigma_east=np.ones(n),
+            sigma_north=np.ones(n),
+            sigma_up=np.ones(n),
+            station_names=names,
         )
 
-    def test_name_default_none(self):
-        assert self._gnss().name is None
+    def test_station_names_default_none(self):
+        assert self._gnss().station_names is None
 
-    def test_name_stored(self):
+    def test_station_names_stored(self):
         g = self._gnss(self._names())
-        np.testing.assert_array_equal(g.name, self._names())
+        np.testing.assert_array_equal(g.station_names, self._names())
 
-    def test_name_wrong_length_raises(self):
-        with pytest.raises(ValueError, match="name"):
+    def test_station_names_wrong_length_raises(self):
+        with pytest.raises(ValueError, match="station_names"):
             self._gnss(np.array(["A", "B"]))
 
-    def test_gnss_name_roundtrip(self, tmp_path):
+    def test_gnss_station_names_roundtrip(self, tmp_path):
         g = self._gnss(self._names())
         p = tmp_path / "g.dat"
         g.save(p)
         loaded = GNSS.load(p)
-        np.testing.assert_array_equal(loaded.name, self._names())
+        np.testing.assert_array_equal(loaded.station_names, self._names())
 
-    def test_gnss_name_roundtrip_en(self, tmp_path):
+    def test_gnss_station_names_roundtrip_en(self, tmp_path):
         g = self._gnss(self._names())
         p = tmp_path / "g.dat"
         g.save(p)
         loaded = GNSS.load(p, components="en")
-        np.testing.assert_array_equal(loaded.name, self._names())
+        np.testing.assert_array_equal(loaded.station_names, self._names())
 
-    def test_gnss_no_name_roundtrip(self, tmp_path):
+    def test_gnss_no_station_names_roundtrip(self, tmp_path):
         g = self._gnss()
         p = tmp_path / "g.dat"
         g.save(p)
-        assert GNSS.load(p).name is None
+        assert GNSS.load(p).station_names is None
 
-    def test_vertical_name_roundtrip(self, tmp_path):
+    def test_vertical_station_names_roundtrip(self, tmp_path):
         n = 3
         v = Vertical(
             lon=np.array([1.0, 2.0, 3.0]),
             lat=np.zeros(n),
             displacement=np.zeros(n),
             sigma=np.ones(n),
-            name=self._names(),
+            station_names=self._names(),
         )
         p = tmp_path / "v.dat"
         v.save(p)
-        np.testing.assert_array_equal(Vertical.load(p).name, self._names())
+        np.testing.assert_array_equal(Vertical.load(p).station_names, self._names())
 
 
 class TestGNSSCorrelation:
     """Test the optional East-North correlation (rho) on GNSS."""
 
-    def _gnss(self, rho, vu=True):
+    def _gnss(self, rho, up=True):
         n = 3
         lon = np.zeros(n)
         lat = np.zeros(n)
         return GNSS(
             lon=lon,
             lat=lat,
-            ve=np.ones(n),
-            vn=np.ones(n),
-            vu=np.ones(n) if vu else None,
-            se=np.full(n, 2.0),
-            sn=np.full(n, 3.0),
-            su=np.full(n, 1.0) if vu else None,
+            east=np.ones(n),
+            north=np.ones(n),
+            up=np.ones(n) if up else None,
+            sigma_east=np.full(n, 2.0),
+            sigma_north=np.full(n, 3.0),
+            sigma_up=np.full(n, 1.0) if up else None,
             rho=rho,
         )
 
@@ -534,7 +552,7 @@ class TestGNSSCorrelation:
         np.testing.assert_allclose(cov[6, 7], 0.3 * 2 * 3)
 
     def test_horizontal_only(self):
-        g = self._gnss(0.5, vu=False)
+        g = self._gnss(0.5, up=False)
         assert g.covariance.shape == (6, 6)
         np.testing.assert_allclose(g.covariance[0, 1], 3.0)
 
@@ -558,12 +576,12 @@ class TestGNSSCorrelation:
             GNSS(
                 lon=np.zeros(n),
                 lat=np.zeros(n),
-                ve=np.ones(n),
-                vn=np.ones(n),
-                vu=None,
-                se=np.ones(n),
-                sn=np.ones(n),
-                su=None,
+                east=np.ones(n),
+                north=np.ones(n),
+                up=None,
+                sigma_east=np.ones(n),
+                sigma_north=np.ones(n),
+                sigma_up=None,
                 rho=0.5,
                 covariance=np.eye(2 * n),
             )
@@ -737,24 +755,24 @@ class TestGNSSSave:
         return GNSS(
             lat=np.array([0.0, 1.0]),
             lon=np.array([100.0, 101.0]),
-            ve=np.array([1.0, 2.0]),
-            vn=np.array([0.5, 1.5]),
-            vu=np.array([-0.1, -0.2]),
-            se=np.array([0.1, 0.2]),
-            sn=np.array([0.1, 0.2]),
-            su=np.array([0.5, 0.5]),
+            east=np.array([1.0, 2.0]),
+            north=np.array([0.5, 1.5]),
+            up=np.array([-0.1, -0.2]),
+            sigma_east=np.array([0.1, 0.2]),
+            sigma_north=np.array([0.1, 0.2]),
+            sigma_up=np.array([0.5, 0.5]),
         )
 
     def _make_gnss_en(self):
         return GNSS(
             lat=np.array([0.0, 1.0]),
             lon=np.array([100.0, 101.0]),
-            ve=np.array([1.0, 2.0]),
-            vn=np.array([0.5, 1.5]),
-            vu=None,
-            se=np.array([0.1, 0.2]),
-            sn=np.array([0.1, 0.2]),
-            su=None,
+            east=np.array([1.0, 2.0]),
+            north=np.array([0.5, 1.5]),
+            up=None,
+            sigma_east=np.array([0.1, 0.2]),
+            sigma_north=np.array([0.1, 0.2]),
+            sigma_up=None,
         )
 
     def test_save_roundtrip_enu(self, tmp_path):
@@ -764,12 +782,12 @@ class TestGNSSSave:
         loaded = GNSS.load(fpath)
         np.testing.assert_allclose(loaded.lat, g.lat)
         np.testing.assert_allclose(loaded.lon, g.lon)
-        np.testing.assert_allclose(loaded._ve, g._ve)
-        np.testing.assert_allclose(loaded._vn, g._vn)
-        np.testing.assert_allclose(loaded._vu, g._vu)
-        np.testing.assert_allclose(loaded._se, g._se)
-        np.testing.assert_allclose(loaded._sn, g._sn)
-        np.testing.assert_allclose(loaded._su, g._su)
+        np.testing.assert_allclose(loaded.east, g.east)
+        np.testing.assert_allclose(loaded.north, g.north)
+        np.testing.assert_allclose(loaded.up, g.up)
+        np.testing.assert_allclose(loaded.sigma_east, g.sigma_east)
+        np.testing.assert_allclose(loaded.sigma_north, g.sigma_north)
+        np.testing.assert_allclose(loaded.sigma_up, g.sigma_up)
         assert loaded.components == "enu"
 
     def test_save_roundtrip_en(self, tmp_path):
@@ -778,8 +796,8 @@ class TestGNSSSave:
         g.save(fpath)
         loaded = GNSS.load(fpath, components="en")
         np.testing.assert_allclose(loaded.lat, g.lat)
-        np.testing.assert_allclose(loaded._ve, g._ve)
-        np.testing.assert_allclose(loaded._vn, g._vn)
+        np.testing.assert_allclose(loaded.east, g.east)
+        np.testing.assert_allclose(loaded.north, g.north)
         assert loaded.components == "en"
 
     def test_save_writes_header_comment(self, tmp_path):
@@ -796,11 +814,6 @@ class TestGNSSSave:
         g.save(fpath)
         assert fpath.exists()
 
-    def test_save_unknown_format_raises(self, tmp_path):
-        g = self._make_gnss_enu()
-        with pytest.raises(ValueError, match="format"):
-            g.save(tmp_path / "out.dat", format="csv")
-
 
 class TestGNSSToGmt:
     """Test GNSS.to_gmt() output."""
@@ -809,12 +822,12 @@ class TestGNSSToGmt:
         g = GNSS(
             lat=np.array([0.0]),
             lon=np.array([100.0]),
-            ve=np.array([1.0]),
-            vn=np.array([0.5]),
-            vu=None,
-            se=np.array([0.1]),
-            sn=np.array([0.1]),
-            su=None,
+            east=np.array([1.0]),
+            north=np.array([0.5]),
+            up=None,
+            sigma_east=np.array([0.1]),
+            sigma_north=np.array([0.1]),
+            sigma_up=None,
         )
         fpath = tmp_path / "gnss.gmt"
         g.to_gmt(fpath)
@@ -825,12 +838,12 @@ class TestGNSSToGmt:
         g = GNSS(
             lat=np.array([0.0, 1.0]),
             lon=np.array([100.0, 101.0]),
-            ve=np.array([1.0, 2.0]),
-            vn=np.array([0.5, 1.5]),
-            vu=None,
-            se=np.array([0.1, 0.2]),
-            sn=np.array([0.1, 0.2]),
-            su=None,
+            east=np.array([1.0, 2.0]),
+            north=np.array([0.5, 1.5]),
+            up=None,
+            sigma_east=np.array([0.1, 0.2]),
+            sigma_north=np.array([0.1, 0.2]),
+            sigma_up=None,
         )
         fpath = tmp_path / "gnss.gmt"
         g.to_gmt(fpath)
@@ -838,8 +851,8 @@ class TestGNSSToGmt:
         assert data.shape == (2, 6)
         np.testing.assert_allclose(data[:, 0], g.lon)
         np.testing.assert_allclose(data[:, 1], g.lat)
-        np.testing.assert_allclose(data[:, 2], g._ve)
-        np.testing.assert_allclose(data[:, 3], g._vn)
+        np.testing.assert_allclose(data[:, 2], g.east)
+        np.testing.assert_allclose(data[:, 3], g.north)
 
 
 # ======================================================================
@@ -871,9 +884,9 @@ class TestInSARSave:
         np.testing.assert_allclose(loaded.lon, d.lon)
         np.testing.assert_allclose(loaded.obs, d.obs)
         np.testing.assert_allclose(loaded.sigma, d.sigma)
-        np.testing.assert_allclose(loaded._look_e, d._look_e)
-        np.testing.assert_allclose(loaded._look_n, d._look_n)
-        np.testing.assert_allclose(loaded._look_u, d._look_u)
+        np.testing.assert_allclose(loaded.look_e, d.look_e)
+        np.testing.assert_allclose(loaded.look_n, d.look_n)
+        np.testing.assert_allclose(loaded.look_u, d.look_u)
 
     def test_save_writes_header_comment(self, tmp_path):
         d = self._make_insar()
@@ -881,11 +894,6 @@ class TestInSARSave:
         d.save(fpath)
         lines = fpath.read_text().splitlines()
         assert any(line.startswith("#") for line in lines)
-
-    def test_save_unknown_format_raises(self, tmp_path):
-        d = self._make_insar()
-        with pytest.raises(ValueError, match="format"):
-            d.save(tmp_path / "out.dat", format="hdf5")
 
 
 class TestInSARToGmt:
@@ -958,11 +966,6 @@ class TestVerticalSave:
         d.save(fpath)
         lines = fpath.read_text().splitlines()
         assert any(line.startswith("#") for line in lines)
-
-    def test_save_unknown_format_raises(self, tmp_path):
-        d = self._make_vertical()
-        with pytest.raises(ValueError, match="format"):
-            d.save(tmp_path / "out.dat", format="nc")
 
 
 class TestVerticalToGmt:

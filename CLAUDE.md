@@ -1,138 +1,180 @@
-# CLAUDE.md - Agent Onboarding Guide
+# CLAUDE.md — working on GeoDef
 
-## Project Overview
+GeoDef is a Python library for forward and inverse modeling of fault slip in
+an elastic half-space, for earthquakes (coseismic slip) and locked faults
+(interseismic coupling). It is used for **teaching**: a fifteen-chapter
+tutorial course is built on it, and students read the source.
 
-**GeoDef** is a Python library for forward and inverse modeling of fault slip
-in elastic half-spaces. It targets both coseismic (earthquake) and interseismic
-(locked fault / coupling) applications. As of **v0.1** the runtime library, the
-fifteen-chapter tutorial course, the per-module documentation, and the optional
-JAX accelerator (differentiable forward models, gradient-based
-`geometry_search`, and the collapsed Bayesian sampler `geodef.bayes`) are
-complete; `ruff` and `mypy` pass cleanly and the suite runs warning-free.
-Remaining forward-looking work is organized in `PLAN.md` plus three menu
-documents: `plans/ARCHITECTURE.md`, `plans/FEATURES.md`, and
-`plans/CAPABILITIES.md`.
-Version 1.0 is reserved for completion of that roadmap and human testing.
+That sets the priority order for every change:
 
-**Read `PYTHON.md` before editing any code.**
+1. **Correct physics.** Pin behavior with physical tests (see Testing).
+2. **One obvious way to do each thing**, with the same names everywhere.
+3. **Code a student can follow** from the public call down to the kernel.
+4. Research power (JAX, Bayesian sampling) stays optional and out of the way.
+
+The API is pre-1.0 and has no compatibility promise. When a name or structure
+is wrong, change it everywhere (code, tests, notebooks, docs) and record it in
+`CHANGELOG.md`; do not add aliases or deprecation shims.
 
 ---
 
-## Repository Layout
+## The API on one screen
+
+```python
+import geodef
+
+fault = geodef.Fault.planar(lon=, lat=, depth=, strike=, dip=,
+                            length=, width=, n_length=, n_width=)
+east, north, up = fault.displacement(lon=, lat=, strike_slip=, dip_slip=)
+
+gnss  = geodef.GNSS(lon=, lat=, east=, north=, up=, sigma=)
+insar = geodef.InSAR(lon=, lat=, los=, sigma=, look_e=, look_n=, look_u=)
+gnss  = geodef.GNSS.synthetic(fault, lon=, lat=, dip_slip=, sigma=, rng=0)
+
+result = geodef.solve(fault, [gnss, insar], components="dip",
+                      regularization="laplacian", regularization_strength=1.0)
+result.dip_slip, result.reduced_chi2, result.uncertainty(), result.resolution()
+
+system = geodef.LinearSystem(fault, gnss, regularization="laplacian")
+system.G, system.d, system.lcurve(), system.abic_curve(), system.solve(...)
+
+geodef.plot.slip(fault, result.dip_slip)
+```
+
+Rules that keep it unified. Follow them when adding anything:
+
+- **Coordinates are keyword-only `lon=`, `lat=`**, in that order, in degrees.
+  Never add a positional `(lat, lon)` or `(lon, lat)` signature; swapped
+  coordinates fail silently.
+- **Slip is `strike_slip` / `dip_slip`**, one value per patch (scalars
+  broadcast), on inputs and on results. The blocked vector
+  `[strike-slip (N) | dip-slip (N)]` appears only where the linear algebra is
+  the subject (`G`, `slip_vector`, `geodef.slip.pack`).
+- **Datasets have one constructor each.** `name` is the dataset's name,
+  `station_names` the per-station labels. Scalars broadcast over stations.
+- **A result knows its problem.** Assessment is a method on the result
+  (`result.covariance()`), never a free function that takes the fault and
+  data again.
+- **`solve` for one answer, `LinearSystem` for many.** Do not add a third path.
+- Top-level names are the everyday vocabulary (`geodef.__all__`); everything
+  else is reached through its module (`geodef.plot.slip`, `geodef.mesh.from_trace`).
+
+## Conventions
+
+- Local Cartesian is East, North, Up in meters. Depth is positive down.
+  Angles are degrees. SI units throughout; anything else says so in its name.
+- Strike is clockwise from north and **the fault dips to the right of strike**.
+- Planar grids are stored row by row: **row 0 is the shallowest**, each later
+  row is one step down dip; patches advance along strike within a row.
+  `fault.reshape_patches` / `fault.patch_index` name this layout.
+- GNSS observations are interleaved by station: `[e1, n1, u1, e2, ...]`.
+- `docs/conventions.md` is the full reference; keep it authoritative.
+
+---
+
+## Layout
 
 ```
-geodef/
-├── CLAUDE.md              # This file
-├── PLAN.md                # Development roadmap (indexes the plans/ menus)
-├── plans/                 # Menu documents: architecture, features, capabilities
-├── PYTHON.md              # Mandatory coding standards
-├── pyproject.toml         # Package config (hatchling, src layout)
-├── src/geodef/            # Installable package
-├── tests/                 # Test suite (one file per module plus integration)
-├── tutorials/             # Fifteen-chapter teaching course executed by pytest
-├── examples/              # Project and real-data examples
-├── docs/                  # Per-module API reference
-├── geometry/              # Original Green's function sources (Matlab/Fortran/Python)
-└── related/               # Reference code: shakeout_v2/, stress-shadows/, and docs
+src/geodef/        the package
+tests/             one file per module, plus executed notebooks and docs
+tutorials/         chapters 00-14, solutions/, reference_plots.ipynb (plot gallery)
+examples/          real-data and project examples (Gorkha, meshes, Bayesian geometry)
+docs/              per-module reference, quickstart, conventions, glossary
+plans/, PLAN.md    forward-looking roadmap
+related/, geometry/  legacy and reference sources (read-only; not linted)
 ```
 
----
+| Module | What it holds |
+|--------|---------------|
+| `fault` | `Fault`: geometry, forward model, moment, file I/O (`_fault_io`) |
+| `data` | `DataSet`, `GNSS`, `InSAR`, `Vertical`, `spatial_covariance` |
+| `invert` | `solve`, `LinearSystem`, `InversionResult`, `geometry_search` |
+| `plot`, `geomap` | Matplotlib plots; optional Cartopy maps |
+| `greens` | Green's matrix assembly, dataset projection, Laplacians |
+| `okada85`, `okada92`, `tri`, `okada` | Published dislocation kernels (line-by-line ports) |
+| `slip` | Blocked-vector packing and rake/azimuth/plate bases |
+| `geometry`, `transforms` | `LocalFrame`; geodetic conversions |
+| `medium`, `validation`, `cache` | Elastic constants; input checks; disk cache for `G` |
+| `mesh`, `euler` | Triangular mesh generation; Euler poles |
+| `backend`, `gradients`, `bayes` | Optional JAX backend, autodiff models, NUTS sampling |
 
-## Package Modules (`src/geodef/`)
-
-| Module | What it provides |
-|--------|-----------------|
-| `backend` | Array backend selection: NumPy (default) or JAX, precision control |
-| `okada85` | Surface displacements, tilts, strains (Okada 1985) |
-| `okada92` | Internal deformation at depth (Okada 1992 / DC3D) |
-| `tri` | Triangular dislocation displacements and strains (Nikkhoo & Walter 2015) |
-| `okada` | Unified dispatcher: auto-selects okada85 (z=0) or okada92 (z<0) |
-| `greens` | Green's matrix assembly, projection, stacking, Laplacian operators |
-| `gradients` | Differentiable forward models: Jacobians w.r.t. geometry and slip (JAX) |
-| `fault` | `Fault` class: factory methods, forward modeling, I/O, moment |
-| `slip` | Slip-vector packing and strike/dip, rake, azimuth, and plate-basis conversions |
-| `medium` | `ElasticMedium`: shear modulus and Poisson's ratio, shared by Green's functions, stress kernels, and moment |
-| `data` | `DataSet` base + `GNSS`, `InSAR`, `Vertical` data types |
-| `invert` | Inversion: solvers, fixed-direction slip bases, regularization, hyperparameter tuning, model assessment, scalar/per-component/per-parameter bounds |
-| `bayes` | Bayesian inference: collapsed rect/tri-mesh geometry posteriors (`RectPosterior`, `TriWarp`+`TriPosterior`), joint slip sampling with positivity (`SlipPosterior`), NUTS sampling (blackjax), slip credible intervals (JAX) |
-| `plot` | Visualization: slip, interpolated slip, vectors, InSAR, fit, fault3d, map, resolution, uncertainty |
-| `geomap` | Optional Cartopy geographic map plotting (basemap, fault/vector overlays) |
-| `cache` | Hash-based disk caching for Green's matrices and stress kernels |
-| `transforms` | Geodetic transforms: ECEF, ENU, geodetic, Vincenty, haversine |
-| `validation` | Fail-early input checks and `.validate()` reports (`ValidationReport`) |
-| `mesh` | Triangular mesh generation: trace+dip, polygon, points, slab2.0 (optional deps) |
-| `euler` | Euler pole fitting and rigid-block velocity prediction |
-
-See `docs/` for per-module API reference with examples.
+How a solve flows: `geodef.solve` → `LinearSystem.__init__` (assemble `G`,
+`d`, `W`, `L`) → `greens.matrix` → `Fault.greens_matrix` →
+`greens.displacement_greens` → `okada85.displacement`.
 
 ---
 
-## Important Rules
+## Working rules
 
-- **Read `PYTHON.md` before editing any code.** Mandatory style guidelines, tooling requirements, and coding standards.
-- Work directly on coding tasks. Do not use subagents unless the user explicitly
-  requests delegation or parallel agent work.
-- Use red/green TDD. Write tests first, then write code to pass the tests.
-- Use `uv` for package management. Use `pytest` for testing. Install with `uv pip install -e .`.
-- All new functions must have type hints, docstrings, and tests.
-- Use NumPy vectorization — avoid Python loops over observation points or fault patches.
-- Coordinate convention: local Cartesian (x=East, y=North, z=Up). Green's functions may use internal conventions — always convert at the interface.
-- Slip columns are blocked: `[:N]` strike-slip, `[N:]` dip-slip.
-- When executing a step listed in `PLAN.md`, update `PLAN.md` in the same
-  logical unit so the roadmap remains current.
-- Keep the docs `.md` files up to date when making code changes. Minor docs
-  fixes should land with the code; large docs rewrites should be added as their
-  own `PLAN.md` step.
-- Do not add `Co-Authored-By` trailers to commit messages. AI co-authorship is
-  tracked once in `README.md`; update that model list, this file, and
-  `AGENTS.md` if a new AI model materially contributes.
+- **Do the work directly.** No subagents unless the user asks for them.
+- **Red/green TDD.** Write the failing test, then the code.
+- **Prefer physical tests to formula tests.** A test that re-implements the
+  code's formula passes when both are wrong: the reversed row depths in
+  `Fault.planar` survived for that reason. Assert invariants instead:
+  subdividing a fault does not change uniform-slip displacement, adjacent
+  patches share an edge, a result reproduces the slip that made the data.
+- **Keep the kernels verbatim.** `okada85.py`, `okada92.py`, and `tri.py`
+  mirror their published sources and are excluded from formatting. Fix
+  conventions at the call site, not inside them.
+- **NumPy is the default.** Vectorize over stations and patches. JAX,
+  blackjax, Cartopy, meshpy, and pyproj are optional extras; the base install
+  must import and pass without them.
+- **Notebooks are part of the API.** A rename is not done until
+  `tutorials/`, `tutorials/solutions/`, `examples/`, and `docs/` use it.
+- **Update `PLAN.md`** when a roadmap item ships or its design changes.
+- **No `Co-Authored-By` trailers.** AI co-authorship is recorded once in
+  `README.md`.
 
----
+### Code style
 
-## Git Workflow
+- Type hints and Google-style docstrings (Args / Returns / Raises) on every
+  public function, class, and method. State units and array shapes.
+- Ruff for linting and formatting (88 columns); mypy must pass.
+- Fail early with a `ValueError` that names the argument, what was received,
+  and the expected unit or range (`geodef.validation` has the helpers).
+- No emoji. No commented-out code. No comments that restate the code.
+- Add a class only when it owns state or an invariant; otherwise a function.
+- `orjson` for JSON. `logger.error`, not `print`, for errors.
 
-**Commit after every logical unit of work** — do not wait until a multi-step task is fully complete. Each commit should leave its relevant tests passing and represent a coherent, independently revertable change.
-
-Commit messages should describe the change without AI co-author trailers.
+### Commands
 
 ```bash
-# Run the tests relevant to this contained change before committing
-uv run pytest tests/test_module.py
-
-# Stage specific files (never `git add -A` blindly)
-git add src/geodef/module.py tests/test_module.py
-
-# Commit with a descriptive message
-git commit -m "Short summary
-
-Longer explanation of why the change was made."
+uv sync --dev --all-extras        # environment with every optional stack
+uv run pytest tests/test_fault.py # the module you touched
+uv run pytest                     # routine suite, about 9 minutes
+uv run pytest -m slow             # adds solution notebooks and long sampling runs
+uv run ruff check src tests && uv run ruff format src tests
+uv run mypy
 ```
 
-Commit granularity guidelines:
-- New class or module → one commit
-- Refactor of existing code → one commit (separate from feature additions)
-- New tests → can be bundled with the code they test, or a follow-up commit
-- Bug fix → one commit, referencing what was broken
-- Do **not** bundle unrelated changes in a single commit
+The routine suite executes every tutorial chapter, the plot gallery, the
+quickstart in `docs/quickstart.md`, and the Gorkha example. Markers: `slow`,
+`benchmark` (both excluded by default), `exact` (bit-level golden outputs; do
+not loosen), `physical` (tolerance-based reference comparisons).
+
+### Commits
+
+Commit each logical unit with its tests passing: a bug fix, a rename, a new
+capability. Keep refactors separate from behavior changes. Stage specific
+paths, write a message that explains why, and push the working branch.
 
 ---
 
-## Testing
+## Where complexity remains
 
-For a small, contained commit, run the directly relevant test module(s) or test
-selection. Expand the selection when shared interfaces or cross-module behavior
-are affected. Run the full routine suite when wrapping up a pull request or a
-major change:
+Known debts, in rough order of what a student would trip over. Each is a
+candidate for the next simplification pass (see `PLAN.md`):
 
-```bash
-uv run pytest
-```
-
-The suite covers every module (do not hard-code collected-test counts
-here; they drift). Reference
-data in `tests/reference_data/` — Matlab-generated `.npz` files for
-cross-validation of Green's function engines, plus golden okada92 outputs
-captured from the pre-vectorization scalar port. A few `Fault.load` tests
-need reference data under `related/stress-shadows/` and are skipped when it
-is absent; the JAX/blackjax-gated backend, gradient, and Bayesian tests are
-skipped when those optional dependencies are not installed.
+- `ref_lat`/`ref_lon` and `frame=` are both accepted by `from_triangles`,
+  `geometry_search`, `bayes`, and `mesh`; `LocalFrame(lat, lon)` is positional
+  and latitude-first, against the rule above.
+- `greens.py` has a per-patch NumPy loop and a separate batched JAX path for
+  the same assembly, and its public functions take ten positional arguments
+  in `(lat, lon)` order.
+- `InversionResult` has more than thirty fields, most of them provenance.
+- `invert/_io.py` carries a versioned, checksummed result-file schema with
+  migrations.
+- The disk cache for `G` is on by default and writes `.geodef_cache/` in the
+  working directory.
+- Rectangular patches use a per-patch tangent-plane projection; triangles use
+  one shared `LocalFrame`.
