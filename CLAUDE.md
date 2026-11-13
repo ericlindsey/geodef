@@ -93,7 +93,7 @@ related/, geometry/  legacy and reference sources (read-only; not linted)
 | `greens` | Green's matrix assembly, dataset projection, Laplacians |
 | `okada85`, `okada92`, `tri`, `okada` | Published dislocation kernels (line-by-line ports) |
 | `slip` | Blocked-vector packing and rake/azimuth/plate bases |
-| `geometry`, `transforms` | `LocalFrame`; geodetic conversions |
+| `transforms`, `geometry` | `LocalFrame` and geodetic conversions; planar-vector and triangle helpers |
 | `medium`, `validation`, `cache` | Elastic constants; input checks; disk cache for `G` |
 | `mesh`, `euler` | Triangular mesh generation; Euler poles |
 | `backend`, `gradients`, `bayes` | Optional JAX backend, autodiff models, NUTS sampling |
@@ -165,9 +165,6 @@ paths, write a message that explains why, and push the working branch.
 Known debts, in rough order of what a student would trip over. Each is a
 candidate for the next simplification pass (see `PLAN.md`):
 
-- `ref_lat`/`ref_lon` and `frame=` are both accepted by `from_triangles`,
-  `geometry_search`, `bayes`, and `mesh`; `LocalFrame(lat, lon)` is positional
-  and latitude-first, against the rule above.
 - `greens.py` has a per-patch NumPy loop and a separate batched JAX path for
   the same assembly, and its public functions take ten positional arguments
   in `(lat, lon)` order.

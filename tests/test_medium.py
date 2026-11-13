@@ -5,6 +5,7 @@ import pytest
 
 from geodef.fault import Fault
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.transforms import LocalFrame
 
 # ====================================================================
 # ElasticMedium value object
@@ -85,10 +86,10 @@ class TestFaultMedium:
         """nu must actually reach the dislocation kernels."""
         obs_lat = np.array([0.05, 0.10])
         obs_lon = np.array([100.0, 100.1])
-        G_default = Fault.planar(**fault_kwargs).greens_matrix(lat=obs_lat, lon=obs_lon)
+        G_default = Fault.planar(**fault_kwargs).greens_matrix(lon=obs_lon, lat=obs_lat)
         G_nu30 = Fault.planar(
             **fault_kwargs, medium=ElasticMedium(poisson_ratio=0.3)
-        ).greens_matrix(lat=obs_lat, lon=obs_lon)
+        ).greens_matrix(lon=obs_lon, lat=obs_lat)
         assert not np.allclose(G_default, G_nu30)
 
     def test_moment_uses_medium(self, fault_kwargs: dict) -> None:
@@ -111,7 +112,7 @@ class TestFaultMedium:
         )
         medium = ElasticMedium(poisson_ratio=0.3)
         fault = Fault.from_triangles(
-            ref_lat=0.0, ref_lon=100.0, vertices=vertices, medium=medium
+            frame=LocalFrame(lon=100.0, lat=0.0), vertices=vertices, medium=medium
         )
         assert fault.medium == medium
 

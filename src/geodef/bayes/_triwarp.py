@@ -71,8 +71,6 @@ class TriWarp:
             )
         self._ref_fault = fault
         self.frame = fault.frame
-        self._ref_lat = self.frame.origin_lat
-        self._ref_lon = self.frame.origin_lon
 
         v0 = np.asarray(fault.vertices, dtype=float)
         self._shape = v0.shape
@@ -438,7 +436,7 @@ class TriPosterior(_CollapsedPosterior):
             enu = frame.to_enu(
                 lon=ds.lon,
                 lat=ds.lat,
-                alt=np.full(ds.n_stations, frame.origin_alt),
+                alt=np.full(ds.n_stations, frame.alt),
             )
             e_parts.append(enu[:, 0])
             n_parts.append(enu[:, 1])

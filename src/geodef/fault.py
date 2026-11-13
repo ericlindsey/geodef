@@ -14,12 +14,12 @@ from geodef import _fault_io, transforms
 from geodef import greens as _greens
 from geodef._fault_io import _seg_to_patches as _seg_to_patches
 from geodef.geometry import (
-    LocalFrame,
     as_planar_vector,
     triangle_strike_dip,
     vertices_from_nodes,
 )
 from geodef.medium import DEFAULT_MEDIUM, ElasticMedium
+from geodef.transforms import LocalFrame
 from geodef.validation import (
     ValidationReport,
     _ReportBuilder,
@@ -136,7 +136,7 @@ class Fault:
         self.grid_shape = grid_shape
         self.medium = DEFAULT_MEDIUM if medium is None else medium
         self.frame = (
-            LocalFrame(float(np.mean(lat)), float(np.mean(lon)))
+            LocalFrame(lon=float(np.mean(lon)), lat=float(np.mean(lat)))
             if frame is None
             else frame
         )
@@ -189,8 +189,8 @@ class Fault:
         """
         if n_length < 1 or n_width < 1:
             raise ValueError("n_length and n_width must be positive integers")
-        selected_frame = LocalFrame(lat, lon) if frame is None else frame
-        center = selected_frame.to_enu(lon=lon, lat=lat, alt=selected_frame.origin_alt)
+        selected_frame = LocalFrame(lon=lon, lat=lat) if frame is None else frame
+        center = selected_frame.to_enu(lon=lon, lat=lat, alt=selected_frame.alt)
         as_planar_vector([center[0], center[1], depth, strike, dip, length, width])
         patch_L = length / n_length
         patch_W = width / n_width
@@ -346,8 +346,6 @@ class Fault:
         *,
         triangles: npt.ArrayLike | None = None,
         frame: LocalFrame | None = None,
-        ref_lat: float | None = None,
-        ref_lon: float | None = None,
         medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Create a triangular fault from local East-North-Up vertices.
@@ -368,8 +366,6 @@ class Fault:
                 (N, 3).
             frame: Local frame the vertices are expressed in. Defaults to a
                 frame at longitude 0, latitude 0.
-            ref_lat: Shorthand for ``frame=LocalFrame(ref_lat, ref_lon)``.
-            ref_lon: See ``ref_lat``.
             medium: Elastic half-space parameters. Defaults to the 30 GPa
                 Poisson solid ``geodef.medium.DEFAULT_MEDIUM``.
 
@@ -380,13 +376,7 @@ class Fault:
             ValueError: If the array shapes are inconsistent, or a triangle
                 index is out of range.
         """
-        if (ref_lat is None) != (ref_lon is None):
-            raise ValueError("ref_lat and ref_lon must be provided together")
-        if ref_lat is not None and ref_lon is not None:
-            if frame is not None:
-                frame.require_compatible(LocalFrame(ref_lat, ref_lon))
-            frame = LocalFrame(ref_lat, ref_lon)
-        selected_frame = LocalFrame(0.0, 0.0) if frame is None else frame
+        selected_frame = LocalFrame(lon=0.0, lat=0.0) if frame is None else frame
         if triangles is None:
             vertices_array = np.asarray(vertices, dtype=float)
             if vertices_array.ndim != 3 or vertices_array.shape[1:] != (3, 3):
@@ -458,8 +448,7 @@ class Fault:
         fname: str,
         *,
         format: str | None = None,
-        ref_lat: float = 0.0,
-        ref_lon: float = 0.0,
+        frame: LocalFrame | None = None,
         medium: ElasticMedium | None = None,
     ) -> "Fault":
         """Load a fault model from a text file.
@@ -470,9 +459,9 @@ class Fault:
                 ``"topleft"`` for top-left corner-defined patches,
                 ``"seg"`` for unicycle segment format. If None,
                 patches are assumed center-defined.
-            ref_lat: Reference latitude for formats that use local Cartesian
-                coordinates (e.g. ``"seg"``). Ignored for geographic formats.
-            ref_lon: Reference longitude for local Cartesian formats.
+            frame: Local frame that places the ``"seg"`` format, which stores
+                local Cartesian coordinates. Defaults to an origin at
+                longitude 0, latitude 0. Ignored for geographic formats.
             medium: Elastic half-space parameters. Fault files store geometry
                 only, so the medium is always supplied at load time; defaults
                 to ``geodef.medium.DEFAULT_MEDIUM``.
@@ -482,13 +471,6 @@ class Fault:
 
         Raises:
             ValueError: If format is unknown.
-
-        Notes:
-            The ``"seg"`` format uses local Cartesian coordinates (meters).
-            The ``ref_lat`` and ``ref_lon`` parameters place the fault
-            geographically. The coordinate transform currently uses
-            ``transforms.translate_flat`` (simple flat-earth approximation);
-            for large faults a more accurate projection may be needed.
         """
         if format is None:
             format = "center"
@@ -500,7 +482,7 @@ class Fault:
             return cls.from_mesh(mesh, medium=medium)
 
         if format == "seg":
-            fault = _fault_io.load_seg(fname, ref_lat, ref_lon)
+            fault = _fault_io.load_seg(fname, frame or LocalFrame(lon=0.0, lat=0.0))
         else:
             filedata = np.loadtxt(fname, ndmin=2)
             if format == "center":
@@ -543,7 +525,7 @@ class Fault:
                 enu = self.frame.to_enu(
                     lon=self.lon,
                     lat=self.lat,
-                    alt=np.full(self.n_patches, self.frame.origin_alt),
+                    alt=np.full(self.n_patches, self.frame.alt),
                 )
                 self._centers_local = np.column_stack(
                     [enu[:, 0], enu[:, 1], -self.depth]
@@ -592,7 +574,7 @@ class Fault:
         geographic = self.frame.to_geographic(
             east=corners[..., 0],
             north=corners[..., 1],
-            up=np.full(corners.shape[:-1], self.frame.origin_alt),
+            up=np.full(corners.shape[:-1], self.frame.alt),
         )
         geographic[..., 2] = -corners[..., 2]
         return geographic
@@ -875,9 +857,9 @@ class Fault:
             key["fault_width"] = self.width
         else:
             key["fault_vertices"] = self.vertices
-            key["frame_origin_lat"] = self.frame.origin_lat
-            key["frame_origin_lon"] = self.frame.origin_lon
-            key["frame_origin_alt"] = self.frame.origin_alt
+            key["frame_origin_lat"] = self.frame.lat
+            key["frame_origin_lon"] = self.frame.lon
+            key["frame_origin_alt"] = self.frame.alt
             key["frame_projection"] = self.frame.projection
         return key
 
@@ -1000,8 +982,7 @@ class Fault:
         fname: str,
         *,
         format: str | None = None,
-        ref_lat: float = 0.0,
-        ref_lon: float = 0.0,
+        frame: LocalFrame | None = None,
         vpl: float = 1.0,
         rake: float = 90.0,
     ) -> None:
@@ -1016,8 +997,8 @@ class Fault:
             format: ``"center"`` or ``"seg"`` for rectangular faults;
                 ``"ned"`` for triangular faults.  ``None`` auto-selects
                 ``"ned"`` for triangular and ``"center"`` for rectangular.
-            ref_lat: Reference latitude for ``"seg"`` format.
-            ref_lon: Reference longitude for ``"seg"`` format.
+            frame: Local frame whose coordinates the ``"seg"`` format
+                stores. Defaults to this fault's own frame.
             vpl: Plate velocity for ``"seg"`` format header.
             rake: Rake angle for ``"seg"`` format header.
 
@@ -1044,7 +1025,7 @@ class Fault:
             if format == "center":
                 _fault_io.save_center(self, fname)
             else:
-                _fault_io.save_seg(self, fname, ref_lat, ref_lon, vpl, rake)
+                _fault_io.save_seg(self, fname, frame or self.frame, vpl, rake)
         else:
             raise ValueError(
                 f"Unknown format: {format!r}. "

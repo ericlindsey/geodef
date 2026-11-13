@@ -17,6 +17,7 @@ from geodef import backend, bayes
 from geodef.data import GNSS
 from geodef.fault import Fault
 from geodef.invert import LinearSystem
+from geodef.transforms import LocalFrame
 
 jax = pytest.importorskip("jax")
 
@@ -82,7 +83,7 @@ def gnss_signed(fault3x3):
     glon, glat = np.meshgrid(np.linspace(99.3, 100.7, 7), np.linspace(-2.7, -1.3, 7))
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
     )
     rng = np.random.default_rng(7)
     sigma = 0.001
@@ -132,7 +133,7 @@ def gnss_1x2_signed(fault1x2):
     )
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.zeros(2), dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=np.zeros(2), dip_slip=slip_ds
     )
     rng = np.random.default_rng(13)
     sigma = 0.003
@@ -499,8 +500,7 @@ class TestSamplerAgreement:
                 ]
             ),
             datasets=gnss_signed,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=[],
             theta_prior=None,
             n_length=_NL,
@@ -724,7 +724,7 @@ def gnss_positive(fault3x3):
     glon, glat = np.meshgrid(np.linspace(99.3, 100.7, 7), np.linspace(-2.7, -1.3, 7))
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
     )
     rng = np.random.default_rng(11)
     sigma = 0.001
@@ -747,8 +747,7 @@ def _rect(datasets, **overrides):
     kwargs = dict(
         theta0=_THETA_TRUE,
         datasets=datasets,
-        ref_lat=_REF_LAT,
-        ref_lon=_REF_LON,
+        frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
         free=["dip"],
         theta_prior={"dip": (5.0, 45.0)},
         n_length=_NL,
@@ -862,8 +861,7 @@ class TestRectPositiveDensity:
         common = dict(
             theta0=_THETA_TRUE,
             datasets=gnss_signed,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             theta_prior={"dip": (5.0, 45.0)},
             n_length=_NL,
@@ -926,8 +924,7 @@ class TestRectPositiveSampling:
         post = bayes.RectPosterior(
             theta0=theta1x2,
             datasets=gnss_1x2_signed,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             theta_prior={"dip": (20.0, 60.0)},
             n_length=2,

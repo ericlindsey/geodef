@@ -6,6 +6,42 @@ Geodetic coordinate transforms between geographic (lat/lon/alt), ECEF (X/Y/Z),
 and local ENU (East/North/Up) frames. Uses WGS84 by default; other ellipsoids
 can be passed as `ellps=`.
 
+## `LocalFrame`
+
+`geodef.LocalFrame` gives local East/North/Up arrays a geographic origin, and
+is the only part of this module most work needs. It is a small immutable value
+(`frame.lon`, `frame.lat`, `frame.alt`) because the origin must travel with
+any local array that is stored, cached, or combined. The origin is always
+given by keyword, longitude first.
+
+```python
+import geodef
+
+frame = geodef.LocalFrame(lon=100.0, lat=-2.0, alt=0.0)
+
+enu = frame.to_enu(lon=lon, lat=lat, alt=alt)
+geographic = frame.to_geographic(
+    east=enu[..., 0],
+    north=enu[..., 1],
+    up=enu[..., 2],
+)
+```
+
+`source.transform_enu(coordinates, target=target)` explicitly re-expresses an
+array in another frame. `source.require_compatible(other)` raises rather than
+silently combining coordinates defined by different origins.
+
+`Fault.planar(..., frame=frame)`, `Fault.from_triangles(..., frame=frame)`, and
+`Mesh(..., frame=frame)` attach the frame directly to the domain value that owns
+the coordinates.
+
+The free functions below are the WGS84 conversions `LocalFrame` is built on.
+They follow the geodesy convention of **latitude before longitude**, unlike
+the rest of GeoDef, so pass their arguments by keyword or in the documented
+order.
+
+---
+
 ## Which coordinate system should I use?
 
 - **Geodetic** latitude, longitude, and ellipsoidal altitude are convenient for
@@ -52,7 +88,7 @@ Convert geodetic coordinates to local East/North/Up relative to a reference poin
 ```python
 from geodef.transforms import geod2enu
 
-e, n, u = geod2enu(lat, lon, alt, ref_lat, ref_lon, 0.0)
+e, n, u = geod2enu(lat, lon, alt, lat0, lon0, 0.0)
 # e, n, u in meters
 ```
 

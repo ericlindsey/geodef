@@ -1,42 +1,13 @@
-# `geodef.geometry` — coordinate frames and array conversions
+# `geodef.geometry` — fault-geometry array helpers
 
 > Conventions — axes, depth sign, angles, units, array ordering,
 > regularization: see [`conventions.md`](conventions.md).
 
 `Fault` is GeoDef's fault-geometry object. The `geometry` module supplies the
-smaller pieces needed to construct and transform its arrays without introducing
-a second geometry hierarchy.
-
-## `LocalFrame`
-
-`LocalFrame` gives local East/North/Up arrays a geographic origin. It is kept as
-a value object because the origin and projection must travel together whenever
-local arrays are stored, cached, or combined.
-
-```python
-import geodef
-
-frame = geodef.LocalFrame(
-    origin_lat=-2.0,
-    origin_lon=100.0,
-    origin_alt=0.0,
-)
-
-enu = frame.to_enu(lon=lon, lat=lat, alt=alt)
-geographic = frame.to_geographic(
-    east=enu[..., 0],
-    north=enu[..., 1],
-    up=enu[..., 2],
-)
-```
-
-`source.transform_enu(coordinates, target=target)` explicitly re-expresses an
-array in another frame. `source.require_compatible(other)` raises rather than
-silently combining coordinates defined by different origins.
-
-`Fault.planar(..., frame=frame)`, `Fault.from_triangles(..., frame=frame)`, and
-`Mesh(..., frame=frame)` attach the frame directly to the domain value that owns
-the coordinates.
+smaller array helpers behind it: the planar parameter vector used by geometry
+search and Bayesian sampling, and the triangle helpers used by meshes.
+Coordinate frames (`LocalFrame`) and geodetic conversions live in
+[`transforms`](transforms.md).
 
 ## Planar parameter vectors
 

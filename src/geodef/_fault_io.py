@@ -15,6 +15,7 @@ from geodef import transforms
 
 if TYPE_CHECKING:
     from geodef.fault import Fault
+    from geodef.transforms import LocalFrame
 
 
 def load_center(filedata: np.ndarray) -> "Fault":
@@ -93,7 +94,7 @@ def load_topleft(filedata: np.ndarray) -> "Fault":
     )
 
 
-def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
+def load_seg(fname: str, frame: "LocalFrame") -> "Fault":
     """Load patches from a unicycle ``.seg`` file.
 
     Each line in the file defines a fault segment that is subdivided
@@ -108,8 +109,7 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
 
     Args:
         fname: Path to the ``.seg`` file.
-        ref_lat: Reference latitude for geographic placement.
-        ref_lon: Reference longitude for geographic placement.
+        frame: Local frame the file's Cartesian coordinates are expressed in.
     """
     from geodef.fault import Fault
 
@@ -193,8 +193,8 @@ def load_seg(fname: str, ref_lat: float, ref_lon: float) -> "Fault":
 
     # Convert local Cartesian (East, North) to geographic
     lat_c, lon_c, _ = transforms.translate_flat(
-        ref_lat,
-        ref_lon,
+        frame.lat,
+        frame.lon,
         0.0,
         c_east,
         c_north,
@@ -253,8 +253,7 @@ def save_center(fault: "Fault", fname: str) -> None:
 def save_seg(
     fault: "Fault",
     fname: str,
-    ref_lat: float,
-    ref_lon: float,
+    frame: "LocalFrame",
     vpl: float,
     rake: float,
 ) -> None:
@@ -271,8 +270,8 @@ def save_seg(
         fault.lat,
         fault.lon,
         alt,
-        ref_lat,
-        ref_lon,
+        frame.lat,
+        frame.lon,
         0.0,
     )
 

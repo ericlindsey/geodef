@@ -15,6 +15,7 @@ import pytest
 from geodef import geomap
 from geodef.data import GNSS
 from geodef.fault import Fault
+from geodef.transforms import LocalFrame
 
 cartopy = pytest.importorskip("cartopy")
 
@@ -44,7 +45,9 @@ def rect_fault():
 def tri_fault():
     nodes = np.array([[0.0, 0, 0], [1e4, 0, 0], [0, 1e4, -5e3], [1e4, 1e4, -5e3]])
     tris = np.array([[0, 1, 2], [1, 3, 2]])
-    return Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
+    return Fault.from_triangles(
+        nodes, frame=LocalFrame(lon=100.0, lat=0.0), triangles=tris
+    )
 
 
 class TestBasemap:

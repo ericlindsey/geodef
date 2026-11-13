@@ -14,12 +14,13 @@ mapping is given here.
   `fault.displacement(lon=, lat=, ...)`, `fault.greens_matrix(lon=, lat=)`,
   `GNSS(lon=, lat=, ...)`. Arrays that hold both follow the same order:
   `Fault.centers_geo`, `Fault.corners_geo`, and `Mesh.centers_geo` are
-  `[lon, lat, depth]`. Two older signatures are latitude-first and are being
-  retired: `LocalFrame(origin_lat, origin_lon)` and the low-level
-  `geodef.greens.*_greens(lat, lon, ...)` assembly functions; pass their
-  arguments by keyword.
+  `[lon, lat, depth]`. A local origin is `geodef.LocalFrame(lon=, lat=)`.
+  The one exception is the low-level WGS84 conversion functions in
+  `geodef.transforms` and the assembly functions in `geodef.greens`, which
+  keep the geodesy convention of latitude first; pass their arguments by
+  keyword.
 - **Local Cartesian:** East, North, Up (ENU) in meters, right-handed, tied
-  to a `LocalFrame` that records origin latitude, longitude, altitude, and
+  to a `LocalFrame` that records origin longitude, latitude, altitude, and
   projection. The current projection identifier is `"wgs84-enu"` (WGS84
   geographic → ECEF → tangent ENU); it is explicit so later projections do
   not make saved or combined local arrays ambiguous. Anything named `*_enu`

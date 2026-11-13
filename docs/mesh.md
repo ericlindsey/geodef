@@ -37,9 +37,7 @@ mesh.vertices_enu(frame=other_frame) # explicit alternate representation
 ```
 
 Pass `frame=geodef.LocalFrame(...)` when constructing a `Mesh` to choose the
-stored local representation. Legacy `vertices_enu(ref_lat, ref_lon)` remains
-supported. Supplying both forms is rejected because it would make provenance
-ambiguous.
+stored local representation.
 `mesh.to_frame(other_frame)` returns the same geographic mesh with a different
 default local representation.
 

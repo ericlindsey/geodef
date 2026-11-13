@@ -13,9 +13,9 @@ import scipy.stats
 from geodef import backend, bayes, gradients
 from geodef.data import GNSS
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
 from geodef.invert import LinearSystem
 from geodef.invert._geometry import _projection_matrix
+from geodef.transforms import LocalFrame
 
 jax = pytest.importorskip("jax")
 
@@ -74,7 +74,7 @@ def gnss_data():
     glon, glat = np.meshgrid(np.linspace(99.0, 101.0, 5), np.linspace(-3.0, -1.0, 5))
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=np.zeros(n_patches), dip_slip=slip_ds
     )
     rng = np.random.default_rng(7)
     sigma = 0.002
@@ -97,8 +97,7 @@ def _posterior(gnss_data, **overrides):
     kwargs = dict(
         theta0=_THETA_TRUE,
         datasets=gnss_data,
-        ref_lat=_REF_LAT,
-        ref_lon=_REF_LON,
+        frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
         free=["dip", "depth"],
         theta_prior={"dip": (5.0, 45.0), "depth": (10e3, 60e3)},
         n_length=_NL,
@@ -129,13 +128,13 @@ class TestConstruction:
 
         post = _posterior(gnss_data, theta0=parameters)
 
-        assert post.frame == LocalFrame(_REF_LAT, _REF_LON)
+        assert post.frame == LocalFrame(lon=_REF_LON, lat=_REF_LAT)
         assert post.geometry(post.x0) == parameters
         assert post.fault(post.x0).frame == post.frame
 
-    def test_rejects_incompatible_explicit_and_legacy_frames(self, gnss_data):
-        with pytest.raises(ValueError, match="incompatible local frames"):
-            _posterior(gnss_data, frame=LocalFrame(_REF_LAT, _REF_LON + 1.0))
+    def test_requires_a_frame(self, gnss_data):
+        with pytest.raises(ValueError, match="frame is required"):
+            _posterior(gnss_data, frame=None)
 
     def test_param_names_hierarchical(self, gnss_data):
         post = _posterior(gnss_data)
@@ -417,7 +416,7 @@ def gnss_single_patch():
     )
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.array([0.0]), dip_slip=np.array([2.0])
+        lon=glon, lat=glat, strike_slip=np.array([0.0]), dip_slip=np.array([2.0])
     )
     rng = np.random.default_rng(11)
     sigma = 0.003
@@ -444,8 +443,7 @@ def single_patch_result(gnss_single_patch):
     post = bayes.RectPosterior(
         theta0=np.array([0.0, 0.0, 10e3, 0.0, 30.0, 20e3, 10e3]),
         datasets=gnss_single_patch,
-        ref_lat=_REF_LAT,
-        ref_lon=_REF_LON,
+        frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
         free=["dip"],
         theta_prior={"dip": (15.0, 70.0)},
         mode="weak",
@@ -536,8 +534,7 @@ class TestSample:
         post = bayes.RectPosterior(
             theta0=np.array([0.0, 0.0, 10e3, 0.0, 30.0, 20e3, 10e3]),
             datasets=gnss_single_patch,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             theta_prior={"dip": (15.0, 70.0)},
             mode="weak",

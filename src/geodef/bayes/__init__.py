@@ -30,7 +30,7 @@ Requires the JAX backend::
 
     import geodef
     geodef.backend.set_backend("jax")
-    frame = geodef.LocalFrame(-2.0, 100.0)
+    frame = geodef.LocalFrame(lon=100.0, lat=-2.0)
     post = geodef.bayes.RectPosterior(
         theta0, datasets, frame=frame,
         free=["dip", "depth"],

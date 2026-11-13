@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from scipy import interpolate
 
 from geodef import transforms
-from geodef.geometry import LocalFrame
+from geodef.transforms import LocalFrame
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,9 @@ class Mesh:
         if self.frame is None:
             origin_lat = float(np.mean(self.lat)) if self.lat.size else 0.0
             origin_lon = float(np.mean(self.lon)) if self.lon.size else 0.0
-            object.__setattr__(self, "frame", LocalFrame(origin_lat, origin_lon))
+            object.__setattr__(
+                self, "frame", LocalFrame(lon=origin_lon, lat=origin_lat)
+            )
 
     @property
     def n_nodes(self) -> int:
@@ -153,42 +155,20 @@ class Mesh:
         edge2 = verts[:, 2, :] - verts[:, 0, :]
         return 0.5 * np.linalg.norm(np.cross(edge1, edge2), axis=1)
 
-    def vertices_enu(
-        self,
-        ref_lat: float | None = None,
-        ref_lon: float | None = None,
-        *,
-        frame: LocalFrame | None = None,
-    ) -> np.ndarray:
+    def vertices_enu(self, frame: LocalFrame | None = None) -> np.ndarray:
         """Triangle vertices in local ENU meters, shape (M, 3, 3).
 
-        Each triangle has 3 vertices, each with [east, north, up] coordinates
-        relative to the reference point. Depth is converted to up (z = -depth).
+        Each triangle has 3 vertices, each with [east, north, up] coordinates.
+        Depth is converted to up (z = -depth).
 
         Args:
-            ref_lat: Legacy reference latitude for an alternate ENU origin.
-            ref_lon: Legacy reference longitude for an alternate ENU origin.
-            frame: Explicit alternate frame. Mutually exclusive with
-                ``ref_lat`` and ``ref_lon``. Defaults to :attr:`frame`.
+            frame: Frame to express the vertices in. Defaults to :attr:`frame`.
 
         Returns:
-            Array of shape (M, 3, 3) suitable for ``Fault.__init__(vertices=...)``.
-
-        Raises:
-            ValueError: If only one legacy origin coordinate is supplied, or
-                legacy origin coordinates and ``frame`` are mixed.
+            Array of shape (M, 3, 3) suitable for ``Fault.from_triangles``.
         """
-        if frame is not None and (ref_lat is not None or ref_lon is not None):
-            raise ValueError("provide either frame or ref_lat/ref_lon, not both")
-        if (ref_lat is None) != (ref_lon is None):
-            raise ValueError("ref_lat and ref_lon must be provided together")
-        if frame is not None:
-            selected_frame = frame
-        elif ref_lat is not None and ref_lon is not None:
-            selected_frame = LocalFrame(ref_lat, ref_lon)
-        else:
-            assert self.frame is not None
-            selected_frame = self.frame
+        selected_frame = self.frame if frame is None else frame
+        assert selected_frame is not None
         nodes = selected_frame.to_enu(
             lon=self.lon,
             lat=self.lat,

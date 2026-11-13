@@ -1,17 +1,21 @@
-#!/usr/local/bin/python
+"""Coordinate frames and geodetic conversions.
 
-# Eric Lindsey
-#
-# Version history:
-#   Created 4/2014
-#   Updated for Python3 4/2016
-#   Added pyproj dynamic adapter for CRS support 2/2026 - Gemini 3.1 Pro
+``LocalFrame`` ties local East-North-Up meters to a geographic origin and
+is the object the rest of GeoDef uses. The free functions underneath
+(``geod2enu``, ``enu2geod``, ``vincenty``, ...) are the WGS84 conversions it
+is built on; they keep the geodesy convention of latitude before longitude.
+"""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 import scipy.linalg
+
+from geodef.validation import check_finite_scalar, check_range
 
 # Array-like types for hinting scalar vs numpy arrays
 ArrayLike = Union[float, int, np.ndarray]
@@ -552,3 +556,176 @@ def midpoint(lat0: float, lon0: float, lat1: float, lon1: float) -> Tuple[float,
     latc = np.degrees(latcr)
     lonc = np.degrees(loncr)
     return latc, lonc
+
+
+# ======================================================================
+# Local frames
+# ======================================================================
+
+DEFAULT_PROJECTION = "wgs84-enu"
+"""Current geographic-to-local projection identifier."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalFrame:
+    """A local East-North-Up frame tied to a geographic origin.
+
+    The only projection currently supported is ``"wgs84-enu"``: geographic
+    WGS84 coordinates are converted through Earth-centered Earth-fixed (ECEF)
+    coordinates and rotated into the tangent ENU frame at the origin.
+
+    Args:
+        lon: Origin longitude in degrees.
+        lat: Origin latitude in degrees.
+        alt: Origin ellipsoidal altitude in meters.
+        projection: Geographic-to-local projection identifier. Currently only
+            ``"wgs84-enu"`` is supported.
+
+    Raises:
+        ValueError: If an origin value is non-finite or out of range, or the
+            projection is unsupported.
+
+    Examples:
+        >>> frame = LocalFrame(lon=100.0, lat=-2.0)
+        >>> enu = frame.to_enu(lon=100.1, lat=-2.0, alt=0.0)
+    """
+
+    lon: float
+    lat: float
+    alt: float = 0.0
+    projection: str = DEFAULT_PROJECTION
+
+    def __post_init__(self) -> None:
+        for name in ("lon", "lat", "alt"):
+            value = float(getattr(self, name))
+            check_finite_scalar(
+                name, value, unit="degrees" if name != "alt" else "meters"
+            )
+            object.__setattr__(self, name, value)
+        check_range("lat", self.lat, -90.0, 90.0, unit="degrees")
+        check_range("lon", self.lon, -360.0, 360.0, unit="degrees")
+        if self.projection != DEFAULT_PROJECTION:
+            raise ValueError(
+                f"projection must be {DEFAULT_PROJECTION!r}; got {self.projection!r}"
+            )
+
+    def to_enu(
+        self,
+        *,
+        lon: npt.ArrayLike,
+        lat: npt.ArrayLike,
+        alt: npt.ArrayLike,
+    ) -> np.ndarray:
+        """Convert geographic coordinates to ENU meters in this frame.
+
+        Args:
+            lon: Longitude in degrees.
+            lat: Latitude in degrees.
+            alt: Ellipsoidal altitude in meters.
+
+        Returns:
+            Array with final axis ``[east_m, north_m, up_m]``.
+        """
+        lon_array, lat_array, alt_array = np.broadcast_arrays(
+            np.asarray(lon, dtype=float),
+            np.asarray(lat, dtype=float),
+            np.asarray(alt, dtype=float),
+        )
+        if not np.all(
+            np.isfinite(np.stack([lon_array, lat_array, alt_array], axis=-1))
+        ):
+            raise ValueError("lon, lat, and alt must contain only finite values")
+        shape = lon_array.shape
+        east, north, up = geod2enu(
+            lat_array.ravel(),
+            lon_array.ravel(),
+            alt_array.ravel(),
+            self.lat,
+            self.lon,
+            self.alt,
+        )
+        return np.stack([east, north, up], axis=-1).reshape((*shape, 3))
+
+    def to_geographic(
+        self,
+        *,
+        east: npt.ArrayLike,
+        north: npt.ArrayLike,
+        up: npt.ArrayLike,
+    ) -> np.ndarray:
+        """Convert ENU meters in this frame to geographic coordinates.
+
+        Args:
+            east: East coordinate in meters.
+            north: North coordinate in meters.
+            up: Up coordinate in meters.
+
+        Returns:
+            Array with final axis ``[longitude_degrees, latitude_degrees,
+            altitude_m]``.
+        """
+        east_array, north_array, up_array = np.broadcast_arrays(
+            np.asarray(east, dtype=float),
+            np.asarray(north, dtype=float),
+            np.asarray(up, dtype=float),
+        )
+        if not np.all(
+            np.isfinite(np.stack([east_array, north_array, up_array], axis=-1))
+        ):
+            raise ValueError("east, north, and up must contain only finite values")
+        shape = east_array.shape
+        lat, lon, alt = enu2geod(
+            east_array.ravel(),
+            north_array.ravel(),
+            up_array.ravel(),
+            self.lat,
+            self.lon,
+            self.alt,
+        )
+        return np.stack([lon, lat, alt], axis=-1).reshape((*shape, 3))
+
+    def transform_enu(
+        self, coordinates: npt.ArrayLike, *, target: LocalFrame
+    ) -> np.ndarray:
+        """Explicitly re-express ENU coordinates in another local frame.
+
+        Args:
+            coordinates: ENU coordinates with shape ``(..., 3)``.
+            target: Destination frame.
+
+        Returns:
+            Coordinates in ``target`` with the same shape.
+
+        Raises:
+            ValueError: If ``coordinates`` does not have a final axis of 3.
+        """
+        array = np.asarray(coordinates, dtype=float)
+        if array.ndim == 0 or array.shape[-1] != 3:
+            raise ValueError(f"coordinates must have shape (..., 3), got {array.shape}")
+        geographic = self.to_geographic(
+            east=array[..., 0], north=array[..., 1], up=array[..., 2]
+        )
+        return target.to_enu(
+            lon=geographic[..., 0],
+            lat=geographic[..., 1],
+            alt=geographic[..., 2],
+        )
+
+    def is_compatible(self, other: LocalFrame) -> bool:
+        """Return whether ``other`` is exactly the same coordinate frame."""
+        return self == other
+
+    def require_compatible(self, other: LocalFrame) -> None:
+        """Raise if ``other`` is not exactly the same coordinate frame.
+
+        Args:
+            other: Frame that will be combined with this one.
+
+        Raises:
+            ValueError: If the origins or projection differ.
+        """
+        if not self.is_compatible(other):
+            raise ValueError(
+                "incompatible local frames: explicitly transform coordinates "
+                f"from {other!r} to {self!r} before combining them"
+            )

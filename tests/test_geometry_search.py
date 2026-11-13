@@ -11,8 +11,8 @@ import pytest
 from geodef import backend
 from geodef.data import GNSS
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
 from geodef.invert import geometry_search
+from geodef.transforms import LocalFrame
 
 jax = pytest.importorskip("jax")
 
@@ -65,7 +65,7 @@ def gnss_data():
     glon, glat = np.meshgrid(np.linspace(99.0, 101.0, 5), np.linspace(-3.0, -1.0, 5))
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=slip_ss, dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=slip_ss, dip_slip=slip_ds
     )
     n = len(glat)
     sigma = 0.001
@@ -112,7 +112,7 @@ def _theta_start(**overrides):
 
 class TestGeometrySearch:
     def test_accepts_mapping_and_returns_fault(self, gnss_data):
-        frame = LocalFrame(_REF_LAT, _REF_LON)
+        frame = LocalFrame(lon=_REF_LON, lat=_REF_LAT)
         parameters = dict(
             zip(
                 ["e0", "n0", "depth", "strike", "dip", "length", "width"],
@@ -140,7 +140,7 @@ class TestGeometrySearch:
             geometry_search(
                 {"depth": 20_000.0},
                 gnss_data,
-                frame=LocalFrame(_REF_LAT, _REF_LON),
+                frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
                 free=["dip"],
                 **_THETA0_KWARGS,
             )
@@ -149,8 +149,7 @@ class TestGeometrySearch:
         result = geometry_search(
             _theta_start(dip=30.0),
             gnss_data,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             bounds={"dip": (5.0, 45.0)},
             **_THETA0_KWARGS,
@@ -162,8 +161,7 @@ class TestGeometrySearch:
         result = geometry_search(
             _theta_start(dip=25.0, depth=35e3),
             gnss_data,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip", "depth"],
             bounds={"dip": (5.0, 45.0), "depth": (10e3, 60e3)},
             **_THETA0_KWARGS,
@@ -175,8 +173,7 @@ class TestGeometrySearch:
         result = geometry_search(
             _theta_start(dip=20.0),
             gnss_data,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             **_THETA0_KWARGS,
         )
@@ -192,8 +189,7 @@ class TestGeometrySearch:
         result = geometry_search(
             _theta_start(dip=30.0),
             gnss_data,
-            ref_lat=_REF_LAT,
-            ref_lon=_REF_LON,
+            frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
             free=["dip"],
             bounds={"dip": (25.0, 45.0)},  # excludes the true dip of 15
             **_THETA0_KWARGS,
@@ -206,8 +202,7 @@ class TestGeometrySearch:
             geometry_search(
                 _theta_start(),
                 gnss_data,
-                ref_lat=_REF_LAT,
-                ref_lon=_REF_LON,
+                frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
                 free=["dip"],
                 **_THETA0_KWARGS,
             )
@@ -217,8 +212,7 @@ class TestGeometrySearch:
             geometry_search(
                 _theta_start(),
                 gnss_data,
-                ref_lat=_REF_LAT,
-                ref_lon=_REF_LON,
+                frame=LocalFrame(lon=_REF_LON, lat=_REF_LAT),
                 free=["rake"],
                 **_THETA0_KWARGS,
             )

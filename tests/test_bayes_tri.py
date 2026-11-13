@@ -15,6 +15,7 @@ from geodef import backend, bayes, gradients
 from geodef.data import GNSS
 from geodef.fault import Fault
 from geodef.invert import LinearSystem
+from geodef.transforms import LocalFrame
 
 jax = pytest.importorskip("jax")
 
@@ -63,7 +64,7 @@ def _tri_fault(
         [np.column_stack([i00, i10, i11]), np.column_stack([i00, i11, i01])]
     )
     return Fault.from_triangles(
-        nodes, ref_lat=ref_lat, ref_lon=ref_lon, triangles=triangles
+        nodes, frame=LocalFrame(lon=ref_lon, lat=ref_lat), triangles=triangles
     )
 
 
@@ -75,7 +76,7 @@ def _gnss_from_fault(fault, slip_ds, sigma, seed, n_lon=6, n_lat=5, span=(0.15, 
     )
     glon, glat = glon.ravel(), glat.ravel()
     ue, un, uz = fault.displacement(
-        lat=glat, lon=glon, strike_slip=np.zeros(fault.n_patches), dip_slip=slip_ds
+        lon=glon, lat=glat, strike_slip=np.zeros(fault.n_patches), dip_slip=slip_ds
     )
     rng = np.random.default_rng(seed)
     n = len(glat)

@@ -19,7 +19,7 @@ import scipy.sparse
 
 from geodef import backend, okada85, transforms, tri
 from geodef import cache as _cache
-from geodef.geometry import LocalFrame
+from geodef.transforms import LocalFrame
 
 if TYPE_CHECKING:
     from geodef.data import DataSet
@@ -522,7 +522,7 @@ def tri_displacement_greens(
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
     selected_frame = (
-        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        LocalFrame(lon=float(np.mean(lon0)), lat=float(np.mean(lat0)))
         if frame is None
         else frame
     )
@@ -596,7 +596,7 @@ def tri_strain_greens(
     nobs = lat.shape[0]
     npatch = vertices.shape[0]
     selected_frame = (
-        LocalFrame(float(np.mean(lat0)), float(np.mean(lon0)))
+        LocalFrame(lon=float(np.mean(lon0)), lat=float(np.mean(lat0)))
         if frame is None
         else frame
     )

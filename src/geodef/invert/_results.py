@@ -13,9 +13,9 @@ from typing import TYPE_CHECKING, overload
 import numpy as np
 
 from geodef.fault import Fault
-from geodef.geometry import LocalFrame
 from geodef.slip import from_plate, from_rake, magnitude, unpack
 from geodef.slip import rake as slip_rake
+from geodef.transforms import LocalFrame
 
 if TYPE_CHECKING:
     import matplotlib

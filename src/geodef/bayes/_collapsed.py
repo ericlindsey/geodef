@@ -23,12 +23,7 @@ from geodef.bayes._util import (
 )
 from geodef.data import DataSet
 from geodef.fault import Fault
-from geodef.geometry import (
-    LocalFrame,
-    _resolve_frame,
-    as_planar_vector,
-    planar_parameter_dict,
-)
+from geodef.geometry import as_planar_vector, planar_parameter_dict
 from geodef.gradients import rect_greens
 from geodef.invert import LinearSystem
 from geodef.invert._geometry import (
@@ -37,6 +32,7 @@ from geodef.invert._geometry import (
     _projection_matrix,
 )
 from geodef.invert._solvers import _rank_positive_eigs
+from geodef.transforms import LocalFrame
 
 
 class _CollapsedPosterior:
@@ -474,14 +470,12 @@ class RectPosterior(_CollapsedPosterior):
     Args:
         theta0: Named parameter mapping, or expert array
             ``[e0, n0, depth, strike, dip, length, width]``. Fixed parameters
-            keep these values and free ones are initialized from them. Array
-            input requires ``frame`` or ``ref_lat``/``ref_lon``.
+            keep these values and free ones are initialized from them. East
+            and north are meters in ``frame``.
         datasets: One or more displacement datasets (GNSS, InSAR,
             Vertical).
-        ref_lat: Latitude anchoring the local Cartesian frame.
-        ref_lon: Longitude anchoring the local Cartesian frame.
-        frame: Explicit local frame for array ``theta0``. Mutually exclusive
-            with an incompatible legacy ``ref_lat``/``ref_lon`` origin.
+        frame: Local frame anchoring the east/north coordinates of the
+            geometry, e.g. ``geodef.LocalFrame(lon=100.0, lat=-2.0)``.
         free: Names of geometry parameters to sample. May be empty for
             pure hyperparameter inference.
         theta_prior: Prior for each free geometry parameter, keyed by
@@ -532,8 +526,6 @@ class RectPosterior(_CollapsedPosterior):
         theta0: npt.ArrayLike | Mapping[str, float],
         datasets: DataSet | list[DataSet],
         *,
-        ref_lat: float | None = None,
-        ref_lon: float | None = None,
         frame: LocalFrame | None = None,
         free: Sequence[str] = ("depth", "dip"),
         theta_prior: dict[str, tuple] | None = None,
@@ -583,7 +575,11 @@ class RectPosterior(_CollapsedPosterior):
                 "mode='profiled' requires a fixed regularization_strength (lambda)"
             )
 
-        frame = _resolve_frame(frame, ref_lat, ref_lon)
+        if frame is None:
+            raise ValueError(
+                "frame is required: pass frame=geodef.LocalFrame(lon=..., lat=...) "
+                "to anchor the local east/north coordinates of the geometry"
+            )
         theta0 = as_planar_vector(theta0)
         self.mode = mode
         self.free = list(free)
@@ -619,7 +615,7 @@ class RectPosterior(_CollapsedPosterior):
             enu = frame.to_enu(
                 lon=ds.lon,
                 lat=ds.lat,
-                alt=np.full(ds.n_stations, frame.origin_alt),
+                alt=np.full(ds.n_stations, frame.alt),
             )
             e_parts.append(enu[:, 0])
             n_parts.append(enu[:, 1])

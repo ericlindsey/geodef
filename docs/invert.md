@@ -300,7 +300,7 @@ search.reduced_chi2
 Notes:
 
 - For expert/JAX workflows, the seven-element `theta0` array remains
-  supported with either `frame=frame` or `ref_lat=..., ref_lon=...`.
+  supported with either `frame=frame` or `frame=geodef.LocalFrame(lon=...`., lat=...)
 - `search.fault` is the ordinary domain view. `search.theta` is the exact
   `[e0, n0, depth, strike, dip, length, width]` array view.
 - The inner solve is unconstrained WLS with fixed `regularization_strength`;

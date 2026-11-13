@@ -125,13 +125,13 @@ geodef.backend.set_backend("jax")      # pip install geodef[jax]
 theta0 = np.array([0.0, 0.0, 25e3, 90.0, 15.0, 100e3, 50e3])
 
 # Gradient-based nonlinear geometry inversion (variable projection + L-BFGS-B)
-gs = geodef.invert.geometry_search(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+gs = geodef.invert.geometry_search(theta0, gnss, frame=geodef.LocalFrame(lon=100.0, lat=0.0),
                             free=["dip", "depth"])
 print(gs.theta, gs.theta_cov)          # best-fit geometry + Gauss-Newton covariance
 
 # Full posterior over geometry + hyperparameters (slip marginalized), via NUTS
 from geodef import bayes                # pip install geodef[bayes]
-post = bayes.RectPosterior(theta0, gnss, ref_lat=0.0, ref_lon=100.0,
+post = bayes.RectPosterior(theta0, gnss, frame=geodef.LocalFrame(lon=100.0, lat=0.0),
                            free=["dip", "depth"])
 result = bayes.sample(post, n_chains=4)
 print(result.summary())                # R-hat, ESS, credible intervals

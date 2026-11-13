@@ -14,13 +14,10 @@ import scipy.optimize
 from geodef import backend
 from geodef.data import DataSet
 from geodef.fault import Fault
-from geodef.geometry import (
-    LocalFrame,
-    _resolve_frame,
-    as_planar_vector,
-)
+from geodef.geometry import as_planar_vector
 from geodef.invert._results import GeometrySearchResult
 from geodef.invert._system import LinearSystem
+from geodef.transforms import LocalFrame
 
 _THETA_NAMES = ("e0", "n0", "depth", "strike", "dip", "length", "width")
 
@@ -154,8 +151,6 @@ def geometry_search(
     theta0: np.ndarray | Mapping[str, float],
     datasets: DataSet | list[DataSet],
     *,
-    ref_lat: float | None = None,
-    ref_lon: float | None = None,
     frame: LocalFrame | None = None,
     free: list[str] | None = None,
     bounds: dict[str, tuple[float, float]] | None = None,
@@ -181,14 +176,12 @@ def geometry_search(
 
     Args:
         theta0: Starting parameter mapping, or expert array
-            ``[east, north, depth, strike, dip, length, width]``. Requires
-            ``frame`` or ``ref_lat``/``ref_lon``.
+            ``[east, north, depth, strike, dip, length, width]``, with east
+            and north in meters in ``frame``.
         datasets: One or more displacement datasets (GNSS, InSAR,
             Vertical).
-        ref_lat: Latitude anchoring the local Cartesian frame.
-        ref_lon: Longitude anchoring the local Cartesian frame.
-        frame: Explicit local frame for array ``theta0``. Mutually exclusive
-            with an incompatible legacy ``ref_lat``/``ref_lon`` origin.
+        frame: Local frame anchoring the east/north coordinates of the
+            geometry, e.g. ``geodef.LocalFrame(lon=100.0, lat=-2.0)``.
         free: Names of parameters to optimize (subset of ``e0, n0,
             depth, strike, dip, length, width``). Default: all seven.
         bounds: Optional per-parameter ``(lower, upper)`` bounds, keyed
@@ -234,7 +227,11 @@ def geometry_search(
             f"'dip', got {components!r}"
         )
 
-    frame = _resolve_frame(frame, ref_lat, ref_lon)
+    if frame is None:
+        raise ValueError(
+            "frame is required: pass frame=geodef.LocalFrame(lon=..., lat=...) to "
+            "anchor the local east/north coordinates of the geometry"
+        )
     theta0 = as_planar_vector(theta0)
     free_idx = np.array([_THETA_NAMES.index(name) for name in free])
 
@@ -254,7 +251,7 @@ def geometry_search(
         enu = frame.to_enu(
             lon=ds.lon,
             lat=ds.lat,
-            alt=np.full(ds.n_stations, frame.origin_alt),
+            alt=np.full(ds.n_stations, frame.alt),
         )
         e_parts.append(enu[:, 0])
         n_parts.append(enu[:, 1])

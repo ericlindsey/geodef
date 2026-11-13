@@ -11,6 +11,7 @@ import pytest
 import geodef
 from geodef.data import GNSS, InSAR, Vertical
 from geodef.fault import Fault
+from geodef.transforms import LocalFrame
 
 # ======================================================================
 # Fixtures
@@ -458,7 +459,9 @@ def tri_fault_4():
         ]
     )
     tris = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3], [4, 5, 3]])
-    return Fault.from_triangles(nodes, ref_lat=0.0, ref_lon=100.0, triangles=tris)
+    return Fault.from_triangles(
+        nodes, frame=LocalFrame(lon=100.0, lat=0.0), triangles=tris
+    )
 
 
 class TestSlipInterpolated:

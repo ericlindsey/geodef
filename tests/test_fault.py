@@ -17,8 +17,8 @@ from geodef.fault import (
     magnitude_to_moment,
     moment_to_magnitude,
 )
-from geodef.geometry import LocalFrame
 from geodef.medium import ElasticMedium
+from geodef.transforms import LocalFrame
 
 # ======================================================================
 # Fixtures
@@ -106,8 +106,8 @@ class TestConstruction:
 
     def test_direct_fault_has_explicit_frame(self, single_patch):
         assert single_patch.frame.projection == "wgs84-enu"
-        assert single_patch.frame.origin_lat == pytest.approx(0.0)
-        assert single_patch.frame.origin_lon == pytest.approx(100.0)
+        assert single_patch.frame.lat == pytest.approx(0.0)
+        assert single_patch.frame.lon == pytest.approx(100.0)
 
 
 # ======================================================================
@@ -129,12 +129,12 @@ class TestPlanarFrame:
             width=40_000.0,
         )
 
-        assert fault.frame.origin_lat == -2.0
-        assert fault.frame.origin_lon == 100.0
+        assert fault.frame.lat == -2.0
+        assert fault.frame.lon == 100.0
         npt.assert_allclose(np.mean(fault.centers_local, axis=0)[:2], 0.0, atol=1.0)
 
     def test_explicit_frame_survives_medium_copy(self):
-        frame = LocalFrame(0.0, 100.0)
+        frame = LocalFrame(lon=100.0, lat=0.0)
         fault = Fault.planar(
             lat=0.01,
             lon=100.02,
@@ -163,7 +163,7 @@ class TestPlanarFrame:
             n_length=2,
             n_width=2,
         )
-        target = LocalFrame(0.1, 100.2)
+        target = LocalFrame(lon=100.2, lat=0.1)
 
         transformed = fault.to_frame(target)
 
@@ -267,20 +267,20 @@ class TestForwardModeling:
     def test_greens_matrix_shape(self, simple_fault):
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
-        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon)
+        G = simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat)
         assert G.shape == (6, 100)  # 3*2 x 2*50
 
     def test_strain_greens_shape(self, simple_fault):
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
-        G = simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="strain")
+        G = simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat, kind="strain")
         assert G.shape == (4, 100)  # 4*1 x 2*50
 
     def test_displacement_returns_three_arrays(self, single_patch):
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
         ue, un, uz = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+            lon=obs_lon, lat=obs_lat, strike_slip=1.0
         )
         assert ue.shape == (1,)
         assert un.shape == (1,)
@@ -290,7 +290,7 @@ class TestForwardModeling:
         obs_lat = np.array([0.5, -0.5])
         obs_lon = np.array([100.5, 99.5])
         ue, un, uz = simple_fault.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=0.0, dip_slip=0.0
+            lon=obs_lon, lat=obs_lat, strike_slip=0.0, dip_slip=0.0
         )
         np.testing.assert_allclose(ue, 0.0, atol=1e-15)
         np.testing.assert_allclose(un, 0.0, atol=1e-15)
@@ -301,10 +301,10 @@ class TestForwardModeling:
         obs_lat = np.array([0.1])
         obs_lon = np.array([100.0])
         ue1, un1, uz1 = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=1.0
+            lon=obs_lon, lat=obs_lat, strike_slip=1.0
         )
         ue2, un2, uz2 = single_patch.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=2.0
+            lon=obs_lon, lat=obs_lat, strike_slip=2.0
         )
         np.testing.assert_allclose(ue2, 2.0 * ue1, rtol=1e-10)
         np.testing.assert_allclose(un2, 2.0 * un1, rtol=1e-10)
@@ -316,7 +316,7 @@ class TestForwardModeling:
         obs_lon = np.array([100.5])
         slip = np.ones(50)
         ue, un, uz = simple_fault.displacement(
-            lat=obs_lat, lon=obs_lon, strike_slip=slip
+            lon=obs_lon, lat=obs_lat, strike_slip=slip
         )
         assert np.any(np.abs(ue) > 0)
 
@@ -324,7 +324,7 @@ class TestForwardModeling:
         obs_lat = np.array([0.5])
         obs_lon = np.array([100.5])
         with pytest.raises(ValueError, match="Unknown kind"):
-            simple_fault.greens_matrix(lat=obs_lat, lon=obs_lon, kind="bogus")
+            simple_fault.greens_matrix(lon=obs_lon, lat=obs_lat, kind="bogus")
 
 
 # ======================================================================
@@ -533,7 +533,7 @@ class TestCorners:
 
     def test_first_two_corners_are_the_shallow_edge(self):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=30.0, dip=40.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=30.0, dip=40.0,
             length=20e3, width=10e3,
         )  # fmt: skip
         depth = fault.corners_geo[0, :, 2]
@@ -544,7 +544,7 @@ class TestCorners:
     def test_fault_dips_to_the_right_of_strike(self):
         """Strike north, so the deep edge lies to the east of the shallow edge."""
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=0.0, dip=30.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=0.0, dip=30.0,
             length=20e3, width=10e3,
         )  # fmt: skip
         east = fault.corners[0, :, 0]
@@ -557,7 +557,7 @@ class TestCorners:
 
     def test_neighboring_rows_share_an_edge(self):
         fault = Fault.planar(
-            lat=0.0, lon=100.0, depth=20e3, strike=20.0, dip=35.0,
+            lon=100.0, lat=0.0, depth=20e3, strike=20.0, dip=35.0,
             length=20e3, width=20e3, n_length=1, n_width=2,
         )  # fmt: skip
         np.testing.assert_allclose(
@@ -577,14 +577,14 @@ class TestPlanarGridGeometry:
     """A subdivided planar fault must be the same plane as its single patch."""
 
     KWARGS = dict(
-        lat=0.0, lon=100.0, depth=20e3, strike=25.0, dip=30.0,
+        lon=100.0, lat=0.0, depth=20e3, strike=25.0, dip=30.0,
         length=40e3, width=40e3,
     )  # fmt: skip
 
     def test_plane_reaching_above_the_surface_is_rejected(self):
         with pytest.raises(ValueError, match="above the surface"):
             Fault.planar(
-                lat=0.0, lon=100.0, depth=5e3, strike=0.0, dip=50.0,
+                lon=100.0, lat=0.0, depth=5e3, strike=0.0, dip=50.0,
                 length=40e3, width=25e3, n_width=4,
             )  # fmt: skip
 
@@ -834,10 +834,10 @@ class TestSegIO:
 
     @requires_stress_shadows
     def test_load_seg_with_ref_coords(self):
-        """Loading with ref_lat/ref_lon should offset the geographic coords."""
+        """Loading with a frame should offset the geographic coords."""
         fname = "related/stress-shadows/3d_models/test_data_3d/ramp_3d.seg"
-        f0 = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=0.0)
-        f1 = Fault.load(fname, format="seg", ref_lat=10.0, ref_lon=100.0)
+        f0 = Fault.load(fname, format="seg", frame=LocalFrame(lon=0.0, lat=0.0))
+        f1 = Fault.load(fname, format="seg", frame=LocalFrame(lon=100.0, lat=10.0))
         # Centers should differ by roughly the ref offset
         assert abs(np.mean(f1.lat) - np.mean(f0.lat)) > 5.0
         assert abs(np.mean(f1.lon) - np.mean(f0.lon)) > 50.0
@@ -858,8 +858,8 @@ class TestSegIO:
         with tempfile.NamedTemporaryFile(suffix=".seg", delete=False) as f:
             fname = f.name
 
-        fault.save(fname, format="seg", ref_lat=0.0, ref_lon=100.0)
-        loaded = Fault.load(fname, format="seg", ref_lat=0.0, ref_lon=100.0)
+        fault.save(fname, format="seg", frame=LocalFrame(lon=100.0, lat=0.0))
+        loaded = Fault.load(fname, format="seg", frame=LocalFrame(lon=100.0, lat=0.0))
 
         assert loaded.n_patches == fault.n_patches
         np.testing.assert_allclose(loaded.strike, fault.strike, atol=1e-4)
