@@ -56,7 +56,7 @@ class TestRectForward:
         assert d.shape == (5, 3)
 
         backend.set_backend("numpy")
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         e0, n0, depth, strike, dip, length, width = _THETA
         expected = np.zeros((5, 3))
@@ -148,7 +148,7 @@ class TestTriForward:
     def test_matches_numpy_forward(self):
         d = backend.to_numpy(gradients.tri_displacement(_VERTICES, _SLIP, _OBS))
         backend.set_backend("numpy")
-        from geodef import tri
+        from geodef.kernels import tri
 
         expected = tri.TDdispHS(_OBS, _VERTICES, _SLIP, 0.25)
         np.testing.assert_allclose(d, expected, rtol=1e-10, atol=1e-15)
@@ -197,7 +197,7 @@ class TestRectGreens:
         """G columns equal unit-slip responses at independently derived
         patch centers (corner + strike/dip unit-vector layout)."""
         backend.set_backend("numpy")
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         n_length, n_width = 3, 2
         e0, n0, depth, strike, dip, length, width = _THETA
@@ -319,7 +319,7 @@ class TestTriGreens:
 
     def test_columns_are_unit_slip_responses(self):
         backend.set_backend("numpy")
-        from geodef import tri
+        from geodef.kernels import tri
 
         G = gradients.tri_greens(self._MESH, _OBS)
         ntri = 2
@@ -439,7 +439,7 @@ class TestReverseMode:
 
     def _q_values(self, theta):
         """Okada q coordinate of each observation for this geometry."""
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         args = okada85.setup_args(
             self._E_LINE,

@@ -44,8 +44,8 @@ notes).
 
 | Capability | Modules | Requires |
 |---|---|---|
-| Rectangular dislocations (surface + depth) | `okada85`, `okada92`, `okada` | base install |
-| Triangular dislocations | `tri` | base install |
+| Rectangular dislocations (surface + depth) | `kernels.okada85`, `kernels.okada92`, `kernels.okada` | base install |
+| Triangular dislocations | `kernels.tri` | base install |
 | Fault geometry, forward models, moment | `fault` | base install |
 | Elastic medium parameters | `medium` | base install |
 | GNSS / InSAR / vertical datasets | `data` | base install |
@@ -187,7 +187,7 @@ Full API docs with examples are in `docs/`:
 | [`docs/geomap.md`](docs/geomap.md) | Optional Cartopy geographic map plotting |
 | [`docs/mesh.md`](docs/mesh.md) | Triangular mesh generation |
 | [`docs/euler.md`](docs/euler.md) | Euler pole fitting and rigid-block velocities |
-| [`docs/okada.md`](docs/okada.md) | `okada` dispatcher + `okada85` / `okada92` direct access |
+| [`docs/kernels.md`](docs/kernels.md) | `geodef.kernels`: the Okada and triangular dislocation solutions |
 | [`docs/cache.md`](docs/cache.md) | Disk caching configuration |
 | [`docs/transforms.md`](docs/transforms.md) | Geodetic coordinate transforms |
 | [`docs/validation.md`](docs/validation.md) | Input validation helpers and `.validate()` reports |

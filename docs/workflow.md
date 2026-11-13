@@ -25,7 +25,7 @@ operator, kernel, or repeated expert computation.
 |---|---|---|---|
 | Domain workflow | Building a forward model or estimating slip | `Fault`, `GNSS`/`InSAR`/`Vertical`, `solve`, result views and methods | 01, 03–08 |
 | Matrices/operators | Inspecting ordering, custom priors, repeated sweeps, or diagnostics | `greens.matrix`, `geodef.LinearSystem`, `result.covariance()` | 02–04, 08 |
-| Physics kernels | Validating a formulation or needing displacement/strain features below `Fault` | `okada`, `okada85`, `okada92`, `tri` | 01, 11 |
+| Physics kernels | Validating a formulation or needing displacement/strain features below `Fault` | `kernels.okada`, `kernels.okada85`, `kernels.okada92`, `tri` | 01, 11 |
 
 The [quickstart](quickstart.md) stays entirely at the domain level. Tutorials 01
 and 02 deliberately descend into the other levels so the abstraction remains

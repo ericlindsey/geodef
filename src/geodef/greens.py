@@ -17,8 +17,9 @@ import numpy as np
 import scipy.linalg
 import scipy.sparse
 
-from geodef import backend, okada85, transforms, tri
+from geodef import backend, transforms
 from geodef import cache as _cache
+from geodef.kernels import okada85, tri
 from geodef.transforms import LocalFrame
 
 if TYPE_CHECKING:
@@ -127,7 +128,7 @@ def _strain_depth_batch(
     Returns:
         Geographic strain tensors of shape (npatch, nobs, 3, 3).
     """
-    from geodef import okada92
+    from geodef.kernels import okada92
 
     depth_c = depth[:, None]
     strike_c = strike[:, None]
@@ -424,7 +425,7 @@ def strain_greens(
             G[:, ipatch] = gstr
             G[:, npatch + ipatch] = gdip
     else:
-        from geodef import okada92
+        from geodef.kernels import okada92
 
         obs_depth = np.asarray(obs_depth, dtype=float)
         z_obs = -obs_depth  # okada92 convention: Z <= 0

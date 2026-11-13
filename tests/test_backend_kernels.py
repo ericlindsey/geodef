@@ -9,8 +9,9 @@ not installed.
 import numpy as np
 import pytest
 
-from geodef import backend, greens, okada85, okada92
-from geodef import tri as tdcalc
+from geodef import backend, greens
+from geodef.kernels import okada85, okada92
+from geodef.kernels import tri as tdcalc
 from tests.test_okada85 import (
     _REFERENCE_PARAMS,
     _REFERENCE_RESULTS,

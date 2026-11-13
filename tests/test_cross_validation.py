@@ -20,9 +20,9 @@ SIGN CONVENTION NOTE:
 import numpy as np
 import pytest
 
-from geodef import okada85
-from geodef import tri as tdcalc
-from geodef.okada92 import DC3D, okada92
+from geodef.kernels import okada85
+from geodef.kernels import tri as tdcalc
+from geodef.kernels.okada92 import DC3D, okada92
 
 _G = 30.0
 _NU = 0.25

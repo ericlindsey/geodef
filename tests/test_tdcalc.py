@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geodef import tri as tdcalc
+from geodef.kernels import tri as tdcalc
 
 pytestmark = pytest.mark.physical
 

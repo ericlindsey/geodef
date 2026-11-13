@@ -113,9 +113,9 @@ select = ["E", "F", "W", "I"]
 # published references; the formatter would reflow them and break that
 # correspondence.
 exclude = [
-    "src/geodef/okada85.py",
-    "src/geodef/okada92.py",
-    "src/geodef/tri.py",
+    "src/geodef/kernels/okada85.py",
+    "src/geodef/kernels/okada92.py",
+    "src/geodef/kernels/tri.py",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -124,9 +124,9 @@ exclude = [
 # keep the original variable names (e.g. `I` for the Okada I-integrals) and
 # line layout so the code can be checked against the reference; a few
 # intermediates mirror the source without being read back.
-"src/geodef/okada85.py" = ["E741", "E501", "W291", "W293"]
-"src/geodef/okada92.py" = ["E741", "F841", "E501", "W291", "W293"]
-"src/geodef/tri.py" = ["E501", "W291", "W293"]
+"src/geodef/kernels/okada85.py" = ["E741", "E501", "W291", "W293"]
+"src/geodef/kernels/okada92.py" = ["E741", "F841", "E501", "W291", "W293"]
+"src/geodef/kernels/tri.py" = ["E501", "W291", "W293"]
 
 [tool.mypy]
 python_version = "3.10"

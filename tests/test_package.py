@@ -23,20 +23,20 @@ class TestPackageImports:
         assert hasattr(geodef, "__version__")
 
     def test_import_okada85(self):
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         assert callable(okada85.displacement)
         assert callable(okada85.tilt)
         assert callable(okada85.strain)
 
     def test_import_okada92(self):
-        from geodef import okada92
+        from geodef.kernels import okada92
 
         assert callable(okada92.okada92)
         assert callable(okada92.DC3D)
 
     def test_import_tri(self):
-        from geodef import tri
+        from geodef.kernels import tri
 
         assert callable(tri.TDdispFS)
         assert callable(tri.TDdispHS)
@@ -44,7 +44,7 @@ class TestPackageImports:
         assert callable(tri.TDstrainHS)
 
     def test_import_okada_dispatcher(self):
-        from geodef import okada
+        from geodef.kernels import okada
 
         assert callable(okada.displacement)
 
@@ -162,7 +162,7 @@ class TestOkadaDispatcher:
 
     def test_surface_observation_matches_okada85(self, fault_params):
         """When z=0 (surface), dispatcher should give okada85-identical results."""
-        from geodef import okada, okada85
+        from geodef.kernels import okada, okada85
 
         e = np.array([5000.0, 10000.0, -3000.0])
         n = np.array([2000.0, -1000.0, 7000.0])
@@ -191,7 +191,7 @@ class TestOkadaDispatcher:
 
     def test_depth_observation_uses_okada92(self, fault_params):
         """When z<0 (at depth), dispatcher must use okada92 and return results."""
-        from geodef import okada
+        from geodef.kernels import okada
 
         e = np.array([5000.0])
         n = np.array([2000.0])
@@ -205,7 +205,7 @@ class TestOkadaDispatcher:
 
     def test_depth_observation_matches_okada92(self, fault_params):
         """Dispatcher at depth should match direct okada92 call."""
-        from geodef import okada, okada92
+        from geodef.kernels import okada, okada92
 
         e_val = 5000.0
         n_val = 2000.0
@@ -240,7 +240,7 @@ class TestOkadaDispatcher:
 
     def test_z_positional_matches_keyword(self, fault_params):
         """z as 3rd positional arg should match z as keyword."""
-        from geodef import okada
+        from geodef.kernels import okada
 
         e = np.array([5000.0])
         n = np.array([2000.0])
@@ -254,7 +254,7 @@ class TestOkadaDispatcher:
 
     def test_scalar_z_broadcast(self, fault_params):
         """Scalar z should broadcast to all observation points."""
-        from geodef import okada
+        from geodef.kernels import okada
 
         e = np.array([5000.0, 10000.0])
         n = np.array([2000.0, -1000.0])
@@ -267,7 +267,7 @@ class TestOkadaDispatcher:
 
     def test_array_z_at_depth(self, fault_params):
         """Array z values (all at depth) should use okada92."""
-        from geodef import okada
+        from geodef.kernels import okada
 
         e = np.array([5000.0, 10000.0])
         n = np.array([2000.0, -1000.0])
@@ -280,7 +280,7 @@ class TestOkadaDispatcher:
 
     def test_positive_z_raises(self, fault_params):
         """Positive z (above surface) should raise ValueError."""
-        from geodef import okada
+        from geodef.kernels import okada
 
         e = np.array([5000.0])
         n = np.array([2000.0])
@@ -298,7 +298,7 @@ class TestOkada85API:
     """Verify okada85 functions work through the new package."""
 
     def test_displacement_basic(self):
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         ue, un, uz = okada85.displacement(
             e=np.array([10000.0]),
@@ -316,7 +316,7 @@ class TestOkada85API:
         assert np.all(np.isfinite(ue))
 
     def test_tilt_basic(self):
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         uze, uzn = okada85.tilt(
             e=np.array([10000.0]),
@@ -333,7 +333,7 @@ class TestOkada85API:
         assert uze.shape == (1,)
 
     def test_strain_basic(self):
-        from geodef import okada85
+        from geodef.kernels import okada85
 
         unn, une, uen, uee = okada85.strain(
             e=np.array([10000.0]),
@@ -354,7 +354,7 @@ class TestOkada92API:
     """Verify okada92 functions work through the new package."""
 
     def test_okada92_basic(self):
-        from geodef.okada92 import okada92
+        from geodef.kernels.okada92 import okada92
 
         disp, strain = okada92(
             X=10000.0,
@@ -375,7 +375,7 @@ class TestOkada92API:
         assert strain.shape == (3, 3)
 
     def test_dc3d_accessible(self):
-        from geodef.okada92 import DC3D
+        from geodef.kernels.okada92 import DC3D
 
         assert callable(DC3D)
 
@@ -399,28 +399,28 @@ class TestTriAPI:
         return obs, tri, slip, nu
 
     def test_TDdispHS(self, triangle_setup):
-        from geodef import tri
+        from geodef.kernels import tri
 
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDdispHS(obs, triangle, slip, nu)
         assert result.shape == (1, 3)
 
     def test_TDdispFS(self, triangle_setup):
-        from geodef import tri
+        from geodef.kernels import tri
 
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDdispFS(obs, triangle, slip, nu)
         assert result.shape == (1, 3)
 
     def test_TDstrainHS(self, triangle_setup):
-        from geodef import tri
+        from geodef.kernels import tri
 
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDstrainHS(obs, triangle, slip, nu)
         assert result.shape == (1, 6)
 
     def test_TDstrainFS(self, triangle_setup):
-        from geodef import tri
+        from geodef.kernels import tri
 
         obs, triangle, slip, nu = triangle_setup
         result = tri.TDstrainFS(obs, triangle, slip, nu)

@@ -30,8 +30,9 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from geodef import backend, okada85, tri
+from geodef import backend
 from geodef.backend import xp
+from geodef.kernels import okada85, tri
 
 
 def _require_jax():

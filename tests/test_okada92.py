@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from geodef.okada92 import okada92
+from geodef.kernels.okada92 import okada92
 
 # Standard elastic parameters
 _G = 30.0

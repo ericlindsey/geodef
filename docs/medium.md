@@ -54,7 +54,7 @@ elastic parameters (the immutable geometry arrays are shared). Fault files
 store geometry only, so `Fault.load(..., medium=...)` applies the medium at
 load time.
 
-The low-level kernels (`okada85`, `okada92`, `tri`, and the functions in
+The low-level kernels (`geodef.kernels.okada85`, `okada92`, `tri`, and the functions in
 `geodef.greens` / `geodef.gradients` / `geodef.bayes`) keep their plain
 `nu` floats — the medium object is a `Fault`-level convenience, converted at
 the interface.

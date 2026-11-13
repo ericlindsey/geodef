@@ -51,6 +51,7 @@ update calls as follows.
 | `invert.save(result, path)`, `invert.load(path)`, `invert.save_table(result, path, fault)` | `result.save(path)`, `InversionResult.load(path, fault=, datasets=)`, `result.save_table(path)` |
 | `invert.lcurve(fault, data, ...)`, `invert.abic_curve(fault, data, ...)` | `system = geodef.LinearSystem(fault, data, regularization=...)`; `system.lcurve(...)`, `system.abic_curve(...)` |
 | `LinearSystem.invert(...)` | `LinearSystem.solve(...)` |
+| `geodef.okada85`, `geodef.okada92`, `geodef.tri`, `geodef.okada` | `geodef.kernels.okada85`, `.okada92`, `.tri`, `.okada` |
 | `LocalFrame(lat, lon)`, `frame.origin_lat` | `LocalFrame(lon=, lat=)` (keyword-only), `frame.lat`; defined in `geodef.transforms` |
 | `ref_lat=, ref_lon=` on `Fault.from_triangles`, `Fault.load`/`save`, `geometry_search`, `RectPosterior`, `Mesh.vertices_enu` | `frame=geodef.LocalFrame(lon=, lat=)` |
 
